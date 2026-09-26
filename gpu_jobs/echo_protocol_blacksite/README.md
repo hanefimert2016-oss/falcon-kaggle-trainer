@@ -1,16 +1,13 @@
 # Echo Protocol: Blacksite (/gpu)
 
-Unity third-person action/story prototype assembled with GitHub Actions CPU.
+Third-person Unity action/story prototype assembled and validated on GitHub Actions CPU.
 
-- Source archive: `echo_protocol_blacksite_source.tar.gz`
-- Archive SHA-256: `6be9503435854afde733e4c037c4fe2f502844d25e9dfd95bfda310f96ecbbbe`
-- Visible 3D content: Quaternius **Sci-Fi Essentials Kit (Standard)**, downloaded at CI time from OpenGameArt.
-- License for external pack: **CC0 1.0**
-- The project itself does not contain authored FBX/OBJ/Blend models.
-- GitHub Actions workflow: `.github/workflows/unity-action-story-cpu.yml`
+External 3D content is downloaded, not generated:
+- ECHO-7 player: Quaternius Animated Characters Pack (CC0)
+- Enemies, weapons and props: Quaternius Sci-Fi Essentials Kit Standard (CC0)
 
-The workflow extracts the Unity project, downloads the external models/textures on the GitHub runner, validates the mission/gameplay source, inventories the model files, and uploads a ready-to-open Unity project artifact.
+Story: infiltrate the blacksite, retrieve the encrypted archive, defeat the five-unit security ambush, and reach extraction.
 
-Story flow: infiltrate the blacksite → retrieve archive terminal → defeat 5 ambush enemies → reach extraction.
+Controls: WASD, mouse, Left Shift, Space, left click, R, E, Esc.
 
-Controls: WASD, mouse, Shift, Space, left click, R, E.
+The GitHub workflow extracts the Unity 2022.3 LTS source, applies the humanoid-player patch, downloads both external packs, validates mission/gameplay code and the no-authored-model constraint, inventories models, then uploads a ready-to-open Unity project artifact.
