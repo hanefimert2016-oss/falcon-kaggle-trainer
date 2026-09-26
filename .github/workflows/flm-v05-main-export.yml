@@ -1,0 +1,56 @@
+name: FLM v0.5 Export Main Checkpoint
+
+on:
+  push:
+    paths:
+      - '.flm-v05-main-export-trigger'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
+      REF: ${{ vars.KAGGLE_OWNER }}/falcon-flm-v05-full-gpu
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install "kaggle>=2.2.1"
+
+      - name: Download partial outputs from failed full run
+        run: |
+          set -euo pipefail
+          mkdir -p partial
+          kaggle kernels output "$REF" -p partial -o
+          find partial -maxdepth 5 -type f -printf '%p %s bytes\n' | sort
+
+      - name: Verify completed Main checkpoint
+        run: |
+          set -euo pipefail
+          ROOT="partial/flm-v0.5-full/main"
+          test -s "$ROOT/checkpoint.pt"
+          test -s "$ROOT/metrics.json"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('partial/flm-v0.5-full/main/metrics.json')
+          m=json.loads(p.read_text())
+          print(json.dumps(m,indent=2))
+          assert m['kind']=='main'
+          assert m['steps']==500
+          assert m['parameters'] > 99_000_000
+          assert m['dataset_bytes']==128_000_000
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flm-v05-main-full-500step
+          path: partial/flm-v0.5-full/main/
+          retention-days: 14
+          if-no-files-found: error
