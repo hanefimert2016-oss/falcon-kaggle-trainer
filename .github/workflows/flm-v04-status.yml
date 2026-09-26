@@ -24,6 +24,6 @@ jobs:
       - name: Kernel status
         run: kaggle kernels status "$KAGGLE_OWNER/falcon-flm-v04-three-model-suite"
       - name: Kernel logs
-        run: kaggle kernels logs "$KAGGLE_OWNER/falcon-flm-v04-suite" || true
+        run: kaggle kernels logs "$KAGGLE_OWNER/falcon-flm-v04-three-model-suite" || true
       - name: Quota
         run: kaggle quota
