@@ -1,0 +1,87 @@
+name: FLM v0.5 Expanded Data CPU Prep
+
+on:
+  push:
+    paths:
+      - '.hf-v05-expanded-trigger'
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
+      CUDA_VISIBLE_DEVICES: ""
+      HF_HUB_DISABLE_TELEMETRY: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Prove CPU-only phase
+        run: |
+          test -z "$CUDA_VISIBLE_DEVICES"
+          echo "cpu_count=$(nproc)"
+          echo "GPU/TPU disabled: download + preprocessing only"
+
+      - name: Install CPU data tools
+        run: python -m pip install "datasets>=4.0" pillow huggingface_hub opencv-python-headless "kaggle>=2.2.1"
+
+      - name: Prepare 100x-plus real HF data
+        run: |
+          python flm/data/prepare_v05.py             --out prepared_v05             --owner "$KAGGLE_OWNER"             --main-bytes 128000000             --coder-bytes 64000000             --computer-examples 6000
+
+      - name: Verify scale and diversity
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          x=json.loads(Path('prepared_v05/sources.json').read_text())
+          s=x['stats']
+          assert x['pipeline_version']=='v0.5'
+          assert s['main']['bytes'] >= 128_000_000
+          assert s['coder']['bytes'] >= 64_000_000
+          assert s['computer_use']['examples'] >= 5_400
+          assert s['computer_use']['domains'] >= 50
+          domains=set(s['computer_use']['domain_names'])
+          required=('blender','vscode','minecraft','forza')
+          low='\n'.join(sorted(domains)).lower()
+          for name in required:
+              assert name in low, (name, sorted(domains)[:20])
+          print('MAIN_BYTES',s['main']['bytes'])
+          print('CODER_BYTES',s['coder']['bytes'])
+          print('CU_EXAMPLES',s['computer_use']['examples'])
+          print('CU_DOMAINS',s['computer_use']['domains'])
+          print(json.dumps(s['computer_use']['sources'],indent=2))
+          PY
+          du -sh prepared_v05
+
+      - name: Upload/version private Kaggle v0.5 dataset
+        run: |
+          set -euo pipefail
+          REF="$KAGGLE_OWNER/flm-hf-v05"
+          if kaggle datasets list --mine -s flm-hf-v05 -v | grep -Fq "$REF"; then
+            kaggle datasets version -p prepared_v05 -m "FLM v0.5 expanded 128MB main + 64MB coder + 6000 multidomain computer-use" -q -t -r skip
+          else
+            kaggle datasets create -p prepared_v05 -q -t -r skip
+          fi
+          for attempt in $(seq 1 60); do
+            if kaggle datasets files "$REF" --page-size 100; then
+              exit 0
+            fi
+            sleep 5
+          done
+          exit 1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flm-v05-expanded-data-manifest
+          path: |
+            prepared_v05/sources.json
+            prepared_v05/computer_manifest.jsonl
+          retention-days: 7

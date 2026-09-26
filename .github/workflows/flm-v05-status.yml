@@ -1,0 +1,82 @@
+name: FLM v0.5 Pilot Status and Fetch
+
+on:
+  push:
+    paths:
+      - '.flm-v05-status-trigger'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
+      REF: ${{ vars.KAGGLE_OWNER }}/falcon-flm-v05-pilot-gpu
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install "kaggle>=2.2.1"
+
+      - name: Probe status
+        id: status
+        shell: bash
+        run: |
+          set -euo pipefail
+          STATUS="$(kaggle kernels status "$REF" 2>&1 || true)"
+          echo "$STATUS"
+          if echo "$STATUS" | grep -q 'KernelWorkerStatus.COMPLETE'; then
+            echo "state=complete" >> "$GITHUB_OUTPUT"
+          elif echo "$STATUS" | grep -Eq 'KernelWorkerStatus.(ERROR|FAILED|CANCELLED)'; then
+            echo "state=failed" >> "$GITHUB_OUTPUT"
+          elif echo "$STATUS" | grep -q 'KernelWorkerStatus.RUNNING'; then
+            echo "state=running" >> "$GITHUB_OUTPUT"
+          else
+            echo "state=queued" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Failure logs
+        if: steps.status.outputs.state == 'failed'
+        run: kaggle kernels logs "$REF" || true
+
+      - name: Download and verify v0.5 checkpoints
+        if: steps.status.outputs.state == 'complete'
+        run: |
+          set -euo pipefail
+          mkdir -p outputs
+          kaggle kernels output "$REF" -p outputs -o
+          ROOT="outputs/flm-v0.5-pilot"
+          for M in main computer_use coder; do
+            test -s "$ROOT/$M/checkpoint.pt"
+            test -s "$ROOT/$M/metrics.json"
+          done
+          test -s "$ROOT/suite_metrics.json"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('outputs/flm-v0.5-pilot')
+          expected={
+            'main':(95_000_000,110_000_000),
+            'computer_use':(90_000_000,110_000_000),
+            'coder':(80_000_000,95_000_000),
+          }
+          for name,(lo,hi) in expected.items():
+              m=json.loads((root/name/'metrics.json').read_text())
+              print(name,json.dumps(m,sort_keys=True))
+              assert m['accelerator']=='gpu'
+              assert lo <= m['parameters'] <= hi, (name,m['parameters'])
+              assert m['eval_loss'] >= 0
+          print('V05 100M TRIO VERIFIED')
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: steps.status.outputs.state == 'complete'
+        with:
+          name: flm-v05-100m-pilot-checkpoints
+          path: outputs/flm-v0.5-pilot/
+          retention-days: 7
+          if-no-files-found: error

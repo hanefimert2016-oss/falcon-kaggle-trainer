@@ -1,0 +1,57 @@
+name: FLM v0.5 100M Pilot GPU Train
+
+on:
+  push:
+    paths:
+      - '.flm-v05-pilot-trigger'
+
+permissions:
+  contents: read
+
+jobs:
+  launch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
+      REF: ${{ vars.KAGGLE_OWNER }}/falcon-flm-v05-pilot-gpu
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install "kaggle>=2.2.1"
+
+      - name: Verify v0.5 dataset exists
+        run: kaggle datasets files "$KAGGLE_OWNER/flm-hf-v05" --page-size 100
+
+      - name: Build v0.5 100M pilot bundle
+        run: |
+          python scripts/build_kernel_bundle_v05.py             --owner "$KAGGLE_OWNER"             --profile pilot             --out kernel_v05
+          cat kernel_v05/kernel-metadata.json
+
+      - name: Submit to 2xT4 and reject soft errors
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUTPUT="$(kaggle kernels push -p kernel_v05 --accelerator NvidiaTeslaT4 --timeout 7200 2>&1)"
+          echo "$OUTPUT"
+          if echo "$OUTPUT" | grep -qi 'Kernel push error'; then
+            exit 1
+          fi
+
+      - name: Verify session exists
+        run: |
+          set -euo pipefail
+          ok=0
+          for attempt in $(seq 1 10); do
+            STATUS="$(kaggle kernels status "$REF" 2>&1 || true)"
+            echo "$STATUS"
+            if echo "$STATUS" | grep -Eq 'KernelWorkerStatus.(QUEUED|RUNNING|COMPLETE)'; then
+              ok=1
+              break
+            fi
+            sleep 3
+          done
+          test "$ok" = "1"
