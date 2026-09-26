@@ -169,17 +169,80 @@ def train_text_v05(kind, root, out_root, runtime):
 
 
 class ZipImageStore:
+    """Read image shards both locally and from Kaggle dataset mounts.
+
+    Kaggle expands uploaded .zip files into directories with the same stem.
+    The manifest intentionally keeps the original archive filename, so this
+    reader transparently handles both:
+      computer_images_000.zip/member.jpg
+      computer_images_000/member.jpg
+    """
+
     def __init__(self, root: Path):
         self.root = root
         self.handles: dict[str, zipfile.ZipFile] = {}
+        self.resolved: dict[str, tuple[str, Path]] = {}
+
+    def _resolve(self, archive: str) -> tuple[str, Path]:
+        if archive in self.resolved:
+            return self.resolved[archive]
+
+        archive_path = self.root / archive
+        if archive_path.is_file():
+            result = ("zip", archive_path)
+            self.resolved[archive] = result
+            print(f"v05_image_shard={archive}:zip:{archive_path}", flush=True)
+            return result
+
+        exploded = self.root / Path(archive).stem
+        if exploded.is_dir():
+            result = ("dir", exploded)
+            self.resolved[archive] = result
+            print(f"v05_image_shard={archive}:dir:{exploded}", flush=True)
+            return result
+
+        # Defensive fallback for nested Kaggle mount layouts.
+        matches = list(self.root.rglob(Path(archive).stem))
+        for match in matches:
+            if match.is_dir():
+                result = ("dir", match)
+                self.resolved[archive] = result
+                print(f"v05_image_shard={archive}:dir:{match}", flush=True)
+                return result
+        matches = list(self.root.rglob(Path(archive).name))
+        for match in matches:
+            if match.is_file():
+                result = ("zip", match)
+                self.resolved[archive] = result
+                print(f"v05_image_shard={archive}:zip:{match}", flush=True)
+                return result
+
+        raise FileNotFoundError(
+            f"cannot resolve v0.5 image shard {archive!r} below {self.root}"
+        )
 
     def image(self, archive: str, member: str, size: int) -> torch.Tensor:
-        if archive not in self.handles:
-            self.handles[archive] = zipfile.ZipFile(self.root / archive)
-        raw = self.handles[archive].read(member)
-        with Image.open(io.BytesIO(raw)) as im:
-            im = im.convert("RGB").resize((size, size))
-            arr = np.asarray(im, dtype=np.float32) / 255.0
+        kind, path = self._resolve(archive)
+        if kind == "zip":
+            if archive not in self.handles:
+                self.handles[archive] = zipfile.ZipFile(path)
+            raw = self.handles[archive].read(member)
+            with Image.open(io.BytesIO(raw)) as im:
+                im = im.convert("RGB").resize((size, size))
+                arr = np.asarray(im, dtype=np.float32) / 255.0
+        else:
+            image_path = path / member
+            if not image_path.is_file():
+                nested = list(path.rglob(member))
+                if not nested:
+                    raise FileNotFoundError(
+                        f"missing image member {member!r} in exploded shard {path}"
+                    )
+                image_path = nested[0]
+            with Image.open(image_path) as im:
+                im = im.convert("RGB").resize((size, size))
+                arr = np.asarray(im, dtype=np.float32) / 255.0
+
         arr = (arr - 0.5) / 0.5
         return torch.from_numpy(arr).permute(2, 0, 1).contiguous()
 

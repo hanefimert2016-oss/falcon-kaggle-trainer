@@ -158,6 +158,24 @@ jobs:
           del cu; gc.collect()
           PY
 
+      - name: FLM v0.5 Kaggle exploded image-shard regression
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from PIL import Image
+          from flm.train_v05 import ZipImageStore
+
+          root=Path('/tmp/v05-exploded')
+          shard=root/'computer_images_000'
+          shard.mkdir(parents=True,exist_ok=True)
+          Image.new('RGB',(40,30),'white').save(shard/'sample.jpg')
+
+          store=ZipImageStore(root)
+          x=store.image('computer_images_000.zip','sample.jpg',32)
+          assert tuple(x.shape)==(3,32,32), x.shape
+          print('v0.5 exploded Kaggle image shard OK',tuple(x.shape))
+          PY
+
       - name: FLM v0.5 ComputerUse masked multi-head backward
         run: |
           python - <<'PY'
