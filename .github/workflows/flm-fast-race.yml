@@ -1,4 +1,4 @@
-name: FLM Fast Accelerator Race
+name: FLM Fast GPU Train
 
 on:
   push:
@@ -11,21 +11,13 @@ permissions:
 
 jobs:
   launch:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - backend: gpu
-            accelerator: NvidiaTeslaT4
-            slug: falcon-flm-v04-fast-gpu
-          - backend: tpu
-            accelerator: TpuV5E8
-            slug: falcon-flm-v04-fast-tpu
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
       KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
       KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
+      ACCELERATOR: NvidiaTeslaT4
+      KERNEL_SLUG: falcon-flm-v04-fast-gpu
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -35,35 +27,35 @@ jobs:
       - name: Install Kaggle CLI
         run: python -m pip install "kaggle>=2.2.1"
 
-      - name: Verify prepared real HF dataset
+      - name: Verify CPU-prepared real HF dataset
         run: kaggle datasets files "$KAGGLE_OWNER/flm-hf-v04" --page-size 5
 
-      - name: Build tiny real-data accelerator bundle
+      - name: Build fast 2xT4 real-data bundle
         run: |
           python scripts/build_kernel_bundle.py \
             --owner "$KAGGLE_OWNER" \
-            --accelerator "${{ matrix.accelerator }}" \
+            --accelerator "$ACCELERATOR" \
             --profile fast \
-            --slug "${{ matrix.slug }}" \
-            --out "kernel_${{ matrix.backend }}"
+            --slug "$KERNEL_SLUG" \
+            --out kernel_gpu
           python - <<'PY'
-          import json, pathlib
-          backend = "${{ matrix.backend }}"
-          p = pathlib.Path(f"kernel_{backend}/kernel-metadata.json")
-          m = json.loads(p.read_text())
-          print(json.dumps(m, indent=2))
-          assert m["enable_internet"] is False
-          assert m["dataset_sources"] == [f"${{ env.KAGGLE_OWNER }}/flm-hf-v04"]
+          import json
+          from pathlib import Path
+          m=json.loads(Path('kernel_gpu/kernel-metadata.json').read_text())
+          print(json.dumps(m,indent=2))
+          assert m['enable_gpu'] is True
+          assert m['machine_shape']=='NvidiaTeslaT4'
+          assert m['enable_internet'] is False
           PY
 
-      - name: Submit fast real-data training
+      - name: Submit fast GPU training
         run: |
           kaggle kernels push \
-            -p "kernel_${{ matrix.backend }}" \
-            --accelerator "${{ matrix.accelerator }}" \
+            -p kernel_gpu \
+            --accelerator "$ACCELERATOR" \
             --timeout 3600
 
-      - name: Show immediate status
+      - name: Show immediate GPU status
         run: |
           sleep 2
-          kaggle kernels status "$KAGGLE_OWNER/${{ matrix.slug }}" || true
+          kaggle kernels status "$KAGGLE_OWNER/$KERNEL_SLUG" || true

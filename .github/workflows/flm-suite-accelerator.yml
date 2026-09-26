@@ -1,20 +1,10 @@
-name: FLM Three Model Accelerator Train
+name: FLM Three Model GPU Train
 
 on:
   push:
     paths:
       - '.flm-train-trigger'
   workflow_dispatch:
-    inputs:
-      accelerator:
-        description: Kaggle training/eval accelerator
-        required: true
-        default: NvidiaTeslaT4
-        type: choice
-        options:
-          - NvidiaTeslaT4
-          - TpuV5E8
-          - TpuV6E8
 
 permissions:
   contents: read
@@ -26,7 +16,7 @@ jobs:
     env:
       KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
       KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
-      ACCELERATOR: ${{ inputs.accelerator || 'NvidiaTeslaT4' }}
+      ACCELERATOR: NvidiaTeslaT4
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -35,22 +25,27 @@ jobs:
       - run: python -m pip install "kaggle>=2.2.1"
 
       - name: Verify CPU-prepared Hugging Face dataset exists
-        run: |
-          set -euo pipefail
-          REF="$KAGGLE_OWNER/flm-hf-v04"
-          kaggle datasets files "$REF" --page-size 20
+        run: kaggle datasets files "$KAGGLE_OWNER/flm-hf-v04" --page-size 20
 
-      - name: Build accelerator-only three-model kernel
+      - name: Build 2xT4 three-model kernel
         run: |
-          python scripts/build_kernel_bundle.py             --owner "$KAGGLE_OWNER"             --accelerator "$ACCELERATOR"
+          python scripts/build_kernel_bundle.py \
+            --owner "$KAGGLE_OWNER" \
+            --accelerator "$ACCELERATOR" \
+            --out kernel_bundle
           python - <<'PY'
           import json
           m=json.load(open('kernel_bundle/kernel-metadata.json'))
           print(json.dumps(m,indent=2))
+          assert m['enable_gpu'] is True
+          assert m['machine_shape']=='NvidiaTeslaT4'
           assert m['enable_internet'] is False
           assert m['dataset_sources']
           PY
 
-      - name: Train + evaluate all three models on GPU/TPU
+      - name: Train and evaluate all three models on GPU
         run: |
-          kaggle kernels push             -p kernel_bundle             --accelerator "$ACCELERATOR"             --timeout 43200
+          kaggle kernels push \
+            -p kernel_bundle \
+            --accelerator "$ACCELERATOR" \
+            --timeout 43200
