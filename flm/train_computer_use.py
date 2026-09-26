@@ -8,8 +8,8 @@ import time
 import zipfile
 
 from PIL import Image
+import numpy as np
 import torch
-from torchvision.transforms import functional as TF
 
 from flm.models import ComputerUseModel, ComputerUseConfig
 from flm.runtime import select_runtime
@@ -36,7 +36,8 @@ def load_rows(root: Path, image_dir: Path):
 def image_tensor(path: Path, size: int) -> torch.Tensor:
     with Image.open(path) as im:
         im = im.convert("RGB").resize((size, size))
-        return TF.to_tensor(im)
+        arr = np.asarray(im, dtype=np.float32) / 255.0
+        return torch.from_numpy(arr).permute(2, 0, 1).contiguous()
 
 def train_computer(data_root: Path, output_root: Path) -> dict:
     runtime = select_runtime()
