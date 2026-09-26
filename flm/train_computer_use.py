@@ -60,8 +60,11 @@ def train_computer(data_root: Path, output_root: Path) -> dict:
     if not rows:
         raise RuntimeError("computer-use dataset is empty")
 
-    model = ComputerUseModel(cfg).to(runtime.device)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4, weight_decay=0.05)
+    base = ComputerUseModel(cfg).to(runtime.device)
+    model = base
+    if runtime.kind == "gpu" and torch.cuda.device_count() > 1:
+        model = torch.nn.DataParallel(base)
+    optimizer = torch.optim.AdamW(base.parameters(), lr=3e-4, weight_decay=0.05)
     scaler = torch.amp.GradScaler("cuda", enabled=runtime.kind == "gpu")
 
     out = output_root / "computer_use"
@@ -101,7 +104,7 @@ def train_computer(data_root: Path, output_root: Path) -> dict:
         else:
             loss.backward()
 
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+        torch.nn.utils.clip_grad_norm_(base.parameters(), 1.0)
         runtime.optimizer_step(optimizer, scaler)
         last = float(loss.detach())
 
@@ -113,7 +116,7 @@ def train_computer(data_root: Path, output_root: Path) -> dict:
         "accelerator": runtime.kind,
         "device": str(runtime.device),
         "gpu_names": runtime.gpu_names,
-        "parameters": sum(p.numel() for p in model.parameters()),
+        "parameters": sum(p.numel() for p in base.parameters()),
         "steps": steps,
         "loss": last,
         "elapsed_s": time.time() - start,
@@ -121,7 +124,7 @@ def train_computer(data_root: Path, output_root: Path) -> dict:
         "config": cfg.__dict__,
     }
     torch.save(
-        {"model": model.state_dict(), "config": cfg.__dict__, "result": result},
+        {"model": base.state_dict(), "config": cfg.__dict__, "result": result},
         out / "checkpoint.pt",
     )
     (out / "metrics.json").write_text(
