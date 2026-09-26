@@ -46,7 +46,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          SCALE="${{ inputs.scale || 'expanded' }}"
+          SCALE="${{ inputs.scale || 'pilot' }}"
           if [ "$SCALE" = "pilot" ]; then
             MAIN=16000000
             CODER=8000000
