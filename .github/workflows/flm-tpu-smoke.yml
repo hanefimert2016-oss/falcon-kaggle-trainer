@@ -27,7 +27,10 @@ jobs:
 
       - name: Build TPU smoke bundle
         run: |
-          python scripts/build_kernel_bundle.py             --owner "$KAGGLE_OWNER"             --accelerator TpuV5E8             --out kernel_tpu
+          python scripts/build_kernel_bundle.py \
+            --owner "$KAGGLE_OWNER" \
+            --accelerator TpuV5E8 \
+            --out kernel_tpu
 
           python - <<'PY'
           import json
@@ -42,27 +45,29 @@ jobs:
           w=Path('kernel_tpu/train_suite.py')
           s=w.read_text()
           marker='os.environ.setdefault("FLM_SMOKE", "1")'
-          inject='''os.environ.setdefault("FLM_SMOKE", "1")
-os.environ["FLM_MAIN_STEPS"] = "3"
-os.environ["FLM_CODER_STEPS"] = "3"
-os.environ["FLM_COMPUTER_STEPS"] = "2"
-os.environ["FLM_BATCH"] = "2"
-os.environ["FLM_GRAD_ACCUM"] = "1"
-os.environ["FLM_MAIN_SEQ_LEN"] = "64"
-os.environ["FLM_MAIN_LAYERS"] = "2"
-os.environ["FLM_MAIN_HEADS"] = "4"
-os.environ["FLM_MAIN_EMBD"] = "128"
-os.environ["FLM_CODER_SEQ_LEN"] = "64"
-os.environ["FLM_CODER_LAYERS"] = "2"
-os.environ["FLM_CODER_HEADS"] = "4"
-os.environ["FLM_CODER_EMBD"] = "128"
-os.environ["FLM_COMPUTER_BATCH"] = "1"
-os.environ["FLM_COMPUTER_IMAGE_SIZE"] = "64"
-os.environ["FLM_COMPUTER_EMBD"] = "64"
-os.environ["FLM_COMPUTER_HEADS"] = "4"
-os.environ["FLM_COMPUTER_TEXT_LAYERS"] = "1"
-os.environ["FLM_COMPUTER_VISION_LAYERS"] = "1"
-'''
+          lines=[
+              'os.environ.setdefault("FLM_SMOKE", "1")',
+              'os.environ["FLM_MAIN_STEPS"] = "3"',
+              'os.environ["FLM_CODER_STEPS"] = "3"',
+              'os.environ["FLM_COMPUTER_STEPS"] = "2"',
+              'os.environ["FLM_BATCH"] = "2"',
+              'os.environ["FLM_GRAD_ACCUM"] = "1"',
+              'os.environ["FLM_MAIN_SEQ_LEN"] = "64"',
+              'os.environ["FLM_MAIN_LAYERS"] = "2"',
+              'os.environ["FLM_MAIN_HEADS"] = "4"',
+              'os.environ["FLM_MAIN_EMBD"] = "128"',
+              'os.environ["FLM_CODER_SEQ_LEN"] = "64"',
+              'os.environ["FLM_CODER_LAYERS"] = "2"',
+              'os.environ["FLM_CODER_HEADS"] = "4"',
+              'os.environ["FLM_CODER_EMBD"] = "128"',
+              'os.environ["FLM_COMPUTER_BATCH"] = "1"',
+              'os.environ["FLM_COMPUTER_IMAGE_SIZE"] = "64"',
+              'os.environ["FLM_COMPUTER_EMBD"] = "64"',
+              'os.environ["FLM_COMPUTER_HEADS"] = "4"',
+              'os.environ["FLM_COMPUTER_TEXT_LAYERS"] = "1"',
+              'os.environ["FLM_COMPUTER_VISION_LAYERS"] = "1"',
+          ]
+          inject='\n'.join(lines)
           assert marker in s
           w.write_text(s.replace(marker,inject))
           print(json.dumps(m,indent=2))
@@ -70,4 +75,7 @@ os.environ["FLM_COMPUTER_VISION_LAYERS"] = "1"
 
       - name: Push TPU v5e-8 real-data smoke
         run: |
-          kaggle kernels push             -p kernel_tpu             --accelerator TpuV5E8             --timeout 43200
+          kaggle kernels push \
+            -p kernel_tpu \
+            --accelerator TpuV5E8 \
+            --timeout 43200
