@@ -27,7 +27,7 @@ jobs:
 
       - name: Python compile
         run: |
-          python -m py_compile             falconctl.py             kaggle/train_flm.py             scripts/colab_setup.py             scripts/build_kernel_bundle.py             flm/runtime.py             flm/models/text_lm.py             flm/models/computer_use.py             flm/models/computer_use_v2.py             flm/data/prepare_hf.py             flm/data/prepare_v05.py             flm/data/prepare_v06.py             flm/data/preflight_v05.py             flm/train_v05.py             flm/train_v06.py             flm/train_text.py             flm/train_computer_use.py             flm/train_suite.py
+          python -m py_compile             falconctl.py             kaggle/train_flm.py             scripts/colab_setup.py             scripts/build_kernel_bundle.py             flm/runtime.py             flm/models/text_lm.py             flm/models/computer_use.py             flm/models/computer_use_v2.py             flm/data/prepare_hf.py             flm/data/prepare_v05.py             flm/data/prepare_v06.py             flm/data/preflight_v05.py             flm/train_v05.py             flm/train_v06.py             flm/train_text.py             flm/train_computer_use.py             flm/train_suite.py             run_flm_v06.py             scripts/validate_v06_quality.py
 
       - name: Unit tests
         run: pytest -q
@@ -339,6 +339,23 @@ jobs:
           s=(Path('/tmp/v06')/'train_v06.py').read_text()
           assert 'FLM_V06_MAIN_EPOCHS' in s and 'FLM_V06_CU_EPOCHS' in s
           print('v0.6 bundle OK')
+          PY
+
+      - name: FLM v0.6 quality-gate regression
+        run: |
+          python - <<'PY'
+          from scripts.validate_v06_quality import validate
+          good=[
+            {'prompt':'Merhaba, nasılsın?','output':'Merhaba! İyiyim, teşekkür ederim. Sana nasıl yardımcı olabilirim?'},
+            {'prompt':"Türkiye'nin başkenti neresidir?",'output':"Türkiye'nin başkenti Ankara'dır."},
+            {'prompt':'Bugün kendimi biraz yorgun hissediyorum. Bana kısa bir öneri ver.','output':'Kısa bir mola verip biraz su içebilir ve dinlenebilirsin.'},
+            {'prompt':'Hello! How are you today?','output':"Hello! I'm doing well today. How can I help you?"},
+          ]
+          assert not validate(good), validate(good)
+          bad=[dict(x) for x in good]
+          bad[1]={'prompt':"Türkiye'nin başkenti neresidir?",'output':'....,,,,....'}
+          assert validate(bad)
+          print('v0.6 quality gate regression OK')
           PY
 
       - name: Main and coder 1-step CPU regression
