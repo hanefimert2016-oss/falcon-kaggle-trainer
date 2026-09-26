@@ -1,1 +1,1 @@
-start full v05 gpu training now
+restart full v05 gpu training after dataparallel loss-key fix
