@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       accelerator:
-        description: Kaggle accelerator
+        description: Kaggle training/eval accelerator
         required: true
         default: NvidiaTeslaT4
         type: choice
@@ -34,14 +34,23 @@ jobs:
           python-version: '3.11'
       - run: python -m pip install "kaggle>=2.2.1"
 
-      - name: Verify CPU-prepared data exists
+      - name: Verify CPU-prepared Hugging Face dataset exists
         run: |
           set -euo pipefail
           REF="$KAGGLE_OWNER/flm-hf-v04"
           kaggle datasets files "$REF" --page-size 20
 
-      - name: Build accelerator-only kernel bundle
-        run: python scripts/build_kernel_bundle.py --owner "$KAGGLE_OWNER" --accelerator "$ACCELERATOR"
+      - name: Build accelerator-only three-model kernel
+        run: |
+          python scripts/build_kernel_bundle.py             --owner "$KAGGLE_OWNER"             --accelerator "$ACCELERATOR"
+          python - <<'PY'
+          import json
+          m=json.load(open('kernel_bundle/kernel-metadata.json'))
+          print(json.dumps(m,indent=2))
+          assert m['enable_internet'] is False
+          assert m['dataset_sources']
+          PY
 
-      - name: Push three-model training suite
-        run: kaggle kernels push -p kernel_bundle --accelerator "$ACCELERATOR" --timeout 43200
+      - name: Train + evaluate all three models on GPU/TPU
+        run: |
+          kaggle kernels push             -p kernel_bundle             --accelerator "$ACCELERATOR"             --timeout 43200

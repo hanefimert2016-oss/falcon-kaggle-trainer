@@ -5,9 +5,14 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 
+
 @dataclass
 class ComputerUseConfig:
-    byte_vocab: int = 256
+    # 0..255 = UTF-8 bytes, 256=BOS, 257=EOS, 258=PAD
+    byte_vocab: int = 259
+    bos_token: int = 256
+    eos_token: int = 257
+    pad_token: int = 258
     task_len: int = 128
     action_len: int = 96
     image_size: int = 224
@@ -16,10 +21,16 @@ class ComputerUseConfig:
     text_layers: int = 2
     vision_layers: int = 2
     n_head: int = 8
-    num_ops: int = 3
+    # CLICK, TYPE, KEY, SCROLL, MOVE, OTHER
+    num_ops: int = 6
+
 
 class ComputerUseModel(nn.Module):
-    """Screenshot + natural-language task -> operation type + action text."""
+    """From-scratch screenshot + task -> UI operation + executable action text.
+
+    Vision is learned from screenshot patches; language/action tokens are byte-level.
+    This model does not depend on a pretrained VLM.
+    """
 
     def __init__(self, cfg: ComputerUseConfig):
         super().__init__()
@@ -32,6 +43,8 @@ class ComputerUseModel(nn.Module):
             nhead=cfg.n_head,
             batch_first=True,
             norm_first=True,
+            dim_feedforward=4 * cfg.embd,
+            activation="gelu",
         )
         self.text_encoder = nn.TransformerEncoder(text_layer, cfg.text_layers)
 
@@ -45,6 +58,8 @@ class ComputerUseModel(nn.Module):
             nhead=cfg.n_head,
             batch_first=True,
             norm_first=True,
+            dim_feedforward=4 * cfg.embd,
+            activation="gelu",
         )
         self.vision_encoder = nn.TransformerEncoder(
             vision_layer, cfg.vision_layers
@@ -66,8 +81,11 @@ class ComputerUseModel(nn.Module):
     def encode(self, images: torch.Tensor, task: torch.Tensor) -> torch.Tensor:
         t = task.size(1)
         pos = torch.arange(t, device=task.device)
+        task_pad = task.eq(self.cfg.pad_token)
         tx = self.task_emb(task) + self.task_pos(pos)[None]
-        tx = self.text_encoder(tx).mean(dim=1)
+        tx = self.text_encoder(tx, src_key_padding_mask=task_pad)
+        valid = (~task_pad).to(tx.dtype).unsqueeze(-1)
+        tx = (tx * valid).sum(dim=1) / valid.sum(dim=1).clamp_min(1.0)
 
         vx = self.patchify(images).flatten(2).transpose(1, 2)
         vx = self.vision_encoder(
@@ -97,6 +115,7 @@ class ComputerUseModel(nn.Module):
             action_loss = F.cross_entropy(
                 action_logits.reshape(-1, action_logits.size(-1)),
                 action_target.reshape(-1),
+                ignore_index=-100,
             )
             loss = op_loss + action_loss
 

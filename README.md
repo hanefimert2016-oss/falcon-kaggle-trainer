@@ -1,62 +1,74 @@
-# Falcon FLM Trainer v0.3
+# Falcon FLM v0.4 — Three-Model Architecture
 
-GitHub Actions is the control plane. The same from-scratch FLM training engine can now run on **Kaggle GPU** or **Google Colab GPU**.
+Falcon FLM now has three **separate, from-scratch checkpoints**:
 
-## Backends
+1. **Main model** — byte-level causal language model trained on real educational web text.
+2. **Computer Use model** — screenshot vision encoder + task encoder + action decoder for GUI operation prediction.
+3. **Coder model** — separate byte-level causal language model trained on real code + natural-language programming data.
 
-### Kaggle — automatic backend
+No pretrained Qwen/Llama/VLM weights are required by this architecture.
 
-- GitHub Actions authenticates with `KAGGLE_API_TOKEN`.
-- GitHub can push the trainer, query status/logs/quota, and download outputs.
-- Tested successfully on **2× Tesla T4**.
-- Outputs include `checkpoint.pt`, `metrics.json`, and `runtime.json`.
+## Real Hugging Face data
 
-Required repository configuration:
+The CPU data stage samples:
 
-- Secret: `KAGGLE_API_TOKEN`
-- Variable: `KAGGLE_OWNER`
-- Optional variable: `KAGGLE_KERNEL_SLUG`
+- `codelion/fineweb-edu-100M` → main model
+- `Nan-Do/code-search-net-python` → coder model
+- `markov-ai/computer-use` → computer-use vision/action model
 
-### Google Colab — interactive GPU backend
+The exact source IDs, licenses, sample counts and prepared sizes are saved in `sources.json`.
 
-Open:
+## CPU → accelerator split
 
-https://colab.research.google.com/github/hanefimert2016-oss/falcon-kaggle-trainer/blob/main/colab/Falcon_FLM_Trainer.ipynb
-
-The notebook:
-
-1. mounts Google Drive,
-2. clones/updates this GitHub repo,
-3. detects CUDA and the assigned GPU,
-4. uses the same `kaggle/train_flm.py` engine,
-5. reads `.txt` training data from `MyDrive/FalconFLM/data/`,
-6. saves checkpoints to `MyDrive/FalconFLM/runs/colab-v0.3/`.
-
-No pretrained Llama/Qwen model or pretrained tokenizer is required.
-
-## Portable trainer paths
-
-The shared trainer supports:
-
-- `FLM_DATA_DIR` — input directory containing `.txt` files.
-- `FLM_OUTPUT_DIR` — directory for checkpoint and metrics.
-
-Defaults are selected automatically for Kaggle, Colab, or a local machine.
-
-## GitHub Actions
-
-The repository also contains:
-
-- Kaggle training control workflows,
-- Kaggle auth/status/output verification,
-- single-CPU Actions test,
-- CI that validates Python, YAML, the Colab notebook, Colab setup, model forward/backward, and a full 1-step CPU training run.
-
-## Local smoke test
-
-```bash
-./setup.sh
-export FLM_DATA_DIR="$PWD/data"
-export FLM_OUTPUT_DIR="$PWD/outputs/local"
-python kaggle/train_flm.py
+```text
+GitHub Actions CPU
+  ├─ Hugging Face download
+  ├─ text/code filtering
+  ├─ screenshot JPEG preprocessing
+  └─ private Kaggle dataset: flm-hf-v04
+                    |
+                    v
+Kaggle GPU or TPU
+  ├─ main model train + heldout eval
+  ├─ computer_use vision model train + heldout eval
+  └─ coder model train + heldout eval
+                    |
+                    v
+       three separate checkpoint.pt files
 ```
+
+CPU preparation explicitly runs with `CUDA_VISIBLE_DEVICES=""`. The Kaggle bundle explicitly sets `FLM_ACCELERATOR=gpu` for Nvidia accelerators and `FLM_ACCELERATOR=tpu` for TPU accelerators.
+
+## Computer Use vision model
+
+Input:
+
+- screenshot
+- natural-language task
+
+Output:
+
+- operation class: `CLICK | TYPE | KEY | SCROLL | MOVE | OTHER`
+- byte-level executable action text
+
+The vision tower is a from-scratch patch encoder using convolutional patchification + Transformer layers. It is fused with a byte-level task encoder and a recurrent action decoder.
+
+## Workflows
+
+- **FLM HF Data CPU Prep** — downloads/prepares real HF data on CPU and versions the private Kaggle dataset.
+- **FLM Three Model Accelerator Train** — trains/evaluates all three checkpoints on T4 GPU or TPU.
+- **Falcon CI** — syntax, YAML, GPU/TPU bundle generation, language regression, and vision computer-use regression.
+
+## Accelerator options
+
+The launcher supports:
+
+- `NvidiaTeslaT4`
+- `TpuV5E8`
+- `TpuV6E8`
+
+TPU execution uses the `torch_xla` path in `flm/runtime.py`; GPU execution uses CUDA mixed precision and uses multiple visible GPUs through `DataParallel` where applicable.
+
+## Current scope
+
+The default `FLM_SMOKE=1` profile is an architecture/data/accelerator validation run, not a fully converged production model. Increase model dimensions, data shard size and step counts only after the verified smoke pipeline is clean.

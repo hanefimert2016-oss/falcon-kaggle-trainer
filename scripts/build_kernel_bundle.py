@@ -5,9 +5,9 @@ import argparse
 import base64
 import io
 import json
+import os
 from pathlib import Path
 import shutil
-import textwrap
 import zipfile
 
 
@@ -20,16 +20,22 @@ def make_embedded_package(root: Path) -> str:
     return base64.b64encode(buffer.getvalue()).decode("ascii")
 
 
-def make_wrapper(payload: str) -> str:
+def make_wrapper(payload: str, accelerator: str) -> str:
     chunks = "\n".join(
         f'    "{payload[i:i+100]}"'
         for i in range(0, len(payload), 100)
     )
+    backend = "tpu" if accelerator.lower().startswith("tpu") else "gpu"
     return f'''# Auto-generated Falcon FLM v0.4 Kaggle bundle.
 import base64
 import os
 from pathlib import Path
 import sys
+
+# Download/preprocessing already happened on GitHub CPU.
+# This Kaggle job is accelerator-only for training + evaluation.
+os.environ["FLM_ACCELERATOR"] = "{backend}"
+os.environ.setdefault("FLM_SMOKE", "1")
 
 _PAYLOAD = (
 {chunks}
@@ -61,9 +67,10 @@ def main() -> int:
     out.mkdir(parents=True)
 
     payload = make_embedded_package(root)
-    wrapper = make_wrapper(payload)
+    wrapper = make_wrapper(payload, args.accelerator)
     (out / "train_suite.py").write_text(wrapper, encoding="utf-8")
 
+    is_gpu = args.accelerator.startswith("Nvidia")
     meta = {
         "id": f"{args.owner}/falcon-flm-v04-three-model-suite",
         "title": "Falcon FLM v04 Three Model Suite",
@@ -71,7 +78,7 @@ def main() -> int:
         "language": "python",
         "kernel_type": "script",
         "is_private": True,
-        "enable_gpu": args.accelerator.startswith("Nvidia"),
+        "enable_gpu": is_gpu,
         "enable_internet": False,
         "machine_shape": args.accelerator,
         "dataset_sources": [f"{args.owner}/flm-hf-v04"],
@@ -91,6 +98,7 @@ def main() -> int:
                 "embedded_package_base64_bytes": len(payload),
                 "code_file_bytes": (out / "train_suite.py").stat().st_size,
                 "accelerator": args.accelerator,
+                "backend": "gpu" if is_gpu else "tpu",
             }
         )
     )

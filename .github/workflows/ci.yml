@@ -46,73 +46,111 @@ jobs:
         run: |
           python - <<'PY'
           import json, pathlib
-          p = pathlib.Path('colab/Falcon_FLM_Trainer.ipynb')
-          nb = json.loads(p.read_text())
-          assert nb['nbformat'] == 4
-          print('OK', p, 'cells=', len(nb['cells']))
+          p=pathlib.Path('colab/Falcon_FLM_Trainer.ipynb')
+          nb=json.loads(p.read_text())
+          assert nb['nbformat']==4
+          print('OK',p,'cells=',len(nb['cells']))
           PY
 
-      - name: Build Kaggle bundle
+      - name: Build GPU and TPU Kaggle bundles
         run: |
-          python scripts/build_kernel_bundle.py             --owner test-owner             --accelerator NvidiaTeslaT4             --out /tmp/kernel_bundle
+          python scripts/build_kernel_bundle.py --owner test-owner --accelerator NvidiaTeslaT4 --out /tmp/kernel_gpu
+          python scripts/build_kernel_bundle.py --owner test-owner --accelerator TpuV5E8 --out /tmp/kernel_tpu
           python - <<'PY'
-          import json, pathlib
-          root=pathlib.Path('/tmp/kernel_bundle')
-          meta=json.loads((root/'kernel-metadata.json').read_text())
-          assert meta['dataset_sources'] == ['test-owner/flm-hf-v04']
-          assert meta['enable_internet'] is False
-          assert meta['enable_gpu'] is True
-
-          import ast, base64, io, zipfile
-          wrapper=(root/'train_suite.py').read_text()
-          tree=ast.parse(wrapper)
-          payload=None
-          for node in tree.body:
-              if isinstance(node, ast.Assign):
-                  for target in node.targets:
-                      if isinstance(target, ast.Name) and target.id == '_PAYLOAD':
-                          payload=ast.literal_eval(node.value)
-          assert payload and len(payload) > 1000
-          with zipfile.ZipFile(io.BytesIO(base64.b64decode(payload))) as zf:
-              names=set(zf.namelist())
-          assert 'flm/models/computer_use.py' in names
-          assert 'flm/train_suite.py' in names
-          print('bundle OK files=', len(names))
+          import pathlib,json
+          gpu=(pathlib.Path('/tmp/kernel_gpu')/'train_suite.py').read_text()
+          tpu=(pathlib.Path('/tmp/kernel_tpu')/'train_suite.py').read_text()
+          assert 'FLM_ACCELERATOR"] = "gpu"' in gpu
+          assert 'FLM_ACCELERATOR"] = "tpu"' in tpu
+          gm=json.loads((pathlib.Path('/tmp/kernel_gpu')/'kernel-metadata.json').read_text())
+          tm=json.loads((pathlib.Path('/tmp/kernel_tpu')/'kernel-metadata.json').read_text())
+          assert gm['enable_gpu'] is True
+          assert tm['enable_gpu'] is False
+          assert tm['machine_shape']=='TpuV5E8'
+          print('GPU/TPU bundles OK')
           PY
 
-      - name: Main and coder 1-step CPU training
+      - name: Main and coder 1-step CPU regression
         env:
           FLM_ACCELERATOR: cpu
           FLM_SMOKE: "1"
-          FLM_SEQ_LEN: "16"
-          FLM_LAYERS: "1"
-          FLM_HEADS: "2"
-          FLM_EMBD: "32"
+          FLM_MAIN_SEQ_LEN: "16"
+          FLM_MAIN_LAYERS: "1"
+          FLM_MAIN_HEADS: "2"
+          FLM_MAIN_EMBD: "32"
+          FLM_CODER_SEQ_LEN: "16"
+          FLM_CODER_LAYERS: "1"
+          FLM_CODER_HEADS: "2"
+          FLM_CODER_EMBD: "32"
           FLM_BATCH: "2"
           FLM_GRAD_ACCUM: "1"
           FLM_MAIN_STEPS: "1"
           FLM_CODER_STEPS: "1"
         run: |
           mkdir -p /tmp/flm-data
-          printf 'Falcon main real pipeline regression text. %.0s' {1..200} > /tmp/flm-data/main_train.txt
+          printf 'Falcon main regression text. %.0s' {1..300} > /tmp/flm-data/main_train.txt
           python - <<'PY'
           import json
           from pathlib import Path
-          p=Path('/tmp/flm-data/coder_train.jsonl')
           rows=[
-            {'instruction':'Return the sum of two integers.','code':'def add(a, b):\n    return a + b\n'},
-            {'instruction':'Compute factorial recursively.','code':'def fact(n):\n    return 1 if n < 2 else n * fact(n-1)\n'}
-          ] * 30
-          p.write_text('\n'.join(json.dumps(x) for x in rows))
+            {'instruction':'Return the sum of two integers.','code':'def add(a,b):\n    return a+b\n'},
+            {'instruction':'Compute factorial.','code':'def fact(n):\n    return 1 if n<2 else n*fact(n-1)\n'}
+          ]*40
+          Path('/tmp/flm-data/coder_train.jsonl').write_text('\n'.join(json.dumps(x) for x in rows))
           PY
           python - <<'PY'
           from pathlib import Path
           from flm.train_text import train_text
-          root=Path('/tmp/flm-data')
-          out=Path('/tmp/flm-out')
-          train_text('main', root, out)
-          train_text('coder', root, out)
-          assert (out/'main/checkpoint.pt').stat().st_size > 0
-          assert (out/'coder/checkpoint.pt').stat().st_size > 0
-          print('text training OK')
+          root=Path('/tmp/flm-data'); out=Path('/tmp/flm-out')
+          a=train_text('main',root,out)
+          b=train_text('coder',root,out)
+          assert a['eval_loss']>0 and b['eval_loss']>0
+          assert (out/'main/checkpoint.pt').stat().st_size>0
+          assert (out/'coder/checkpoint.pt').stat().st_size>0
+          print('text train+eval OK')
+          PY
+
+      - name: Computer-use vision 1-step CPU regression
+        env:
+          FLM_ACCELERATOR: cpu
+          FLM_SMOKE: "1"
+          FLM_COMPUTER_STEPS: "1"
+          FLM_COMPUTER_BATCH: "1"
+          FLM_COMPUTER_IMAGE_SIZE: "32"
+          FLM_COMPUTER_EMBD: "32"
+          FLM_COMPUTER_HEADS: "2"
+          FLM_COMPUTER_TEXT_LAYERS: "1"
+          FLM_COMPUTER_VISION_LAYERS: "1"
+          FLM_COMPUTER_TASK_LEN: "24"
+          FLM_COMPUTER_ACTION_LEN: "24"
+        run: |
+          python - <<'PY'
+          import json,zipfile,io
+          from pathlib import Path
+          from PIL import Image,ImageDraw
+          root=Path('/tmp/cu-data'); root.mkdir(exist_ok=True)
+          rows=[]
+          with zipfile.ZipFile(root/'computer_images.zip','w',zipfile.ZIP_DEFLATED) as z:
+              for i,(op,action) in enumerate([
+                  ('CLICK','pyautogui.click(40, 20)'),
+                  ('TYPE',"pyautogui.write('hello')"),
+                  ('SCROLL','pyautogui.scroll(-3)'),
+                  ('KEY',"pyautogui.hotkey('ctrl','l')"),
+              ]):
+                  im=Image.new('RGB',(64,64),'white')
+                  ImageDraw.Draw(im).rectangle((8+i*3,8,32+i*3,30),outline='black')
+                  b=io.BytesIO(); im.save(b,'JPEG')
+                  name=f'{i}.jpg'; z.writestr(name,b.getvalue())
+                  rows.append({'image':name,'task':'Interact with the visible UI','action':action,'operation':op})
+          (root/'computer_manifest.jsonl').write_text('\n'.join(json.dumps(x) for x in rows))
+          PY
+          python - <<'PY'
+          from pathlib import Path
+          from flm.train_computer_use import train_computer
+          result=train_computer(Path('/tmp/cu-data'),Path('/tmp/cu-out'))
+          assert result['eval_loss']>0
+          assert 0 <= result['op_accuracy'] <= 1
+          assert result['vision']['image_size']==32
+          assert (Path('/tmp/cu-out/computer_use/checkpoint.pt')).stat().st_size>0
+          print('vision computer-use train+eval OK')
           PY

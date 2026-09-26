@@ -17,12 +17,18 @@ jobs:
       KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
       KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
       HF_HUB_DISABLE_TELEMETRY: "1"
-      HF_HUB_DISABLE_XET: "1"
+      CUDA_VISIBLE_DEVICES: ""
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
+      - name: Prove CPU-only preparation phase
+        run: |
+          echo "phase=CPU download/preprocess"
+          echo "cpu_count=$(nproc)"
+          test -z "$CUDA_VISIBLE_DEVICES"
 
       - name: Install CPU data tools
         run: python -m pip install "datasets>=4.0" pillow "kaggle>=2.2.1"
@@ -30,15 +36,28 @@ jobs:
       - name: Download and prepare real Hugging Face data on CPU
         run: |
           test -n "$KAGGLE_OWNER"
-          python flm/data/prepare_hf.py --out prepared_hf --owner "$KAGGLE_OWNER"
+          python flm/data/prepare_hf.py             --out prepared_hf             --owner "$KAGGLE_OWNER"             --main-docs 256             --main-bytes 8000000             --coder-examples 800             --coder-bytes 8000000             --computer-examples 48             --computer-trajectories 12             --computer-steps 6
 
-      - name: Verify prepared dataset
+      - name: Verify prepared real dataset
         run: |
           test -s prepared_hf/main_train.txt
           test -s prepared_hf/coder_train.jsonl
           test -s prepared_hf/computer_manifest.jsonl
           test -s prepared_hf/computer_images.zip
-          cat prepared_hf/sources.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          x=json.loads(Path('prepared_hf/sources.json').read_text())
+          expected={
+            'main':'codelion/fineweb-edu-100M',
+            'coder':'Nan-Do/code-search-net-python',
+            'computer_use':'markov-ai/computer-use',
+          }
+          for key,repo in expected.items():
+              assert x['sources'][key]['repo']==repo
+              assert x['stats'][key]['examples']>0
+          print(json.dumps(x,indent=2))
+          PY
           du -h prepared_hf/*
 
       - name: Upload or version private Kaggle CPU-prepared dataset
@@ -46,14 +65,14 @@ jobs:
           set -euo pipefail
           REF="$KAGGLE_OWNER/flm-hf-v04"
           if kaggle datasets list --mine -s flm-hf-v04 -v | grep -Fq "$REF"; then
-            echo "Dataset already exists; creating a new version"
-            kaggle datasets version -p prepared_hf -m "Refresh HF CPU-prepared training shard" -q -t -r skip
+            echo "Dataset exists; creating a new version"
+            kaggle datasets version -p prepared_hf -m "Real HF trio data: FineWeb-Edu + CodeSearchNet + computer-use" -q -t -r skip
           else
             echo "Creating private dataset $REF"
             kaggle datasets create -p prepared_hf -q -t -r skip
           fi
 
-          echo "Waiting for dataset files to become readable..."
+          echo "Waiting for Kaggle dataset files..."
           ready=0
           for attempt in $(seq 1 24); do
             if kaggle datasets files "$REF" --page-size 20; then
@@ -67,10 +86,8 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: flm-hf-v04-cpu-prepared
+          name: flm-hf-v04-cpu-prepared-manifest
           path: |
             prepared_hf/sources.json
-            prepared_hf/main_train.txt
-            prepared_hf/coder_train.jsonl
             prepared_hf/computer_manifest.jsonl
           retention-days: 3
