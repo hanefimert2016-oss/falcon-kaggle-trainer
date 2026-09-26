@@ -1,0 +1,6 @@
+__pycache__/
+.pytest_cache/
+.venv/
+outputs/
+kaggle/kernel-metadata.json
+*.pyc

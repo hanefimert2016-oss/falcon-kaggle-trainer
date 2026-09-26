@@ -1,0 +1,82 @@
+name: Falcon Kaggle Train
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Kaggle operation
+        required: true
+        default: push
+        type: choice
+        options: [push, status, logs, output, quota]
+      accelerator:
+        description: Kaggle accelerator
+        required: true
+        default: NvidiaTeslaT4
+        type: choice
+        options: [NvidiaTeslaT4, NvidiaL4, NvidiaTeslaA100]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: falcon-kaggle-control
+  cancel-in-progress: false
+
+jobs:
+  control:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
+      KAGGLE_KERNEL_SLUG: ${{ vars.KAGGLE_KERNEL_SLUG || 'falcon-flm-train' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install control dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Validate configuration
+        run: |
+          test -n "$KAGGLE_API_TOKEN" || (echo 'Missing KAGGLE_API_TOKEN secret' && exit 1)
+          test -n "$KAGGLE_OWNER" || (echo 'Missing KAGGLE_OWNER repository variable' && exit 1)
+
+      - name: Validate project
+        run: |
+          python falconctl.py render --accelerator '${{ inputs.accelerator }}'
+          python falconctl.py validate
+
+      - name: Push and start Kaggle training
+        if: inputs.action == 'push'
+        run: python falconctl.py push --accelerator '${{ inputs.accelerator }}'
+
+      - name: Show Kaggle status
+        if: inputs.action == 'status'
+        run: python falconctl.py status
+
+      - name: Show Kaggle logs
+        if: inputs.action == 'logs'
+        run: python falconctl.py logs
+
+      - name: Show Kaggle accelerator quota
+        if: inputs.action == 'quota'
+        run: python falconctl.py quota
+
+      - name: Download Kaggle outputs
+        if: inputs.action == 'output'
+        run: python falconctl.py output --dir outputs
+
+      - name: Upload training outputs as GitHub artifact
+        if: inputs.action == 'output'
+        uses: actions/upload-artifact@v4
+        with:
+          name: flm-kaggle-output
+          path: outputs/
+          if-no-files-found: error
+          retention-days: 7
