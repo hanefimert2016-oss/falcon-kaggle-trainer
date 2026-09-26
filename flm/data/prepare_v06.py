@@ -202,6 +202,8 @@ def prepare_coder(out: Path, target_bytes: int) -> dict:
 
 
 def normalize_sft_row(row: dict) -> tuple[str, str] | None:
+    # Some CSV-backed HF datasets preserve whitespace around column names.
+    row = {str(k).strip(): v for k, v in row.items()}
     instruction = row.get("instruction") or row.get("talimat") or row.get("question") or ""
     extra = row.get("input") or row.get("giriş") or row.get("giris") or ""
     output = row.get("output") or row.get("çıktı") or row.get("cikti") or row.get("answer") or ""
@@ -239,6 +241,7 @@ def prepare_sft(out: Path, max_rows_per_source: int = 60_000) -> dict:
                 if added >= max_rows_per_source:
                     break
             counts[key] = {"rows": added, "duplicates_skipped": dup}
+            print(f"v06_data sft_source={key} rows={added} dup={dup}", flush=True)
     rows = sum(x["rows"] for x in counts.values())
     if rows < 80_000:
         raise RuntimeError(f"SFT corpus unexpectedly small: {rows}")
