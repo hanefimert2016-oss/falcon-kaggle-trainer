@@ -22,7 +22,7 @@ jobs:
           python-version: '3.11'
       - run: python -m pip install "kaggle>=2.2.1"
       - name: Kernel status
-        run: kaggle kernels status "$KAGGLE_OWNER/falcon-flm-v04-suite"
+        run: kaggle kernels status "$KAGGLE_OWNER/falcon-flm-v04-three-model-suite"
       - name: Kernel logs
         run: kaggle kernels logs "$KAGGLE_OWNER/falcon-flm-v04-suite" || true
       - name: Quota
