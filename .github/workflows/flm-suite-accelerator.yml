@@ -35,7 +35,10 @@ jobs:
       - run: python -m pip install "kaggle>=2.2.1"
 
       - name: Verify CPU-prepared data exists
-        run: kaggle datasets status "$KAGGLE_OWNER/flm-hf-v04"
+        run: |
+          set -euo pipefail
+          REF="$KAGGLE_OWNER/flm-hf-v04"
+          kaggle datasets files "$REF" --page-size 20
 
       - name: Build accelerator-only kernel bundle
         run: python scripts/build_kernel_bundle.py --owner "$KAGGLE_OWNER" --accelerator "$ACCELERATOR"
