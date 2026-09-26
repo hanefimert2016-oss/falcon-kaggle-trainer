@@ -61,6 +61,11 @@ SOURCES = {
         "license": "cc-by-4.0",
         "role": "10 popular game screen categories including Forza/Minecraft",
     },
+    "forza_visuals": {
+        "repo": "ILoveCorn/forza-horizon",
+        "license": "afl-3.0",
+        "role": "guaranteed Forza Horizon screenshots/captions",
+    },
     "professional_video": {
         "repo": "markov-ai/computer-use-large",
         "license": "cc-by-4.0",
@@ -460,6 +465,38 @@ def add_game_visuals(rows, writer, target):
     return {"examples": added, "games": counts}
 
 
+def add_forza_visuals(rows, writer, target=50):
+    """Add a guaranteed Forza Horizon slice.
+
+    Gameplay_Images is streamed and can be class-ordered, so a bounded early
+    slice may never reach its Forza class. This small dedicated source makes
+    Forza coverage deterministic without downloading the full 2.5 GiB dataset.
+    """
+    ds = load_dataset(SOURCES["forza_visuals"]["repo"], split="train", streaming=True)
+    added = 0
+    for row in ds:
+        image = row.get("image")
+        if image is None:
+            continue
+        caption = str(row.get("text") or "Forza Horizon gameplay scene").strip()
+        archive, member, _, _ = writer.add(image, "forza")
+        rows.append(record(
+            archive, member,
+            f"Understand the Forza Horizon scene: {caption[:500]}",
+            "",
+            "OTHER",
+            "game:Forza Horizon",
+            "ILoveCorn/forza-horizon",
+            domain_valid=True,
+        ))
+        added += 1
+        if added >= target:
+            break
+    if added == 0:
+        raise RuntimeError("dedicated Forza source returned zero usable images")
+    return {"examples": added, "domain": "game:Forza Horizon"}
+
+
 def add_professional_video_frames(rows, writer, frames_per_category=2):
     try:
         import cv2
@@ -543,6 +580,8 @@ def prepare_computer(out: Path, target: int) -> dict:
         print(f"v05_data minecraft_done rows={len(rows)}", flush=True)
         stats["games"] = add_game_visuals(rows, writer, allocations["games"])
         print(f"v05_data games_done rows={len(rows)}", flush=True)
+        stats["forza"] = add_forza_visuals(rows, writer, 50)
+        print(f"v05_data forza_done rows={len(rows)}", flush=True)
         if os.environ.get("FLM_V05_FAST_PREP") == "1":
             stats["professional_video"] = {"examples": 0, "skipped": "pilot_fast_prep"}
         else:

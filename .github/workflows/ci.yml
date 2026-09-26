@@ -158,6 +158,16 @@ jobs:
           del cu; gc.collect()
           PY
 
+      - name: FLM v0.5 dedicated Forza source regression
+        run: |
+          python - <<'PY'
+          from flm.data.prepare_v05 import SOURCES
+          x=SOURCES['forza_visuals']
+          assert x['repo']=='ILoveCorn/forza-horizon'
+          assert 'Forza' in x['role']
+          print('dedicated Forza source OK',x)
+          PY
+
       - name: FLM v0.5 Kaggle exploded image-shard regression
         run: |
           python - <<'PY'
