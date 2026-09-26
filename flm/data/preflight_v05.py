@@ -8,12 +8,14 @@ from pathlib import Path
 os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
 os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
 
-from datasets import get_dataset_config_names, load_dataset
+from datasets import Image as HFImage, get_dataset_config_names, load_dataset
 from huggingface_hub import hf_hub_download
 
 
-def first_row(repo: str, config: str | None = None):
+def first_row(repo: str, config: str | None = None, decode_images: bool = True):
     ds = load_dataset(repo, config, split="train", streaming=True)
+    if not decode_images and "image" in ds.features:
+        ds = ds.cast_column("image", HFImage(decode=False))
     row = next(iter(ds))
     return {
         "keys": sorted(row.keys()),
@@ -22,21 +24,60 @@ def first_row(repo: str, config: str | None = None):
     }
 
 
+def safe_probe(name: str, fn, report: dict):
+    try:
+        value = fn()
+        report[name] = {"ok": True, "data": value}
+        print(f"PRECHECK_OK {name}", flush=True)
+        return True
+    except Exception as exc:
+        report[name] = {
+            "ok": False,
+            "error_type": type(exc).__name__,
+            "error": str(exc),
+        }
+        print(f"PRECHECK_OPTIONAL_FAIL {name}: {type(exc).__name__}: {exc}", flush=True)
+        return False
+
+
 def main() -> int:
     report: dict[str, object] = {"phase": "v0.5_cpu_preflight"}
 
     ground_configs = get_dataset_config_names("Fhrozen/GroundCUA")
     report["groundcua"] = {
-        "config_count": len(ground_configs),
-        "configs": ground_configs,
-        "sample": first_row("Fhrozen/GroundCUA", ground_configs[0]),
+        "ok": True,
+        "data": {
+            "config_count": len(ground_configs),
+            "configs": ground_configs,
+            "sample": first_row("Fhrozen/GroundCUA", ground_configs[0]),
+        },
     }
+    print(f"PRECHECK_OK groundcua configs={len(ground_configs)}", flush=True)
 
-    report["markov_actions"] = first_row("markov-ai/computer-use")
-    report["salesforce_grounding"] = first_row("Salesforce/grounding_dataset")
-    report["minecraft_vla"] = first_row("TESS-Computer/minecraft-vla-stage1")
-    report["scenario_recognition"] = first_row(
-        "amazingtrash/scenario-recognition-for-display"
+    safe_probe(
+        "markov_actions",
+        lambda: first_row("markov-ai/computer-use"),
+        report,
+    )
+    safe_probe(
+        "salesforce_grounding",
+        lambda: first_row("Salesforce/grounding_dataset"),
+        report,
+    )
+    safe_probe(
+        "minecraft_vla",
+        lambda: first_row("TESS-Computer/minecraft-vla-stage1"),
+        report,
+    )
+    # This source has occasionally shipped broken paths inside its image archive.
+    # Keep it optional and inspect metadata without decoding pixels.
+    safe_probe(
+        "scenario_recognition",
+        lambda: first_row(
+            "amazingtrash/scenario-recognition-for-display",
+            decode_images=False,
+        ),
+        report,
     )
 
     pro_categories = [
@@ -62,13 +103,19 @@ def main() -> int:
             "keys": sorted(row.keys()),
             "sample": row,
         }
-    report["professional_video"] = pro_meta
+    report["professional_video"] = {"ok": True, "data": pro_meta}
+    print("PRECHECK_OK professional_video", flush=True)
 
     Path("v05_preflight_report.json").write_text(
         json.dumps(report, indent=2, ensure_ascii=False, default=str),
         encoding="utf-8",
     )
     print(json.dumps(report, indent=2, ensure_ascii=False, default=str), flush=True)
+
+    required = ("groundcua", "markov_actions", "salesforce_grounding", "minecraft_vla")
+    failed = [name for name in required if not report.get(name, {}).get("ok")]
+    if failed:
+        raise SystemExit(f"required v0.5 sources failed preflight: {failed}")
     return 0
 
 
