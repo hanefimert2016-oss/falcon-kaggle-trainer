@@ -1,0 +1,73 @@
+name: FLM TPU Backend Smoke
+
+on:
+  push:
+    paths:
+      - '.flm-tpu-trigger'
+
+permissions:
+  contents: read
+
+jobs:
+  launch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install "kaggle>=2.2.1"
+
+      - name: Verify prepared HF data
+        run: kaggle datasets files "$KAGGLE_OWNER/flm-hf-v04" --page-size 20
+
+      - name: Build TPU smoke bundle
+        run: |
+          python scripts/build_kernel_bundle.py             --owner "$KAGGLE_OWNER"             --accelerator TpuV5E8             --out kernel_tpu
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          p=Path('kernel_tpu/kernel-metadata.json')
+          m=json.loads(p.read_text())
+          m['id']=m['id']+'-tpu'
+          m['title']='Falcon FLM v04 Three Model TPU Smoke'
+          p.write_text(json.dumps(m,indent=2)+'\n')
+
+          w=Path('kernel_tpu/train_suite.py')
+          s=w.read_text()
+          marker='os.environ.setdefault("FLM_SMOKE", "1")'
+          inject='''os.environ.setdefault("FLM_SMOKE", "1")
+os.environ["FLM_MAIN_STEPS"] = "3"
+os.environ["FLM_CODER_STEPS"] = "3"
+os.environ["FLM_COMPUTER_STEPS"] = "2"
+os.environ["FLM_BATCH"] = "2"
+os.environ["FLM_GRAD_ACCUM"] = "1"
+os.environ["FLM_MAIN_SEQ_LEN"] = "64"
+os.environ["FLM_MAIN_LAYERS"] = "2"
+os.environ["FLM_MAIN_HEADS"] = "4"
+os.environ["FLM_MAIN_EMBD"] = "128"
+os.environ["FLM_CODER_SEQ_LEN"] = "64"
+os.environ["FLM_CODER_LAYERS"] = "2"
+os.environ["FLM_CODER_HEADS"] = "4"
+os.environ["FLM_CODER_EMBD"] = "128"
+os.environ["FLM_COMPUTER_BATCH"] = "1"
+os.environ["FLM_COMPUTER_IMAGE_SIZE"] = "64"
+os.environ["FLM_COMPUTER_EMBD"] = "64"
+os.environ["FLM_COMPUTER_HEADS"] = "4"
+os.environ["FLM_COMPUTER_TEXT_LAYERS"] = "1"
+os.environ["FLM_COMPUTER_VISION_LAYERS"] = "1"
+'''
+          assert marker in s
+          w.write_text(s.replace(marker,inject))
+          print(json.dumps(m,indent=2))
+          PY
+
+      - name: Push TPU v5e-8 real-data smoke
+        run: |
+          kaggle kernels push             -p kernel_tpu             --accelerator TpuV5E8             --timeout 43200
