@@ -51,7 +51,9 @@ jobs:
             MAIN=16000000
             CODER=8000000
             CU=900
+            export FLM_V05_FAST_PREP=1
           else
+            unset FLM_V05_FAST_PREP || true
             MAIN=128000000
             CODER=64000000
             CU=6000
