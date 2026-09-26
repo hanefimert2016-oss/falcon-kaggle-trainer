@@ -1,0 +1,28 @@
+name: FLM TPU Status
+
+on:
+  push:
+    paths:
+      - '.flm-tpu-status-trigger'
+
+permissions:
+  contents: read
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install "kaggle>=2.2.1"
+      - name: TPU status
+        run: kaggle kernels status "$KAGGLE_OWNER/falcon-flm-v04-three-model-suite-tpu"
+      - name: TPU logs
+        run: kaggle kernels logs "$KAGGLE_OWNER/falcon-flm-v04-three-model-suite-tpu" || true
+      - name: Quota
+        run: kaggle quota
