@@ -1,0 +1,87 @@
+name: FLM v0.6 Multilingual Data CPU
+
+on:
+  push:
+    paths:
+      - '.hf-v06-trigger'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
+      CUDA_VISIBLE_DEVICES: ""
+      HF_HUB_DISABLE_TELEMETRY: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Prove CPU-only preparation
+        run: |
+          test -z "$CUDA_VISIBLE_DEVICES"
+          echo "cpu_count=$(nproc)"
+      - name: Install data tools
+        run: python -m pip install "datasets>=4.0" "huggingface_hub>=0.30" "tokenizers>=0.20" "kaggle>=2.2.1" numpy
+      - name: Build multilingual BPE dataset
+        run: |
+          python flm/data/prepare_v06.py \
+            --out prepared_v06 \
+            --owner "$KAGGLE_OWNER" \
+            --main-bytes 128000000 \
+            --coder-bytes 64000000 \
+            --vocab-size 8192 \
+            --sft-max-rows-per-source 60000
+      - name: Verify v0.6 scale and balance
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          x=json.loads(Path('prepared_v06/sources.json').read_text())
+          s=x['stats']
+          assert x['pipeline_version']=='v0.6'
+          assert s['main_raw']['bytes'] >= 127_000_000
+          assert s['main_raw']['turkish']['bytes'] >= 63_000_000
+          assert s['main_raw']['english']['bytes'] >= 63_000_000
+          assert s['coder_raw']['bytes'] >= 63_000_000
+          assert s['sft_raw']['rows'] >= 80_000
+          assert s['tokenizer']['vocab_size'] >= 8000
+          assert s['main']['tokens'] >= 15_000_000
+          assert s['coder']['tokens'] >= 5_000_000
+          assert s['sft']['supervised_tokens'] >= 1_000_000
+          for name in ('main_train.u16','coder_train.u16','main_sft_tokens.u16','main_sft_mask.u8','tokenizer.json'):
+              p=Path('prepared_v06')/name
+              assert p.is_file() and p.stat().st_size>1000, (name,p.stat().st_size if p.exists() else 0)
+          print('V06_DATA_VERIFIED')
+          print(json.dumps(s,indent=2,ensure_ascii=False))
+          PY
+          du -sh prepared_v06
+      - name: Upload/version private Kaggle dataset
+        run: |
+          set -euo pipefail
+          REF="$KAGGLE_OWNER/flm-hf-v06"
+          if kaggle datasets list --mine -s flm-hf-v06 -v | grep -Fq "$REF"; then
+            kaggle datasets version -p prepared_v06 -m "FLM v0.6 balanced Turkish English BPE + Turkish SFT" -q -t -r skip
+          else
+            kaggle datasets create -p prepared_v06 -q -t -r skip
+          fi
+          for attempt in $(seq 1 60); do
+            if kaggle datasets files "$REF" --page-size 20; then
+              exit 0
+            fi
+            sleep 5
+          done
+          exit 1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flm-v06-data-manifest
+          path: |
+            prepared_v06/sources.json
+            prepared_v06/tokenizer_meta.json
+          retention-days: 14

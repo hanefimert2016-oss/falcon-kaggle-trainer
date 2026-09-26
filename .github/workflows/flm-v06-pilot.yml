@@ -1,0 +1,84 @@
+name: FLM v0.6 GPU Pilot
+
+on:
+  workflow_run:
+    workflows:
+      - "FLM v0.6 Multilingual Data CPU"
+    types:
+      - completed
+  push:
+    paths:
+      - '.flm-v06-pilot-trigger'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pilot:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
+      REF: ${{ vars.KAGGLE_OWNER }}/falcon-flm-v06-pilot-gpu
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install "kaggle>=2.2.1"
+      - name: Verify v0.6 dataset access
+        run: kaggle datasets files "$KAGGLE_OWNER/flm-hf-v06" --page-size 10
+      - name: Build v0.6 pilot
+        run: python scripts/build_kernel_bundle_v06.py --owner "$KAGGLE_OWNER" --profile pilot --out kernel_v06
+      - name: Submit pilot to 2xT4
+        run: |
+          set -euo pipefail
+          OUTPUT="$(kaggle kernels push -p kernel_v06 --accelerator NvidiaTeslaT4 --timeout 7200 2>&1 || true)"
+          echo "$OUTPUT"
+          echo "$OUTPUT" | grep -q 'successfully pushed'
+          ! echo "$OUTPUT" | grep -qi 'Kernel push error'
+      - name: Wait for pilot
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 100); do
+            STATUS="$(kaggle kernels status "$REF" 2>&1 || true)"
+            echo "$STATUS"
+            if echo "$STATUS" | grep -q 'KernelWorkerStatus.COMPLETE'; then
+              exit 0
+            fi
+            if echo "$STATUS" | grep -Eq 'KernelWorkerStatus.(ERROR|FAILED|CANCELLED)'; then
+              kaggle kernels logs "$REF" || true
+              exit 1
+            fi
+            sleep 12
+          done
+          echo "pilot timeout"
+          exit 1
+      - name: Verify pilot outputs
+        run: |
+          set -euo pipefail
+          mkdir -p pilot_out
+          kaggle kernels output "$REF" -p pilot_out -o
+          ROOT="pilot_out/flm-v0.6-pilot"
+          test -s "$ROOT/main/checkpoint.pt"
+          test -s "$ROOT/computer_use/checkpoint.pt"
+          test -s "$ROOT/coder/checkpoint.pt"
+          test -s "$ROOT/tokenizer.json"
+          test -s "$ROOT/quality_samples.json"
+          cat "$ROOT/quality_samples.json"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=Path('pilot_out/flm-v0.6-pilot')
+          for n in ('main','computer_use','coder'):
+              m=json.loads((r/n/'metrics.json').read_text())
+              assert m['accelerator']=='gpu'
+              assert len(m['gpu_names'])==2
+              assert m['parameters']>80_000_000
+          print('V06_PILOT_VERIFIED')
+          PY
