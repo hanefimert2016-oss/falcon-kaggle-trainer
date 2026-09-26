@@ -43,13 +43,27 @@ jobs:
 
       - name: Upload or version private Kaggle CPU-prepared dataset
         run: |
+          set -euo pipefail
           REF="$KAGGLE_OWNER/flm-hf-v04"
-          if kaggle datasets status "$REF" >/dev/null 2>&1; then
+          if kaggle datasets list --mine -s flm-hf-v04 -v | grep -Fq "$REF"; then
+            echo "Dataset already exists; creating a new version"
             kaggle datasets version -p prepared_hf -m "Refresh HF CPU-prepared training shard" -q -t -r skip
           else
+            echo "Creating private dataset $REF"
             kaggle datasets create -p prepared_hf -q -t -r skip
           fi
-          kaggle datasets status "$REF"
+
+          echo "Waiting for dataset files to become readable..."
+          ready=0
+          for attempt in $(seq 1 24); do
+            if kaggle datasets files "$REF" --page-size 20; then
+              ready=1
+              break
+            fi
+            echo "Dataset not ready yet (attempt $attempt/24)"
+            sleep 5
+          done
+          test "$ready" = "1"
 
       - uses: actions/upload-artifact@v4
         with:
