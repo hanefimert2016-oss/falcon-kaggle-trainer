@@ -5,6 +5,7 @@ import argparse
 import io
 import json
 import os
+import sys
 from pathlib import Path
 import zipfile
 
@@ -192,4 +193,7 @@ def main() -> int:
     return 0
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    rc = main()
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(rc)
