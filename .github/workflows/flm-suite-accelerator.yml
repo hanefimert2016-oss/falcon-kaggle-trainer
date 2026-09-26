@@ -1,0 +1,44 @@
+name: FLM Three Model Accelerator Train
+
+on:
+  push:
+    paths:
+      - '.flm-train-trigger'
+  workflow_dispatch:
+    inputs:
+      accelerator:
+        description: Kaggle accelerator
+        required: true
+        default: NvidiaTeslaT4
+        type: choice
+        options:
+          - NvidiaTeslaT4
+          - TpuV5E8
+          - TpuV6E8
+
+permissions:
+  contents: read
+
+jobs:
+  launch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
+      ACCELERATOR: ${{ inputs.accelerator || 'NvidiaTeslaT4' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install "kaggle>=2.2.1"
+
+      - name: Verify CPU-prepared data exists
+        run: kaggle datasets status "$KAGGLE_OWNER/flm-hf-v04"
+
+      - name: Build accelerator-only kernel bundle
+        run: python scripts/build_kernel_bundle.py --owner "$KAGGLE_OWNER" --accelerator "$ACCELERATOR"
+
+      - name: Push three-model training suite
+        run: kaggle kernels push -p kernel_bundle --accelerator "$ACCELERATOR" --timeout 43200
