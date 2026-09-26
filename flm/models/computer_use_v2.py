@@ -163,28 +163,39 @@ class ComputerUseV2(nn.Module):
         dec, _ = self.action_gru(dec)
         action_logits = self.action_head(dec)
 
+        # Always return the same loss keys on every device.
+        # DataParallel gathers dictionaries from each GPU and requires identical
+        # key sets. Different datasets supervise different heads, so a shard can
+        # legitimately have zero valid samples for a head. In that case return
+        # a differentiable zero instead of omitting the key.
+        zero = ctx.sum() * 0.0
         losses: dict[str, torch.Tensor] = {}
-        if op_target is not None and op_valid is not None and op_valid.any():
+
+        if op_target is not None and op_valid is not None:
             per = F.cross_entropy(op_logits, op_target, reduction="none")
             losses["op"] = self._masked_mean(per, op_valid)
-        if coord_target is not None and coord_valid is not None and coord_valid.any():
+        else:
+            losses["op"] = zero
+
+        if coord_target is not None and coord_valid is not None:
             per = F.smooth_l1_loss(coord, coord_target, reduction="none").mean(-1)
             losses["coord"] = self._masked_mean(per, coord_valid)
-        if bbox_target is not None and bbox_valid is not None and bbox_valid.any():
+        else:
+            losses["coord"] = zero
+
+        if bbox_target is not None and bbox_valid is not None:
             per = F.smooth_l1_loss(bbox, bbox_target, reduction="none").mean(-1)
             losses["bbox"] = self._masked_mean(per, bbox_valid)
-        if (
-            domain_target is not None
-            and domain_valid is not None
-            and domain_valid.any()
-        ):
+        else:
+            losses["bbox"] = zero
+
+        if domain_target is not None and domain_valid is not None:
             per = F.cross_entropy(domain_logits, domain_target, reduction="none")
             losses["domain"] = self._masked_mean(per, domain_valid)
-        if (
-            action_target is not None
-            and action_valid is not None
-            and action_valid.any()
-        ):
+        else:
+            losses["domain"] = zero
+
+        if action_target is not None and action_valid is not None:
             token_loss = F.cross_entropy(
                 action_logits.transpose(1, 2),
                 action_target,
@@ -194,17 +205,17 @@ class ComputerUseV2(nn.Module):
             token_mask = action_target.ne(-100).to(token_loss.dtype)
             per_sample = (token_loss * token_mask).sum(-1) / token_mask.sum(-1).clamp_min(1.0)
             losses["action"] = self._masked_mean(per_sample, action_valid)
+        else:
+            losses["action"] = zero
 
-        loss = None
-        if losses:
-            weights = {
-                "op": 1.0,
-                "coord": 2.0,
-                "bbox": 2.0,
-                "domain": 0.25,
-                "action": 1.0,
-            }
-            loss = sum(weights[k] * v for k, v in losses.items())
+        weights = {
+            "op": 1.0,
+            "coord": 2.0,
+            "bbox": 2.0,
+            "domain": 0.25,
+            "action": 1.0,
+        }
+        loss = sum(weights[k] * losses[k] for k in ("op", "coord", "bbox", "domain", "action"))
 
         outputs = {
             "op_logits": op_logits,
