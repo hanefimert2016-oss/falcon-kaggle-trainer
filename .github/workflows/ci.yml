@@ -300,7 +300,7 @@ jobs:
           tok.pre_tokenizer=ByteLevel(add_prefix_space=False)
           tok.decoder=ByteLevelDecoder()
           tok.train([str(corpus)],BpeTrainer(vocab_size=512,min_frequency=1,special_tokens=['<pad>','<unk>','<bos>','<eos>','<|user|>','<|assistant|>','<|end|>']))
-          seq=tok.encode('Merhaba nasılsın?').ids*100
+          seq=tok.encode('Merhaba nasılsın?').ids*1200
           np.asarray(seq,dtype=np.uint16).tofile(root/'x.u16')
           mask=np.zeros(len(seq),dtype=np.uint8); mask[40:]=1; mask.tofile(root/'m.u8')
           data=mmap_tokens(root/'x.u16'); m=mmap_mask(root/'m.u8')
