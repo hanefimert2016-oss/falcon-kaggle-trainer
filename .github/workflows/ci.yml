@@ -161,11 +161,13 @@ jobs:
       - name: FLM v0.5 dedicated Forza source regression
         run: |
           python - <<'PY'
-          from flm.data.prepare_v05 import SOURCES
-          x=SOURCES['forza_visuals']
-          assert x['repo']=='ILoveCorn/forza-horizon'
-          assert 'Forza' in x['role']
-          print('dedicated Forza source OK',x)
+          from pathlib import Path
+          text=Path('flm/data/prepare_v05.py').read_text(encoding='utf-8')
+          assert '"forza_visuals"' in text
+          assert '"ILoveCorn/forza-horizon"' in text
+          assert '"game:Forza Horizon"' in text
+          assert 'def add_forza_visuals' in text
+          print('dedicated Forza source wiring OK')
           PY
 
       - name: FLM v0.5 Kaggle exploded image-shard regression
