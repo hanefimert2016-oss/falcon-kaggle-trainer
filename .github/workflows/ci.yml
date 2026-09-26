@@ -15,7 +15,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: python -m pip install pytest pyyaml torch --index-url https://download.pytorch.org/whl/cpu
+      - run: python -m pip install pytest pyyaml
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
       - run: python -m py_compile falconctl.py kaggle/train_flm.py
       - run: pytest -q
       - name: Parse workflow YAML
