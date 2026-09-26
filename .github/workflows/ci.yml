@@ -20,14 +20,14 @@ jobs:
           python-version: '3.11'
 
       - name: Install test dependencies
-        run: python -m pip install pytest pyyaml pillow numpy
+        run: python -m pip install pytest pyyaml pillow numpy tokenizers
 
       - name: Install CPU PyTorch
         run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
 
       - name: Python compile
         run: |
-          python -m py_compile             falconctl.py             kaggle/train_flm.py             scripts/colab_setup.py             scripts/build_kernel_bundle.py             flm/runtime.py             flm/models/text_lm.py             flm/models/computer_use.py             flm/models/computer_use_v2.py             flm/data/prepare_hf.py             flm/data/prepare_v05.py             flm/data/preflight_v05.py             flm/train_v05.py             flm/train_text.py             flm/train_computer_use.py             flm/train_suite.py
+          python -m py_compile             falconctl.py             kaggle/train_flm.py             scripts/colab_setup.py             scripts/build_kernel_bundle.py             flm/runtime.py             flm/models/text_lm.py             flm/models/computer_use.py             flm/models/computer_use_v2.py             flm/data/prepare_hf.py             flm/data/prepare_v05.py             flm/data/prepare_v06.py             flm/data/preflight_v05.py             flm/train_v05.py             flm/train_v06.py             flm/train_text.py             flm/train_computer_use.py             flm/train_suite.py
 
       - name: Unit tests
         run: pytest -q
@@ -278,6 +278,67 @@ jobs:
           assert m['dataset_sources']==['test-owner/flm-hf-v05']
           assert m['enable_gpu'] is True
           print('v0.5 GPU bundle OK')
+          PY
+
+      - name: FLM v0.6 BPE token and SFT-mask regression
+        run: |
+          python - <<'PY'
+          import numpy as np
+          import torch
+          from pathlib import Path
+          from tokenizers import Tokenizer
+          from tokenizers.models import BPE
+          from tokenizers.pre_tokenizers import ByteLevel
+          from tokenizers.decoders import ByteLevel as ByteLevelDecoder
+          from tokenizers.trainers import BpeTrainer
+          from flm.train_v06 import mmap_tokens,mmap_mask,make_xy,make_sft_xy
+
+          root=Path('/tmp/v06-reg'); root.mkdir(exist_ok=True)
+          corpus=root/'corpus.txt'
+          corpus.write_text(('Merhaba dünya. Hello world. Türkçe İngilizce model eğitimi.\n'*500),encoding='utf-8')
+          tok=Tokenizer(BPE(unk_token='<unk>'))
+          tok.pre_tokenizer=ByteLevel(add_prefix_space=False)
+          tok.decoder=ByteLevelDecoder()
+          tok.train([str(corpus)],BpeTrainer(vocab_size=512,min_frequency=1,special_tokens=['<pad>','<unk>','<bos>','<eos>','<|user|>','<|assistant|>','<|end|>']))
+          seq=tok.encode('Merhaba nasılsın?').ids*100
+          np.asarray(seq,dtype=np.uint16).tofile(root/'x.u16')
+          mask=np.zeros(len(seq),dtype=np.uint8); mask[40:]=1; mask.tofile(root/'m.u8')
+          data=mmap_tokens(root/'x.u16'); m=mmap_mask(root/'m.u8')
+          x,y=make_xy(data,np.asarray([0]),16,torch.device('cpu'))
+          sx,sy,sup=make_sft_xy(data,m,np.asarray([2]),16,torch.device('cpu'))
+          assert x.shape==(1,16) and y.shape==(1,16)
+          assert sx.shape==(1,16) and sy.shape==(1,16)
+          assert sup>0 and (sy==-100).sum()>=0
+          print('v0.6 BPE/mask regression OK vocab=',tok.get_vocab_size(),'supervised=',sup)
+          PY
+
+      - name: FLM v0.6 parameter and bundle targets
+        run: |
+          python - <<'PY'
+          import gc,json
+          from pathlib import Path
+          from flm.models.text_lm import ByteCausalLM,TextConfig
+
+          def count(m): return sum(p.numel() for p in m.parameters())
+          main=ByteCausalLM(TextConfig(vocab_size=8192,seq_len=512,n_layer=14,n_head=12,n_embd=768))
+          n=count(main); print('v06 main params',n); assert 103_000_000 <= n <= 110_000_000
+          del main; gc.collect()
+          coder=ByteCausalLM(TextConfig(vocab_size=8192,seq_len=512,n_layer=12,n_head=12,n_embd=768))
+          n=count(coder); print('v06 coder params',n); assert 89_000_000 <= n <= 96_000_000
+          del coder; gc.collect()
+          PY
+          python scripts/build_kernel_bundle_v06.py --owner test-owner --profile pilot --out /tmp/v06
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads((Path('/tmp/v06')/'kernel-metadata.json').read_text())
+          assert m['id']=='test-owner/falcon-flm-v06-pilot-gpu'
+          assert m['dataset_sources']==['test-owner/flm-hf-v06','test-owner/flm-hf-v05']
+          assert m['machine_shape']=='NvidiaTeslaT4'
+          assert m['enable_gpu'] is True and m['enable_internet'] is False
+          s=(Path('/tmp/v06')/'train_v06.py').read_text()
+          assert 'FLM_V06_MAIN_EPOCHS' in s and 'FLM_V06_CU_EPOCHS' in s
+          print('v0.6 bundle OK')
           PY
 
       - name: Main and coder 1-step CPU regression
