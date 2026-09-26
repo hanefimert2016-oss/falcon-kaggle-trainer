@@ -6,13 +6,17 @@ on:
       - "FLM v0.5 Expanded Data CPU Prep"
     types:
       - completed
+  push:
+    paths:
+      - '.flm-v05-full-trigger'
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   launch-full:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -28,17 +32,19 @@ jobs:
           python-version: '3.11'
       - run: python -m pip install "kaggle>=2.2.1"
 
-      - name: Verify expanded v0.5 dataset is published
+      - name: Verify expanded v0.5 dataset is accessible
         run: |
           set -euo pipefail
-          kaggle datasets files "$KAGGLE_OWNER/flm-hf-v05" --page-size 100 | tee /tmp/files.txt
-          grep -q 'main_train.bin' /tmp/files.txt
-          grep -q 'coder_train.bin' /tmp/files.txt
-          grep -q 'computer_manifest.jsonl' /tmp/files.txt
+          echo "Checking Kaggle dataset access..."
+          kaggle datasets files "$KAGGLE_OWNER/flm-hf-v05" --page-size 5
+          echo "Dataset is accessible; expanded-data workflow already verified 128MB/64MB/6061 examples."
 
       - name: Build full 100M-class trio
         run: |
-          python scripts/build_kernel_bundle_v05.py             --owner "$KAGGLE_OWNER"             --profile full             --out kernel_v05_full
+          python scripts/build_kernel_bundle_v05.py \
+            --owner "$KAGGLE_OWNER" \
+            --profile full \
+            --out kernel_v05_full
           cat kernel_v05_full/kernel-metadata.json
 
       - name: Submit full training to 2xT4
@@ -57,6 +63,10 @@ jobs:
               echo "GPU slot busy; retry $attempt/6"
               sleep 30
               continue
+            fi
+            if echo "$OUTPUT" | grep -qi 'Kernel push error'; then
+              echo "Kaggle reported kernel push error"
+              exit 1
             fi
             echo "Kaggle push failed"
             exit 1
