@@ -20,9 +20,21 @@ jobs:
         with:
           python-version: '3.11'
       - run: python -m pip install "kaggle>=2.2.1"
-      - name: TPU status
-        run: kaggle kernels status "$KAGGLE_OWNER/falcon-flm-v04-three-model-suite-tpu"
-      - name: TPU logs
-        run: kaggle kernels logs "$KAGGLE_OWNER/falcon-flm-v04-three-model-suite-tpu" || true
+      - name: Resolve and query TPU kernel
+        run: |
+          set -euo pipefail
+          found=0
+          for REF in             "$KAGGLE_OWNER/falcon-flm-v04-three-model-suite-tpu"             "$KAGGLE_OWNER/falcon-flm-v04-three-model-tpu-smoke"; do
+            if STATUS="$(kaggle kernels status "$REF" 2>&1)"; then
+              echo "TPU_REF=$REF"
+              echo "$STATUS"
+              kaggle kernels logs "$REF" || true
+              found=1
+              break
+            else
+              echo "not-accessible: $REF"
+            fi
+          done
+          test "$found" = "1"
       - name: Quota
         run: kaggle quota
