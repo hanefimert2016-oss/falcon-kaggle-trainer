@@ -1,1 +1,1 @@
-run v05 source preflight
+rerun v05 source preflight after optional-source fix
