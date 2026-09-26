@@ -1,0 +1,98 @@
+name: FLM GPU Fast Reset and Launch
+
+on:
+  push:
+    paths:
+      - '.flm-gpu-fast-reset-trigger'
+
+permissions:
+  contents: read
+
+jobs:
+  reset-and-launch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
+      GPU_REF: ${{ vars.KAGGLE_OWNER }}/falcon-flm-v04-three-model-suite
+      TPU_REF: ${{ vars.KAGGLE_OWNER }}/falcon-flm-v04-three-model-tpu-smoke
+      FAST_REF: ${{ vars.KAGGLE_OWNER }}/falcon-flm-v04-fast-gpu
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install "kaggle>=2.2.1"
+
+      - name: Remove only our queued legacy FLM jobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          for REF in "$GPU_REF" "$TPU_REF"; do
+            STATUS="$(kaggle kernels status "$REF" 2>&1 || true)"
+            echo "$REF -> $STATUS"
+            if echo "$STATUS" | grep -q 'KernelWorkerStatus.QUEUED'; then
+              echo "Deleting queued temporary kernel: $REF"
+              kaggle kernels delete "$REF" -y
+            elif echo "$STATUS" | grep -q 'KernelWorkerStatus.RUNNING'; then
+              echo "Refusing to delete running kernel: $REF"
+            else
+              echo "No queued legacy job to delete for $REF"
+            fi
+          done
+
+      - name: Wait for GPU slot release
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 12); do
+            STATUS="$(kaggle kernels status "$GPU_REF" 2>&1 || true)"
+            echo "release-attempt=$attempt $STATUS"
+            if ! echo "$STATUS" | grep -Eq 'KernelWorkerStatus.(QUEUED|RUNNING)'; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "GPU slot did not release in time"
+          exit 1
+
+      - name: Verify prepared HF data
+        run: kaggle datasets files "$KAGGLE_OWNER/flm-hf-v04" --page-size 5
+
+      - name: Build corrected fast GPU kernel
+        run: |
+          python scripts/build_kernel_bundle.py \
+            --owner "$KAGGLE_OWNER" \
+            --accelerator NvidiaTeslaT4 \
+            --profile fast \
+            --slug falcon-flm-v04-fast-gpu \
+            --title "Falcon FLM v04 Fast GPU" \
+            --out kernel_gpu
+
+      - name: Submit fast GPU and reject Kaggle soft-errors
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUTPUT="$(kaggle kernels push -p kernel_gpu --accelerator NvidiaTeslaT4 --timeout 3600 2>&1)"
+          echo "$OUTPUT"
+          if echo "$OUTPUT" | grep -qi 'Kernel push error'; then
+            echo "Kaggle CLI reported a soft push error"
+            exit 1
+          fi
+
+      - name: Verify fast GPU session exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          ok=0
+          for attempt in $(seq 1 8); do
+            STATUS="$(kaggle kernels status "$FAST_REF" 2>&1 || true)"
+            echo "status-attempt=$attempt $STATUS"
+            if echo "$STATUS" | grep -Eq 'KernelWorkerStatus.(QUEUED|RUNNING|COMPLETE)'; then
+              ok=1
+              break
+            fi
+            sleep 3
+          done
+          test "$ok" = "1"
