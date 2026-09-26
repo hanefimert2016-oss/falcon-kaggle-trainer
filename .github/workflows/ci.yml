@@ -27,7 +27,7 @@ jobs:
 
       - name: Python compile
         run: |
-          python -m py_compile             falconctl.py             kaggle/train_flm.py             scripts/colab_setup.py             scripts/build_kernel_bundle.py             flm/runtime.py             flm/models/text_lm.py             flm/models/computer_use.py             flm/data/prepare_hf.py             flm/train_text.py             flm/train_computer_use.py             flm/train_suite.py
+          python -m py_compile             falconctl.py             kaggle/train_flm.py             scripts/colab_setup.py             scripts/build_kernel_bundle.py             flm/runtime.py             flm/models/text_lm.py             flm/models/computer_use.py             flm/models/computer_use_v2.py             flm/data/prepare_hf.py             flm/train_v05.py             flm/train_text.py             flm/train_computer_use.py             flm/train_suite.py
 
       - name: Unit tests
         run: pytest -q
@@ -131,6 +131,81 @@ jobs:
           assert result['eval_loss']>0
           assert (out/'computer_use/checkpoint.pt').stat().st_size>0
           print('mounted image dir regression OK')
+          PY
+
+      - name: FLM v0.5 parameter targets
+        run: |
+          python - <<'PY'
+          import gc
+          from flm.models.text_lm import ByteCausalLM, TextConfig
+          from flm.models.computer_use_v2 import ComputerUseV2, ComputerUseV2Config
+
+          def count(m): return sum(p.numel() for p in m.parameters())
+
+          main=ByteCausalLM(TextConfig(seq_len=1024,n_layer=14,n_head=12,n_embd=768))
+          main_n=count(main); print('FLM-Main-v05 params=',main_n)
+          assert 95_000_000 <= main_n <= 110_000_000
+          del main; gc.collect()
+
+          coder=ByteCausalLM(TextConfig(seq_len=1024,n_layer=12,n_head=12,n_embd=768))
+          coder_n=count(coder); print('FLM-Coder-v05 params=',coder_n)
+          assert 80_000_000 <= coder_n <= 95_000_000
+          del coder; gc.collect()
+
+          cu=ComputerUseV2(ComputerUseV2Config())
+          cu_n=count(cu); print('FLM-ComputerUse-v05 params=',cu_n)
+          assert 90_000_000 <= cu_n <= 110_000_000
+          del cu; gc.collect()
+          PY
+
+      - name: FLM v0.5 ComputerUse masked multi-head backward
+        run: |
+          python - <<'PY'
+          import torch
+          from flm.models.computer_use_v2 import ComputerUseV2, ComputerUseV2Config
+          cfg=ComputerUseV2Config(
+              task_len=16,action_len=12,image_size=32,patch=16,
+              embd=32,text_layers=1,vision_layers=1,n_head=2,
+              num_domains=8,
+          )
+          m=ComputerUseV2(cfg)
+          b=2
+          image=torch.randn(b,3,32,32)
+          task=torch.randint(0,256,(b,16))
+          action=torch.randint(0,256,(b,12))
+          target=torch.randint(0,256,(b,12))
+          out,loss,parts=m(
+              image,task,action,
+              op_target=torch.tensor([0,6]),
+              op_valid=torch.tensor([1,1],dtype=torch.bool),
+              coord_target=torch.tensor([[.3,.4],[0.,0.]]),
+              coord_valid=torch.tensor([1,0],dtype=torch.bool),
+              bbox_target=torch.tensor([[.1,.1,.5,.5],[0.,0.,0.,0.]]),
+              bbox_valid=torch.tensor([1,0],dtype=torch.bool),
+              domain_target=torch.tensor([1,2]),
+              domain_valid=torch.tensor([1,1],dtype=torch.bool),
+              action_target=target,
+              action_valid=torch.tensor([1,1],dtype=torch.bool),
+          )
+          assert loss is not None and torch.isfinite(loss)
+          assert set(parts) == {'op','coord','bbox','domain','action'}
+          assert out['coord'].shape == (2,2)
+          assert out['bbox'].shape == (2,4)
+          loss.backward()
+          print('v0.5 CU backward OK loss=',float(loss.detach()))
+          PY
+
+      - name: Build FLM v0.5 GPU bundle
+        run: |
+          python scripts/build_kernel_bundle_v05.py --owner test-owner --profile pilot --out /tmp/v05
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads((Path('/tmp/v05')/'kernel-metadata.json').read_text())
+          assert m['id']=='test-owner/falcon-flm-v05-pilot-gpu'
+          assert m['dataset_sources']==['test-owner/flm-hf-v05']
+          assert m['enable_gpu'] is True
+          print('v0.5 GPU bundle OK')
           PY
 
       - name: Main and coder 1-step CPU regression
