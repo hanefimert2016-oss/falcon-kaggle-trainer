@@ -66,6 +66,73 @@ jobs:
           print('GPU bundle OK')
           PY
 
+      - name: Kaggle nested mount discovery regression
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          from flm import train_suite
+          root=Path('/tmp/kaggle-input/nested-dataset-v04')
+          root.mkdir(parents=True, exist_ok=True)
+          manifest={
+            'sources':{
+              'main':{'repo':'codelion/fineweb-edu-100M'},
+              'coder':{'repo':'Nan-Do/code-search-net-python'},
+              'computer_use':{'repo':'markov-ai/computer-use'},
+            }
+          }
+          (root/'sources.json').write_text(json.dumps(manifest))
+          old=train_suite.Path
+          orig_exists=Path('/kaggle/input').exists()
+          os.environ['FLM_DATA_ROOT']=str(root.parent)
+          resolved=train_suite.resolve_data_root()
+          assert resolved==root.resolve(), (resolved,root)
+          print('nested data root discovery OK',resolved)
+          PY
+
+      - name: Computer-use mounted image directory regression
+        env:
+          FLM_ACCELERATOR: cpu
+          FLM_SMOKE: "1"
+          FLM_COMPUTER_STEPS: "1"
+          FLM_COMPUTER_BATCH: "1"
+          FLM_COMPUTER_IMAGE_SIZE: "32"
+          FLM_COMPUTER_EMBD: "32"
+          FLM_COMPUTER_HEADS: "2"
+          FLM_COMPUTER_TEXT_LAYERS: "1"
+          FLM_COMPUTER_VISION_LAYERS: "1"
+          FLM_COMPUTER_TASK_LEN: "24"
+          FLM_COMPUTER_ACTION_LEN: "24"
+          FLM_COMPUTER_EVAL_BATCHES: "1"
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image, ImageDraw
+          root=Path('/tmp/cu-mounted')
+          images=root/'computer_images'
+          images.mkdir(parents=True,exist_ok=True)
+          rows=[]
+          for i,(op,action) in enumerate([
+              ('CLICK','pyautogui.click(40,20)'),
+              ('TYPE',"pyautogui.write('hello')"),
+              ('SCROLL','pyautogui.scroll(-3)'),
+              ('KEY',"pyautogui.hotkey('ctrl','l')"),
+          ]):
+              im=Image.new('RGB',(64,64),'white')
+              ImageDraw.Draw(im).rectangle((8+i*3,8,32+i*3,30),outline='black')
+              name=f'{i}.jpg'
+              im.save(images/name)
+              rows.append({'image':name,'task':'Interact with visible UI','action':action,'operation':op})
+          (root/'computer_manifest.jsonl').write_text('\n'.join(json.dumps(x) for x in rows))
+          from flm.train_computer_use import train_computer
+          out=Path('/tmp/cu-mounted-out')
+          result=train_computer(root,out)
+          assert result['eval_loss']>0
+          assert (out/'computer_use/checkpoint.pt').stat().st_size>0
+          print('mounted image dir regression OK')
+          PY
+
       - name: Main and coder 1-step CPU regression
         env:
           FLM_ACCELERATOR: cpu

@@ -39,18 +39,46 @@ def action_bytes(
 
 
 def load_rows(root: Path, image_dir: Path):
+    manifest_path = root / "computer_manifest.jsonl"
+    if not manifest_path.is_file():
+        matches = list(root.rglob("computer_manifest.jsonl"))
+        if not matches:
+            raise RuntimeError(f"missing computer_manifest.jsonl under {root}")
+        manifest_path = matches[0]
+
     rows = [
         json.loads(line)
-        for line in (root / "computer_manifest.jsonl")
-        .read_text(encoding="utf-8")
-        .splitlines()
+        for line in manifest_path.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
+
+    mounted_dir = root / "computer_images"
+    if mounted_dir.is_dir():
+        print(f"computer_images_source=mounted_dir:{mounted_dir}", flush=True)
+        return rows, mounted_dir
+
+    mounted_dirs = [p for p in root.rglob("computer_images") if p.is_dir()]
+    if mounted_dirs:
+        print(f"computer_images_source=mounted_dir:{mounted_dirs[0]}", flush=True)
+        return rows, mounted_dirs[0]
+
+    zip_path = root / "computer_images.zip"
+    if not zip_path.is_file():
+        zip_matches = list(root.rglob("computer_images.zip"))
+        if zip_matches:
+            zip_path = zip_matches[0]
+
+    if not zip_path.is_file():
+        raise RuntimeError(
+            f"missing computer_images directory/zip under {root}"
+        )
+
     if not image_dir.exists():
         image_dir.mkdir(parents=True, exist_ok=True)
-        with zipfile.ZipFile(root / "computer_images.zip") as zf:
+        with zipfile.ZipFile(zip_path) as zf:
             zf.extractall(image_dir)
-    return rows
+    print(f"computer_images_source=zip:{zip_path}", flush=True)
+    return rows, image_dir
 
 
 def image_tensor(path: Path, size: int) -> torch.Tensor:
@@ -123,7 +151,7 @@ def train_computer(data_root: Path, output_root: Path) -> dict:
     batch_size = int(os.environ.get("FLM_COMPUTER_BATCH", "4" if smoke else "16"))
 
     image_dir = output_root / "_computer_images"
-    rows = load_rows(data_root, image_dir)
+    rows, image_dir = load_rows(data_root, image_dir)
     if len(rows) < 2:
         raise RuntimeError("computer-use dataset needs at least two real samples")
 
