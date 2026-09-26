@@ -57,7 +57,7 @@ jobs:
           print('CODER_BYTES',s['coder']['bytes'])
           print('CU_EXAMPLES',s['computer_use']['examples'])
           print('CU_DOMAINS',s['computer_use']['domains'])
-          print(json.dumps(s['computer_use']['sources'],indent=2))
+          print(json.dumps(s['computer_use']['source_counts'],indent=2))
           PY
           du -sh prepared_v05
 
