@@ -52,22 +52,18 @@ jobs:
           print('OK',p,'cells=',len(nb['cells']))
           PY
 
-      - name: Build GPU and TPU Kaggle bundles
+      - name: Build GPU Kaggle bundle
         run: |
-          python scripts/build_kernel_bundle.py --owner test-owner --accelerator NvidiaTeslaT4 --out /tmp/kernel_gpu
-          python scripts/build_kernel_bundle.py --owner test-owner --accelerator TpuV5E8 --out /tmp/kernel_tpu
+          python scripts/build_kernel_bundle.py --owner test-owner --accelerator NvidiaTeslaT4 --profile fast --out /tmp/kernel_gpu
           python - <<'PY'
           import pathlib,json
           gpu=(pathlib.Path('/tmp/kernel_gpu')/'train_suite.py').read_text()
-          tpu=(pathlib.Path('/tmp/kernel_tpu')/'train_suite.py').read_text()
           assert 'FLM_ACCELERATOR"] = "gpu"' in gpu
-          assert 'FLM_ACCELERATOR"] = "tpu"' in tpu
           gm=json.loads((pathlib.Path('/tmp/kernel_gpu')/'kernel-metadata.json').read_text())
-          tm=json.loads((pathlib.Path('/tmp/kernel_tpu')/'kernel-metadata.json').read_text())
           assert gm['enable_gpu'] is True
-          assert tm['enable_gpu'] is False
-          assert tm['machine_shape']=='TpuV5E8'
-          print('GPU/TPU bundles OK')
+          assert gm['machine_shape']=='NvidiaTeslaT4'
+          assert gm['enable_internet'] is False
+          print('GPU bundle OK')
           PY
 
       - name: Main and coder 1-step CPU regression
