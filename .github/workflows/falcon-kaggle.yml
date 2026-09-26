@@ -15,6 +15,9 @@ on:
         default: NvidiaTeslaT4
         type: choice
         options: [NvidiaTeslaT4, NvidiaL4, NvidiaTeslaA100]
+  push:
+    paths:
+      - '.train-trigger'
 
 permissions:
   contents: read
@@ -31,6 +34,8 @@ jobs:
       KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
       KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
       KAGGLE_KERNEL_SLUG: ${{ vars.KAGGLE_KERNEL_SLUG || 'falcon-flm-train' }}
+      FALCON_ACTION: ${{ inputs.action || 'push' }}
+      FALCON_ACCELERATOR: ${{ inputs.accelerator || 'NvidiaTeslaT4' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -49,31 +54,31 @@ jobs:
 
       - name: Validate project
         run: |
-          python falconctl.py render --accelerator '${{ inputs.accelerator }}'
+          python falconctl.py render --accelerator "$FALCON_ACCELERATOR"
           python falconctl.py validate
 
       - name: Push and start Kaggle training
-        if: inputs.action == 'push'
-        run: python falconctl.py push --accelerator '${{ inputs.accelerator }}'
+        if: env.FALCON_ACTION == 'push'
+        run: python falconctl.py push --accelerator "$FALCON_ACCELERATOR"
 
       - name: Show Kaggle status
-        if: inputs.action == 'status'
+        if: env.FALCON_ACTION == 'status'
         run: python falconctl.py status
 
       - name: Show Kaggle logs
-        if: inputs.action == 'logs'
+        if: env.FALCON_ACTION == 'logs'
         run: python falconctl.py logs
 
       - name: Show Kaggle accelerator quota
-        if: inputs.action == 'quota'
+        if: env.FALCON_ACTION == 'quota'
         run: python falconctl.py quota
 
       - name: Download Kaggle outputs
-        if: inputs.action == 'output'
+        if: env.FALCON_ACTION == 'output'
         run: python falconctl.py output --dir outputs
 
       - name: Upload training outputs as GitHub artifact
-        if: inputs.action == 'output'
+        if: env.FALCON_ACTION == 'output'
         uses: actions/upload-artifact@v4
         with:
           name: flm-kaggle-output
