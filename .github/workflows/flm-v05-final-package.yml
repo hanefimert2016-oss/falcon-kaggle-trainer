@@ -1,0 +1,234 @@
+name: FLM v0.5 Final Package
+
+on:
+  push:
+    paths:
+      - '.flm-v05-final-package-trigger'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
+      REF: ${{ vars.KAGGLE_OWNER }}/falcon-flm-v05-full-gpu
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install "kaggle>=2.2.1"
+
+      - name: Download final Kaggle outputs
+        run: |
+          set -euo pipefail
+          mkdir -p package
+          kaggle kernels output "$REF" -p package -o
+          ROOT="package/flm-v0.5-full"
+          test -s "$ROOT/main/checkpoint.pt"
+          test -s "$ROOT/computer_use/checkpoint.pt"
+          test -s "$ROOT/coder/checkpoint.pt"
+          test -s "$ROOT/suite_metrics.json"
+
+      - name: Verify final metrics
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('package/flm-v0.5-full')
+          expected={'main':500,'computer_use':300,'coder':400}
+          for name,steps in expected.items():
+              m=json.loads((root/name/'metrics.json').read_text())
+              assert m['accelerator']=='gpu'
+              assert m['steps']==steps, (name,m['steps'])
+              assert len(m.get('gpu_names',[]))==2
+              print(name,m['parameters'],m['steps'],m['eval_loss'])
+          print('FINAL_V05_VERIFIED')
+          PY
+
+      - name: Add runtime files
+        run: |
+          ROOT="package/flm-v0.5-full"
+          mkdir -p "$ROOT/flm/models"
+          cp flm/models/text_lm.py "$ROOT/flm/models/text_lm.py"
+          cp flm/models/computer_use_v2.py "$ROOT/flm/models/computer_use_v2.py"
+          touch "$ROOT/flm/__init__.py" "$ROOT/flm/models/__init__.py"
+          cat > "$ROOT/requirements.txt" <<'EOF'
+          torch>=2.3
+          numpy>=1.26
+          Pillow>=10.0
+          EOF
+          cat > "$ROOT/run_flm.py" <<'PY'
+          #!/usr/bin/env python3
+          from __future__ import annotations
+          import argparse
+          from pathlib import Path
+          import sys
+          import numpy as np
+          from PIL import Image
+          import torch
+
+          HERE = Path(__file__).resolve().parent
+          sys.path.insert(0, str(HERE))
+          from flm.models.text_lm import ByteCausalLM, TextConfig
+          from flm.models.computer_use_v2 import ComputerUseV2, ComputerUseV2Config
+
+          OPS = ["CLICK","TYPE","KEY","SCROLL","MOVE","DRAG","GAME_ACTION","OTHER"]
+
+          def device_for(requested):
+              if requested == "cuda":
+                  if not torch.cuda.is_available():
+                      raise SystemExit("CUDA istendi ama GPU bulunamadi.")
+                  return torch.device("cuda")
+              if requested == "cpu":
+                  return torch.device("cpu")
+              return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+          def load_text(kind, device):
+              ckpt = torch.load(HERE/kind/"checkpoint.pt", map_location=device, weights_only=False)
+              cfg = TextConfig(**ckpt["config"])
+              model = ByteCausalLM(cfg).to(device)
+              model.load_state_dict(ckpt["model"])
+              model.eval()
+              return model, cfg
+
+          @torch.no_grad()
+          def generate_text(kind, prompt, max_new, temperature, device):
+              model,cfg=load_text(kind,device)
+              ids=list(prompt.encode("utf-8","ignore")) or [32]
+              for _ in range(max_new):
+                  ctx=ids[-cfg.seq_len:]
+                  x=torch.tensor([ctx],dtype=torch.long,device=device)
+                  logits,_=model(x)
+                  nxt=logits[0,-1].float()
+                  if temperature <= 0:
+                      token=int(nxt.argmax())
+                  else:
+                      probs=torch.softmax(nxt/max(1e-4,temperature),dim=-1)
+                      token=int(torch.multinomial(probs,1))
+                  ids.append(token)
+              return bytes([x for x in ids if 0 <= x <= 255]).decode("utf-8","replace")
+
+          def task_tensor(text,cfg,device):
+              raw=list(text.encode("utf-8","ignore")[:cfg.task_len])
+              raw += [cfg.pad_token]*(cfg.task_len-len(raw))
+              return torch.tensor([raw],dtype=torch.long,device=device)
+
+          def image_tensor(path,cfg,device):
+              with Image.open(path) as im:
+                  im=im.convert("RGB").resize((cfg.image_size,cfg.image_size))
+                  arr=np.asarray(im,dtype=np.float32)/255.0
+              arr=(arr-0.5)/0.5
+              return torch.from_numpy(arr).permute(2,0,1).unsqueeze(0).contiguous().to(device)
+
+          @torch.no_grad()
+          def computer_use(image_path, task, device):
+              ckpt=torch.load(HERE/"computer_use"/"checkpoint.pt",map_location=device,weights_only=False)
+              cfg=ComputerUseV2Config(**ckpt["config"])
+              model=ComputerUseV2(cfg).to(device)
+              model.load_state_dict(ckpt["model"])
+              model.eval()
+              domains=ckpt.get("domains",{})
+              id_to_domain={v:k for k,v in domains.items()}
+              image=image_tensor(image_path,cfg,device)
+              task_ids=task_tensor(task,cfg,device)
+              action=[cfg.bos_token]
+              last_out=None
+              for pos in range(cfg.action_len):
+                  seq=action[:cfg.action_len]
+                  seq += [cfg.pad_token]*(cfg.action_len-len(seq))
+                  action_in=torch.tensor([seq],dtype=torch.long,device=device)
+                  out,_,_=model(image,task_ids,action_in)
+                  last_out=out
+                  token=int(out["action_logits"][0,pos].argmax())
+                  if token==cfg.eos_token:
+                      break
+                  if token < 256:
+                      action.append(token)
+                  else:
+                      break
+              action_text=bytes([x for x in action[1:] if x<256]).decode("utf-8","replace")
+              op_id=int(last_out["op_logits"][0].argmax())
+              domain_id=int(last_out["domain_logits"][0].argmax())
+              coord=last_out["coord"][0].float().cpu().tolist()
+              bbox=last_out["bbox"][0].float().cpu().tolist()
+              print("operation:", OPS[op_id] if op_id < len(OPS) else op_id)
+              print("domain:", id_to_domain.get(domain_id,"id:"+str(domain_id)))
+              print("coord(normalized):", [round(x,4) for x in coord])
+              print("bbox(normalized):", [round(x,4) for x in bbox])
+              print("action:", action_text)
+
+          def main():
+              ap=argparse.ArgumentParser(description="Falcon FLM v0.5 runner")
+              ap.add_argument("--model",choices=["main","coder","computer_use"],required=True)
+              ap.add_argument("--prompt",default="")
+              ap.add_argument("--image")
+              ap.add_argument("--max-new",type=int,default=160)
+              ap.add_argument("--temperature",type=float,default=0.8)
+              ap.add_argument("--device",choices=["auto","cuda","cpu"],default="auto")
+              a=ap.parse_args()
+              dev=device_for(a.device)
+              print("device:",dev)
+              if a.model in ("main","coder"):
+                  print(generate_text(a.model,a.prompt,a.max_new,a.temperature,dev))
+              else:
+                  if not a.image:
+                      raise SystemExit("computer_use icin --image gerekli")
+                  computer_use(a.image,a.prompt,dev)
+
+          if __name__=="__main__":
+              main()
+          PY
+          chmod +x "$ROOT/run_flm.py"
+          cat > "$ROOT/README_TR.md" <<'EOF'
+          # Falcon FLM v0.5 Full
+
+          Bu paket uc bagimsiz PyTorch checkpoint icerir:
+          - main: genel byte-level dil modeli
+          - computer_use: screenshot + gorev -> operation/coord/bbox/domain/action modeli
+          - coder: kod odakli byte-level dil modeli
+
+          Kurulum:
+          1. cd flm-v0.5-full
+          2. python -m venv .venv
+          3. source .venv/bin/activate
+          4. pip install -r requirements.txt
+
+          Main:
+          python run_flm.py --model main --prompt "Merhaba, bugun" --max-new 160
+
+          Coder:
+          python run_flm.py --model coder --prompt "def fibonacci(n):" --max-new 200
+
+          ComputerUse:
+          python run_flm.py --model computer_use --image screenshot.png --prompt "Blender'da kupu sec"
+
+          ComputerUse scripti bilgisayarda otomatik tiklama yapmaz; model tahminini yazdirir.
+
+          Final egitim:
+          - Main: 500 step, 128 MB veri, ~99.7M parametre
+          - ComputerUse: 300 step, 6061 ornek / 101 domain, ~97.9M parametre
+          - Coder: 400 step, 64 MB veri, ~85.6M parametre
+          - Kaggle 2x Tesla T4
+          EOF
+          du -sh "$ROOT"
+          find "$ROOT" -maxdepth 2 -type f -printf '%p %s bytes\n' | sort
+
+      - name: Build ZIP
+        run: |
+          cd package
+          zip -r -9 FLM-v0.5-Full.zip flm-v0.5-full
+          ls -lh FLM-v0.5-Full.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FLM-v0.5-Full
+          path: package/FLM-v0.5-Full.zip
+          retention-days: 14
+          compression-level: 0
+          if-no-files-found: error
