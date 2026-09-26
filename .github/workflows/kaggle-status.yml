@@ -1,0 +1,30 @@
+name: Kaggle Status Check
+
+on:
+  push:
+    paths:
+      - '.status-trigger'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
+      KAGGLE_KERNEL_SLUG: ${{ vars.KAGGLE_KERNEL_SLUG || 'falcon-flm-train' }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install "kaggle>=2.2.1"
+      - name: Kernel status
+        run: kaggle kernels status "$KAGGLE_OWNER/$KAGGLE_KERNEL_SLUG"
+      - name: Kernel logs
+        run: kaggle kernels logs "$KAGGLE_OWNER/$KAGGLE_KERNEL_SLUG" || true
+      - name: Accelerator quota
+        run: kaggle quota
