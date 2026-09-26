@@ -1,0 +1,35 @@
+name: Kaggle Active FLM Sessions
+
+on:
+  push:
+    paths:
+      - '.kaggle-session-probe'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install "kaggle>=2.2.1"
+      - name: List FLM kernels
+        run: |
+          set -euo pipefail
+          kaggle kernels list --mine -s "Falcon FLM" -v --page-size 100 || true
+      - name: Probe known GPU candidates
+        run: |
+          set +e
+          for REF in             "$KAGGLE_OWNER/falcon-flm-v04-three-model-suite"             "$KAGGLE_OWNER/falcon-flm-v04-fast-gpu"             "$KAGGLE_OWNER/falcon-flm-v04-fast-gpu-trio"             "$KAGGLE_OWNER/falcon-flm-train"; do
+            echo "=== $REF ==="
+            kaggle kernels status "$REF"
+          done
+      - name: Quota
+        run: kaggle quota
