@@ -283,6 +283,19 @@ def record(
 
 def add_groundcua(rows, writer, target):
     configs = get_dataset_config_names(SOURCES["gui_grounding"]["repo"])
+    if os.environ.get("FLM_V05_FAST_PREP") == "1":
+        preferred = [
+            "Blender","VSCode","PyCharm","IntelliJ_IDEA","Eclipse","NetBeans",
+            "Arduino_IDE","Code_Blocks","Qt_Creator","KDevelop","RStudio","Spyder",
+            "GIMP","Inkscape","Krita","FreeCAD","Darktable","Lightworks","OpenShot",
+            "OpenToonz","Natron","OBS_Studio","LibreOffice_Writer","LibreOffice_Calc",
+            "LibreOffice_Impress","OnlyOffice_Document_Editor","OnlyOffice_Spreadsheet",
+            "Mozilla_Firefox","Chromium","Brave","Ubuntu_Terminal","Bash","Nemo",
+            "VLC_Media_Player","WordPress","QGIS","GrassGIS","Audacity","MuseScore","draw.io",
+        ]
+        present = set(configs)
+        configs = [x for x in preferred if x in present]
+    print(f"GroundCUA configs_selected={len(configs)}", flush=True)
     per = max(1, math.ceil(target / max(1, len(configs))))
     added = 0
     category_counts = {}
@@ -321,6 +334,7 @@ def add_groundcua(rows, writer, target):
                     break
         except Exception as exc:
             print(f"GroundCUA config skip {config}: {type(exc).__name__}: {exc}", flush=True)
+        print(f"GroundCUA progress config={config} added={added}/{target}", flush=True)
         if added >= target:
             break
     return {"examples": added, "categories": category_counts, "configs_seen": len(category_counts)}
@@ -520,11 +534,20 @@ def prepare_computer(out: Path, target: int) -> dict:
     stats = {}
     try:
         stats["groundcua"] = add_groundcua(rows, writer, allocations["groundcua"])
+        print(f"v05_data groundcua_done rows={len(rows)}", flush=True)
         stats["salesforce"] = add_salesforce(rows, writer, allocations["salesforce"])
+        print(f"v05_data salesforce_done rows={len(rows)}", flush=True)
         stats["markov_actions"] = add_markov_actions(rows, writer, allocations["markov_actions"])
+        print(f"v05_data markov_done rows={len(rows)}", flush=True)
         stats["minecraft"] = add_minecraft(rows, writer, allocations["minecraft"])
+        print(f"v05_data minecraft_done rows={len(rows)}", flush=True)
         stats["games"] = add_game_visuals(rows, writer, allocations["games"])
-        stats["professional_video"] = add_professional_video_frames(rows, writer, 2)
+        print(f"v05_data games_done rows={len(rows)}", flush=True)
+        if os.environ.get("FLM_V05_FAST_PREP") == "1":
+            stats["professional_video"] = {"examples": 0, "skipped": "pilot_fast_prep"}
+        else:
+            stats["professional_video"] = add_professional_video_frames(rows, writer, 2)
+        print(f"v05_data professional_done rows={len(rows)}", flush=True)
     finally:
         writer.close()
 
@@ -567,10 +590,19 @@ def main() -> int:
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
 
+    print(f"v05_data main_start target={args.main_bytes}", flush=True)
+    main_stats = prepare_main(out, args.main_bytes)
+    print(f"v05_data main_done {main_stats}", flush=True)
+    print(f"v05_data coder_start target={args.coder_bytes}", flush=True)
+    coder_stats = prepare_coder(out, args.coder_bytes)
+    print(f"v05_data coder_done {coder_stats}", flush=True)
+    print(f"v05_data computer_start target={args.computer_examples}", flush=True)
+    computer_stats = prepare_computer(out, args.computer_examples)
+    print(f"v05_data computer_done examples={computer_stats['examples']} domains={computer_stats['domains']}", flush=True)
     stats = {
-        "main": prepare_main(out, args.main_bytes),
-        "coder": prepare_coder(out, args.coder_bytes),
-        "computer_use": prepare_computer(out, args.computer_examples),
+        "main": main_stats,
+        "coder": coder_stats,
+        "computer_use": computer_stats,
     }
     manifest = {
         "pipeline_version": "v0.5",
