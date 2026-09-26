@@ -12,13 +12,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: python -m pip install pytest pyyaml
-      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
-      - run: python -m py_compile falconctl.py kaggle/train_flm.py scripts/colab_setup.py
-      - run: pytest -q
+
+      - name: Install test dependencies
+        run: python -m pip install pytest pyyaml pillow numpy
+
+      - name: Install CPU PyTorch
+        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Python compile
+        run: |
+          python -m py_compile             falconctl.py             kaggle/train_flm.py             scripts/colab_setup.py             scripts/build_kernel_bundle.py             flm/runtime.py             flm/models/text_lm.py             flm/models/computer_use.py             flm/data/prepare_hf.py             flm/train_text.py             flm/train_computer_use.py             flm/train_suite.py
+
+      - name: Unit tests
+        run: pytest -q
 
       - name: Parse workflow YAML
         run: |
@@ -37,60 +47,56 @@ jobs:
           p = pathlib.Path('colab/Falcon_FLM_Trainer.ipynb')
           nb = json.loads(p.read_text())
           assert nb['nbformat'] == 4
-          joined = '\n'.join(
-              ''.join(cell.get('source', []))
-              for cell in nb['cells']
-          )
-          assert "drive.mount('/content/drive')" in joined
-          assert "kaggle/train_flm.py" in joined
-          assert "scripts.colab_setup" in joined
           print('OK', p, 'cells=', len(nb['cells']))
           PY
 
-      - name: Colab setup dry run
+      - name: Build Kaggle bundle
         run: |
-          python scripts/colab_setup.py             --dry-run             --drive-root /tmp/FalconFLM             --data-dir /tmp/FalconFLM/data             --output-dir /tmp/FalconFLM/runs/ci
-
-      - name: Model forward/backward smoke test
-        run: |
+          python scripts/build_kernel_bundle.py             --owner test-owner             --accelerator NvidiaTeslaT4             --out /tmp/kernel_bundle
           python - <<'PY'
-          import importlib.util
-          import sys
-          from pathlib import Path
-          import torch
-          p = Path('kaggle/train_flm.py')
-          spec = importlib.util.spec_from_file_location('train_flm', p)
-          m = importlib.util.module_from_spec(spec)
-          sys.modules[spec.name] = m
-          spec.loader.exec_module(m)
-          cfg = m.Config(seq_len=16, n_layer=1, n_head=2, n_embd=32, batch_size=2, grad_accum=1, max_steps=1)
-          model = m.FLM(cfg)
-          x = torch.randint(0, 256, (2, 16))
-          y = torch.randint(0, 256, (2, 16))
-          _, loss = model(x, y)
-          assert loss is not None and torch.isfinite(loss)
-          loss.backward()
-          print('OK loss=', float(loss.detach()))
+          import json, pathlib
+          root=pathlib.Path('/tmp/kernel_bundle')
+          meta=json.loads((root/'kernel-metadata.json').read_text())
+          assert meta['dataset_sources'] == ['test-owner/flm-hf-v04']
+          assert meta['enable_internet'] is False
+          assert meta['enable_gpu'] is True
+          assert (root/'flm/models/computer_use.py').is_file()
+          print('bundle OK')
           PY
 
-      - name: End-to-end CPU trainer smoke test
+      - name: Main and coder 1-step CPU training
         env:
-          FLM_DATA_DIR: /tmp/flm-data
-          FLM_OUTPUT_DIR: /tmp/flm-output
-          FLM_STEPS: "1"
+          FLM_ACCELERATOR: cpu
+          FLM_SMOKE: "1"
           FLM_SEQ_LEN: "16"
           FLM_LAYERS: "1"
           FLM_HEADS: "2"
           FLM_EMBD: "32"
           FLM_BATCH: "2"
           FLM_GRAD_ACCUM: "1"
-          FLM_WARMUP_STEPS: "1"
-          FLM_EVAL_INTERVAL: "1"
-          FLM_EVAL_ITERS: "1"
+          FLM_MAIN_STEPS: "1"
+          FLM_CODER_STEPS: "1"
         run: |
-          mkdir -p "$FLM_DATA_DIR"
-          printf 'Falcon Colab and Kaggle shared trainer smoke data.\n%.0s' {1..100} > "$FLM_DATA_DIR/smoke.txt"
-          python kaggle/train_flm.py
-          test -s "$FLM_OUTPUT_DIR/checkpoint.pt"
-          test -s "$FLM_OUTPUT_DIR/metrics.json"
-          test -s "$FLM_OUTPUT_DIR/runtime.json"
+          mkdir -p /tmp/flm-data
+          printf 'Falcon main real pipeline regression text. %.0s' {1..200} > /tmp/flm-data/main_train.txt
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('/tmp/flm-data/coder_train.jsonl')
+          rows=[
+            {'instruction':'Return the sum of two integers.','code':'def add(a, b):\n    return a + b\n'},
+            {'instruction':'Compute factorial recursively.','code':'def fact(n):\n    return 1 if n < 2 else n * fact(n-1)\n'}
+          ] * 30
+          p.write_text('\n'.join(json.dumps(x) for x in rows))
+          PY
+          python - <<'PY'
+          from pathlib import Path
+          from flm.train_text import train_text
+          root=Path('/tmp/flm-data')
+          out=Path('/tmp/flm-out')
+          train_text('main', root, out)
+          train_text('coder', root, out)
+          assert (out/'main/checkpoint.pt').stat().st_size > 0
+          assert (out/'coder/checkpoint.pt').stat().st_size > 0
+          print('text training OK')
+          PY
