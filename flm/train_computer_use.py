@@ -98,6 +98,8 @@ def train_computer(data_root: Path, output_root: Path) -> dict:
             _, _, loss = model(
                 images, task, action_in, op_target, action_target
             )
+            if loss.ndim:
+                loss = loss.mean()
         if scaler.is_enabled():
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)
