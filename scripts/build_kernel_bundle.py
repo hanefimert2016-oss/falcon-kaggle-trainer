@@ -119,7 +119,7 @@ def main() -> int:
         else "falcon-flm-v04-three-model-suite"
     )
     title = args.title or (
-        f"Falcon FLM v04 Fast {backend.upper()} Trio"
+        f"Falcon FLM v04 Fast {backend.upper()}"
         if args.profile == "fast"
         else "Falcon FLM v04 Three Model Suite"
     )
