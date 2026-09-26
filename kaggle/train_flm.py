@@ -27,7 +27,7 @@ class Config:
     dropout: float = 0.0
     batch_size: int = int(os.environ.get("FLM_BATCH", "24"))
     grad_accum: int = int(os.environ.get("FLM_GRAD_ACCUM", "4"))
-    max_steps: int = int(os.environ.get("FLM_STEPS", "1200"))
+    max_steps: int = int(os.environ.get("FLM_STEPS", "50"))
     lr: float = float(os.environ.get("FLM_LR", "3e-4"))
     weight_decay: float = 0.1
     warmup_steps: int = 50
@@ -182,7 +182,7 @@ def main() -> None:
     else:
         device = torch.device("cpu")
 
-    out = Path("/kaggle/working/flm-v0.2")
+    out = Path("/kaggle/working/flm-v0.2-smoke")
     out.mkdir(parents=True, exist_ok=True)
     data = load_bytes()
     split = max(cfg.seq_len + 2, int(len(data) * 0.98))
