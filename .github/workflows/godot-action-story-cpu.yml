@@ -1,0 +1,60 @@
+name: Godot Action Story CPU
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'gpu_jobs/echo_protocol_blacksite/godot_source.tar.gz'
+      - '.github/workflows/godot-action-story-cpu.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  godot-import-run-validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract Godot source
+        run: |
+          tar -xzf gpu_jobs/echo_protocol_blacksite/godot_source.tar.gz
+          mv godot_ci_source godot_project
+
+      - name: Fetch external CC0 models
+        run: python3 godot_project/tools/fetch_external_assets.py
+
+      - name: Static validation
+        run: python3 godot_project/tools/validate_project.py
+
+      - name: Download Godot 4.7.2
+        run: |
+          curl -L --fail --retry 4             'https://downloads.godotengine.org/?flavor=stable&platform=linux.64&slug=linux.x86_64.zip&version=4.7.2'             -o godot.zip
+          unzip -q godot.zip -d godot-bin
+          GODOT=$(find godot-bin -maxdepth 1 -type f -name 'Godot*linux*x86_64*' | head -1)
+          chmod +x "$GODOT"
+          echo "GODOT=$GODOT" >> "$GITHUB_ENV"
+          "$GODOT" --version
+
+      - name: Godot headless import
+        run: |
+          "$GODOT" --headless --editor --path godot_project --quit 2>&1 | tee godot_project/godot_import.log
+          ! grep -E 'SCRIPT ERROR|Parse Error|ERROR: Failed loading resource|ERROR: Cannot open file' godot_project/godot_import.log
+
+      - name: Godot headless runtime smoke test
+        run: |
+          "$GODOT" --headless --path godot_project --quit-after 180 2>&1 | tee godot_project/godot_runtime.log
+          ! grep -E 'SCRIPT ERROR|Parse Error|Invalid call|Invalid access|ERROR: Failed loading resource|ERROR: Cannot open file' godot_project/godot_runtime.log
+
+      - name: Upload ready Godot project
+        uses: actions/upload-artifact@v4
+        with:
+          name: echo-protocol-blacksite-godot-4.7.2
+          path: |
+            godot_project
+            !godot_project/.godot
+            !godot_project/.asset-cache
+          compression-level: 6
+          retention-days: 14
