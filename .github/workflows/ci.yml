@@ -27,7 +27,7 @@ jobs:
 
       - name: Python compile
         run: |
-          python -m py_compile             falconctl.py             kaggle/train_flm.py             scripts/colab_setup.py             scripts/build_kernel_bundle.py             flm/runtime.py             flm/models/text_lm.py             flm/models/computer_use.py             flm/models/computer_use_v2.py             flm/data/prepare_hf.py             flm/train_v05.py             flm/train_text.py             flm/train_computer_use.py             flm/train_suite.py
+          python -m py_compile             falconctl.py             kaggle/train_flm.py             scripts/colab_setup.py             scripts/build_kernel_bundle.py             flm/runtime.py             flm/models/text_lm.py             flm/models/computer_use.py             flm/models/computer_use_v2.py             flm/data/prepare_hf.py             flm/data/prepare_v05.py             flm/data/preflight_v05.py             flm/train_v05.py             flm/train_text.py             flm/train_computer_use.py             flm/train_suite.py
 
       - name: Unit tests
         run: pytest -q
