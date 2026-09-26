@@ -1,0 +1,69 @@
+name: Single CPU Test
+
+on:
+  push:
+    paths:
+      - '.single-cpu-trigger'
+      - '.github/workflows/single-cpu.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  single-cpu:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+      VECLIB_MAXIMUM_THREADS: "1"
+    steps:
+      - name: Show runner CPU info
+        run: |
+          echo "nproc=$(nproc)"
+          echo "allowed-before=$(taskset -pc $$)"
+          lscpu | grep -E '^(CPU\(s\)|Thread\(s\) per core|Core\(s\) per socket|Model name):' || true
+
+      - name: Run CPU-bound workload pinned to one logical CPU
+        shell: bash
+        run: |
+          set -euo pipefail
+          ALLOWED="$(taskset -pc $$ | awk -F': ' '{print $2}')"
+          FIRST="$(printf '%s\n' "$ALLOWED" | awk -F',' '{print $1}' | awk -F'-' '{print $1}')"
+          echo "allowed-cpus=$ALLOWED"
+          echo "selected-cpu=$FIRST"
+
+          cat > /tmp/single_cpu_test.py <<'PY'
+          import os, time
+
+          try:
+              affinity = sorted(os.sched_getaffinity(0))
+          except AttributeError:
+              affinity = []
+          print("python_affinity=", affinity)
+          print("affinity_count=", len(affinity))
+
+          # Deterministic CPU-bound workload: count primes up to 600,000.
+          limit = 600_000
+          t0 = time.perf_counter()
+          sieve = bytearray(b"\x01") * (limit + 1)
+          sieve[:2] = b"\x00\x00"
+          p = 2
+          while p * p <= limit:
+              if sieve[p]:
+                  start = p * p
+                  sieve[start:limit+1:p] = b"\x00" * (((limit - start) // p) + 1)
+              p += 1
+          count = sum(sieve)
+          dt = time.perf_counter() - t0
+
+          print("prime_count=", count)
+          print("elapsed_seconds=", round(dt, 4))
+          if len(affinity) != 1:
+              raise SystemExit(f"expected exactly 1 CPU in affinity, got {affinity}")
+          PY
+
+          taskset -c "$FIRST" python /tmp/single_cpu_test.py
