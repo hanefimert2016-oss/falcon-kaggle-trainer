@@ -1,67 +1,62 @@
-# Falcon Kaggle Trainer v0.2
+# Falcon FLM Trainer v0.3
 
-GitHub Actions is the control plane; Kaggle is the GPU training backend.
+GitHub Actions is the control plane. The same from-scratch FLM training engine can now run on **Kaggle GPU** or **Google Colab GPU**.
 
-## What this repo does
+## Backends
 
-- Uses GitHub Actions to validate, start, inspect, and download Kaggle training runs.
-- Uses the official Kaggle CLI and non-interactive `KAGGLE_API_TOKEN` authentication.
-- Runs a from-scratch byte-level causal language model on Kaggle GPU compute.
-- Does not depend on Llama, Qwen, or another pretrained model/tokenizer.
-- Saves `checkpoint.pt` and `metrics.json` as Kaggle outputs.
+### Kaggle — automatic backend
 
-## Required GitHub configuration
+- GitHub Actions authenticates with `KAGGLE_API_TOKEN`.
+- GitHub can push the trainer, query status/logs/quota, and download outputs.
+- Tested successfully on **2× Tesla T4**.
+- Outputs include `checkpoint.pt`, `metrics.json`, and `runtime.json`.
 
-Repository secret:
+Required repository configuration:
 
-- `KAGGLE_API_TOKEN` — create/copy it from Kaggle Settings → API.
+- Secret: `KAGGLE_API_TOKEN`
+- Variable: `KAGGLE_OWNER`
+- Optional variable: `KAGGLE_KERNEL_SLUG`
 
-Repository variables:
+### Google Colab — interactive GPU backend
 
-- `KAGGLE_OWNER` — your Kaggle username/owner slug.
-- `KAGGLE_KERNEL_SLUG` — optional, defaults to `falcon-flm-train`.
+Open:
 
-Do not commit your Kaggle token to this repository.
+https://colab.research.google.com/github/hanefimert2016-oss/falcon-kaggle-trainer/blob/main/colab/Falcon_FLM_Trainer.ipynb
 
-## Run from GitHub
+The notebook:
 
-Open **Actions → Falcon Kaggle Train → Run workflow**.
+1. mounts Google Drive,
+2. clones/updates this GitHub repo,
+3. detects CUDA and the assigned GPU,
+4. uses the same `kaggle/train_flm.py` engine,
+5. reads `.txt` training data from `MyDrive/FalconFLM/data/`,
+6. saves checkpoints to `MyDrive/FalconFLM/runs/colab-v0.3/`.
 
-Actions:
+No pretrained Llama/Qwen model or pretrained tokenizer is required.
 
-- `push`: upload the current trainer to Kaggle and start a GPU run.
-- `status`: show current kernel status.
-- `logs`: print the latest Kaggle logs.
-- `output`: download Kaggle outputs and publish them as a GitHub artifact.
-- `quota`: show Kaggle accelerator quota.
+## Portable trainer paths
 
-Default accelerator: `NvidiaTeslaT4` (Kaggle T4 x2 where available).
+The shared trainer supports:
+
+- `FLM_DATA_DIR` — input directory containing `.txt` files.
+- `FLM_OUTPUT_DIR` — directory for checkpoint and metrics.
+
+Defaults are selected automatically for Kaggle, Colab, or a local machine.
+
+## GitHub Actions
+
+The repository also contains:
+
+- Kaggle training control workflows,
+- Kaggle auth/status/output verification,
+- single-CPU Actions test,
+- CI that validates Python, YAML, the Colab notebook, Colab setup, model forward/backward, and a full 1-step CPU training run.
 
 ## Local smoke test
 
 ```bash
 ./setup.sh
-export KAGGLE_API_TOKEN='...'
-export KAGGLE_OWNER='your-kaggle-name'
-python falconctl.py render
-python falconctl.py validate
-python falconctl.py quota
-```
-
-## Architecture
-
-```text
-ChatGPT / GitHub UI
-        |
-        v
-GitHub Actions
-        |
-        v
-falconctl.py + Kaggle CLI
-        |
-        v
-Kaggle GPU kernel
-        |
-        +--> checkpoint.pt
-        +--> metrics.json
+export FLM_DATA_DIR="$PWD/data"
+export FLM_OUTPUT_DIR="$PWD/outputs/local"
+python kaggle/train_flm.py
 ```

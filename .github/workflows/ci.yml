@@ -17,8 +17,9 @@ jobs:
           python-version: '3.11'
       - run: python -m pip install pytest pyyaml
       - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
-      - run: python -m py_compile falconctl.py kaggle/train_flm.py
+      - run: python -m py_compile falconctl.py kaggle/train_flm.py scripts/colab_setup.py
       - run: pytest -q
+
       - name: Parse workflow YAML
         run: |
           python - <<'PY'
@@ -28,6 +29,28 @@ jobs:
               assert isinstance(data, dict) and 'jobs' in data, p
               print('OK', p)
           PY
+
+      - name: Validate Colab notebook JSON
+        run: |
+          python - <<'PY'
+          import json, pathlib
+          p = pathlib.Path('colab/Falcon_FLM_Trainer.ipynb')
+          nb = json.loads(p.read_text())
+          assert nb['nbformat'] == 4
+          joined = '\n'.join(
+              ''.join(cell.get('source', []))
+              for cell in nb['cells']
+          )
+          assert "drive.mount('/content/drive')" in joined
+          assert "kaggle/train_flm.py" in joined
+          assert "scripts.colab_setup" in joined
+          print('OK', p, 'cells=', len(nb['cells']))
+          PY
+
+      - name: Colab setup dry run
+        run: |
+          python scripts/colab_setup.py             --dry-run             --drive-root /tmp/FalconFLM             --data-dir /tmp/FalconFLM/data             --output-dir /tmp/FalconFLM/runs/ci
+
       - name: Model forward/backward smoke test
         run: |
           python - <<'PY'
@@ -49,3 +72,25 @@ jobs:
           loss.backward()
           print('OK loss=', float(loss.detach()))
           PY
+
+      - name: End-to-end CPU trainer smoke test
+        env:
+          FLM_DATA_DIR: /tmp/flm-data
+          FLM_OUTPUT_DIR: /tmp/flm-output
+          FLM_STEPS: "1"
+          FLM_SEQ_LEN: "16"
+          FLM_LAYERS: "1"
+          FLM_HEADS: "2"
+          FLM_EMBD: "32"
+          FLM_BATCH: "2"
+          FLM_GRAD_ACCUM: "1"
+          FLM_WARMUP_STEPS: "1"
+          FLM_EVAL_INTERVAL: "1"
+          FLM_EVAL_ITERS: "1"
+        run: |
+          mkdir -p "$FLM_DATA_DIR"
+          printf 'Falcon Colab and Kaggle shared trainer smoke data.\n%.0s' {1..100} > "$FLM_DATA_DIR/smoke.txt"
+          python kaggle/train_flm.py
+          test -s "$FLM_OUTPUT_DIR/checkpoint.pt"
+          test -s "$FLM_OUTPUT_DIR/metrics.json"
+          test -s "$FLM_OUTPUT_DIR/runtime.json"

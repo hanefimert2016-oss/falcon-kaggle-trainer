@@ -1,6 +1,7 @@
-"""FLM v0.2: from-scratch byte-level causal language model trainer.
+"""FLM v0.3: backend-agnostic, from-scratch byte-level causal LM trainer.
 
-Runs on Kaggle GPU compute and intentionally uses no pretrained model or tokenizer.
+The same file runs on Kaggle, Google Colab, GitHub Actions (CPU smoke tests),
+or a local machine. It intentionally uses no pretrained model or tokenizer.
 """
 from __future__ import annotations
 
@@ -17,6 +18,28 @@ import torch.nn as nn
 from torch.nn import functional as F
 
 
+def default_data_dir() -> Path:
+    configured = os.environ.get("FLM_DATA_DIR", "").strip()
+    if configured:
+        return Path(configured).expanduser()
+    if Path("/kaggle/input").exists():
+        return Path("/kaggle/input")
+    if Path("/content").exists():
+        return Path("/content/flm-data")
+    return Path("data")
+
+
+def default_output_dir() -> Path:
+    configured = os.environ.get("FLM_OUTPUT_DIR", "").strip()
+    if configured:
+        return Path(configured).expanduser()
+    if Path("/kaggle/working").exists():
+        return Path("/kaggle/working/flm-v0.3")
+    if Path("/content").exists():
+        return Path("/content/flm-output")
+    return Path("outputs/flm-local")
+
+
 @dataclass
 class Config:
     vocab_size: int = 256
@@ -24,16 +47,16 @@ class Config:
     n_layer: int = int(os.environ.get("FLM_LAYERS", "8"))
     n_head: int = int(os.environ.get("FLM_HEADS", "8"))
     n_embd: int = int(os.environ.get("FLM_EMBD", "512"))
-    dropout: float = 0.0
+    dropout: float = float(os.environ.get("FLM_DROPOUT", "0.0"))
     batch_size: int = int(os.environ.get("FLM_BATCH", "24"))
     grad_accum: int = int(os.environ.get("FLM_GRAD_ACCUM", "4"))
     max_steps: int = int(os.environ.get("FLM_STEPS", "50"))
     lr: float = float(os.environ.get("FLM_LR", "3e-4"))
-    weight_decay: float = 0.1
-    warmup_steps: int = 50
-    eval_interval: int = 100
-    eval_iters: int = 20
-    seed: int = 1337
+    weight_decay: float = float(os.environ.get("FLM_WEIGHT_DECAY", "0.1"))
+    warmup_steps: int = int(os.environ.get("FLM_WARMUP_STEPS", "50"))
+    eval_interval: int = int(os.environ.get("FLM_EVAL_INTERVAL", "100"))
+    eval_iters: int = int(os.environ.get("FLM_EVAL_ITERS", "20"))
+    seed: int = int(os.environ.get("FLM_SEED", "1337"))
 
 
 class CausalSelfAttention(nn.Module):
@@ -117,25 +140,28 @@ class FLM(nn.Module):
         return logits, loss
 
 
-def load_bytes() -> torch.Tensor:
-    input_root = Path("/kaggle/input")
-    candidates = sorted(input_root.rglob("*.txt")) if input_root.exists() else []
+def load_bytes(data_dir: Path) -> tuple[torch.Tensor, list[str], bool]:
+    candidates = sorted(data_dir.rglob("*.txt")) if data_dir.exists() else []
     chunks: list[bytes] = []
+    used_files: list[str] = []
+    max_bytes = int(os.environ.get("FLM_MAX_BYTES_PER_FILE", str(64 * 1024 * 1024)))
     for p in candidates[:64]:
         try:
             data = p.read_bytes()
         except OSError:
             continue
         if data:
-            chunks.append(data[:64 * 1024 * 1024])
-    if not chunks:
+            chunks.append(data[:max_bytes])
+            used_files.append(str(p))
+    fallback_used = not chunks
+    if fallback_used:
         fallback = (
             "Falcon Language Model is trained from scratch. "
             "Bu veri yalnizca egitim hattini test etmek icindir.\n"
         ) * 10000
         chunks = [fallback.encode("utf-8")]
     raw = b"\n".join(chunks)
-    return torch.tensor(list(raw), dtype=torch.long)
+    return torch.tensor(list(raw), dtype=torch.long), used_files, fallback_used
 
 
 def get_batch(data: torch.Tensor, cfg: Config, device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
@@ -150,7 +176,7 @@ def get_batch(data: torch.Tensor, cfg: Config, device: torch.device) -> tuple[to
 
 def lr_for(step: int, cfg: Config) -> float:
     if step < cfg.warmup_steps:
-        return cfg.lr * (step + 1) / cfg.warmup_steps
+        return cfg.lr * (step + 1) / max(1, cfg.warmup_steps)
     ratio = (step - cfg.warmup_steps) / max(1, cfg.max_steps - cfg.warmup_steps)
     return cfg.lr * 0.5 * (1.0 + math.cos(math.pi * min(1.0, ratio)))
 
@@ -182,9 +208,11 @@ def main() -> None:
     else:
         device = torch.device("cpu")
 
-    out = Path("/kaggle/working/flm-v0.2-smoke")
+    data_dir = default_data_dir()
+    out = default_output_dir()
     out.mkdir(parents=True, exist_ok=True)
-    data = load_bytes()
+
+    data, used_files, fallback_used = load_bytes(data_dir)
     split = max(cfg.seq_len + 2, int(len(data) * 0.98))
     split = min(split, len(data) - cfg.seq_len - 2)
     train_data = data[:split]
@@ -194,14 +222,22 @@ def main() -> None:
 
     base_model = FLM(cfg).to(device)
     params = sum(p.numel() for p in base_model.parameters())
-    print(json.dumps({
+    runtime = {
         "device": str(device),
         "gpu_count": torch.cuda.device_count(),
         "gpu_names": [torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())],
         "parameters": params,
         "dataset_bytes": int(len(data)),
+        "data_dir": str(data_dir),
+        "output_dir": str(out),
+        "dataset_files": used_files,
+        "fallback_data_used": fallback_used,
         "config": asdict(cfg),
-    }, ensure_ascii=False), flush=True)
+    }
+    print(json.dumps(runtime, ensure_ascii=False), flush=True)
+    (out / "runtime.json").write_text(
+        json.dumps(runtime, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
 
     model: nn.Module = base_model
     if torch.cuda.device_count() > 1:
@@ -219,7 +255,9 @@ def main() -> None:
         running = 0.0
         for _ in range(cfg.grad_accum):
             x, y = get_batch(train_data, cfg, device)
-            with torch.autocast(device_type=device.type, dtype=torch.float16, enabled=device.type == "cuda"):
+            with torch.autocast(
+                device_type=device.type, dtype=torch.float16, enabled=device.type == "cuda"
+            ):
                 _, loss = model(x, y)
                 if loss is None:
                     raise RuntimeError("model returned no loss during training")
@@ -239,23 +277,35 @@ def main() -> None:
 
         if step % 10 == 0:
             elapsed = time.time() - start
-            print(f"step={step} train_loss={running:.4f} lr={lr:.6g} elapsed_s={elapsed:.1f}", flush=True)
+            print(
+                f"step={step} train_loss={running:.4f} lr={lr:.6g} elapsed_s={elapsed:.1f}",
+                flush=True,
+            )
         if step % cfg.eval_interval == 0 or step == cfg.max_steps - 1:
             val = evaluate(model, val_data, cfg, device)
             print(f"step={step} val_loss={val:.4f}", flush=True)
-            torch.save({
-                "model": base_model.state_dict(),
-                "optimizer": optimizer.state_dict(),
-                "step": step,
-                "config": asdict(cfg),
-            }, out / "checkpoint.pt")
-            (out / "metrics.json").write_text(json.dumps({
-                "step": step,
-                "train_loss": running,
-                "val_loss": val,
-                "parameters": params,
-                "elapsed_s": time.time() - start,
-            }, indent=2), encoding="utf-8")
+            torch.save(
+                {
+                    "model": base_model.state_dict(),
+                    "optimizer": optimizer.state_dict(),
+                    "step": step,
+                    "config": asdict(cfg),
+                },
+                out / "checkpoint.pt",
+            )
+            (out / "metrics.json").write_text(
+                json.dumps(
+                    {
+                        "step": step,
+                        "train_loss": running,
+                        "val_loss": val,
+                        "parameters": params,
+                        "elapsed_s": time.time() - start,
+                    },
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
 
     print(f"training_complete output={out}", flush=True)
 
