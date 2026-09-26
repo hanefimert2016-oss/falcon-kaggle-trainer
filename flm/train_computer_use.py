@@ -27,7 +27,6 @@ def task_bytes(text: str, cfg: ComputerUseConfig) -> torch.Tensor:
 def action_bytes(
     text: str, cfg: ComputerUseConfig
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    # Teacher forcing: [BOS, a, b] -> [a, b, EOS], masked after EOS.
     raw = list(text.encode("utf-8", "ignore")[: cfg.action_len - 1])
     action_in = [cfg.bos_token] + raw
     target = raw + [cfg.eos_token]
@@ -58,7 +57,6 @@ def image_tensor(path: Path, size: int) -> torch.Tensor:
     with Image.open(path) as im:
         im = im.convert("RGB").resize((size, size))
         arr = np.asarray(im, dtype=np.float32) / 255.0
-        # Normalize around 0 for a from-scratch vision encoder.
         arr = (arr - 0.5) / 0.5
         return torch.from_numpy(arr).permute(2, 0, 1).contiguous()
 
@@ -86,7 +84,8 @@ def evaluate(model, rows, image_dir, cfg, device, runtime) -> dict:
     total_correct = 0
     total = 0
     rng = random.Random(2026)
-    batches = min(4, max(1, len(rows)))
+    requested = int(os.environ.get("FLM_COMPUTER_EVAL_BATCHES", "4"))
+    batches = min(max(1, requested), max(1, len(rows)))
     for _ in range(batches):
         images, task, action_in, op_target, action_target = make_batch(
             rows, image_dir, cfg, 1, device, rng
@@ -128,7 +127,6 @@ def train_computer(data_root: Path, output_root: Path) -> dict:
     if len(rows) < 2:
         raise RuntimeError("computer-use dataset needs at least two real samples")
 
-    # Deterministic holdout for accelerator-side evaluation.
     rng = random.Random(1337)
     shuffled = rows[:]
     rng.shuffle(shuffled)

@@ -1,0 +1,88 @@
+name: FLM Fast Status and Fetch
+
+on:
+  push:
+    paths:
+      - '.flm-fast-status-trigger'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - backend: gpu
+            slug: falcon-flm-v04-fast-gpu
+            output_dir: flm-v0.4-fast-gpu
+          - backend: tpu
+            slug: falcon-flm-v04-fast-tpu
+            output_dir: flm-v0.4-fast-tpu
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install "kaggle>=2.2.1"
+
+      - name: Probe status without long polling
+        id: status
+        shell: bash
+        run: |
+          set -euo pipefail
+          REF="$KAGGLE_OWNER/${{ matrix.slug }}"
+          STATUS="$(kaggle kernels status "$REF" 2>&1 || true)"
+          echo "$STATUS"
+          if echo "$STATUS" | grep -q 'KernelWorkerStatus.COMPLETE'; then
+            echo "state=complete" >> "$GITHUB_OUTPUT"
+          elif echo "$STATUS" | grep -Eq 'KernelWorkerStatus.(ERROR|FAILED|CANCELLED)'; then
+            echo "state=failed" >> "$GITHUB_OUTPUT"
+          elif echo "$STATUS" | grep -q 'KernelWorkerStatus.RUNNING'; then
+            echo "state=running" >> "$GITHUB_OUTPUT"
+          else
+            echo "state=queued" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Print failure logs
+        if: steps.status.outputs.state == 'failed'
+        run: kaggle kernels logs "$KAGGLE_OWNER/${{ matrix.slug }}" || true
+
+      - name: Download completed checkpoints
+        if: steps.status.outputs.state == 'complete'
+        run: |
+          set -euo pipefail
+          mkdir -p outputs
+          kaggle kernels output "$KAGGLE_OWNER/${{ matrix.slug }}" -p outputs -o
+          ROOT="outputs/${{ matrix.output_dir }}"
+          test -s "$ROOT/main/checkpoint.pt"
+          test -s "$ROOT/main/metrics.json"
+          test -s "$ROOT/computer_use/checkpoint.pt"
+          test -s "$ROOT/computer_use/metrics.json"
+          test -s "$ROOT/coder/checkpoint.pt"
+          test -s "$ROOT/coder/metrics.json"
+          test -s "$ROOT/suite_metrics.json"
+          python - <<'PY'
+          import json, pathlib
+          root = pathlib.Path("outputs/${{ matrix.output_dir }}")
+          for name in ("main", "computer_use", "coder"):
+              m = json.loads((root / name / "metrics.json").read_text())
+              print(name, json.dumps(m, sort_keys=True))
+              assert m["parameters"] > 0
+              assert m["eval_loss"] > 0
+          print("FAST TRIO VERIFIED")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: steps.status.outputs.state == 'complete'
+        with:
+          name: flm-v04-fast-${{ matrix.backend }}
+          path: outputs/${{ matrix.output_dir }}/
+          if-no-files-found: error
+          retention-days: 7

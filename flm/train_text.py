@@ -46,10 +46,12 @@ def make_batch(data, batch_size, seq_len, device):
 
 
 @torch.no_grad()
-def evaluate(model, data, cfg, runtime, iters=4):
+def evaluate(model, data, cfg, runtime, iters=None):
     model.eval()
     losses = []
-    for _ in range(iters):
+    if iters is None:
+        iters = int(os.environ.get("FLM_EVAL_ITERS", "4"))
+    for _ in range(max(1, iters)):
         x, y = make_batch(data, 1, cfg.seq_len, runtime.device)
         with runtime.autocast():
             _, loss = model(x, y)
@@ -64,8 +66,6 @@ def train_text(kind: str, data_root: Path, output_root: Path) -> dict:
     runtime = select_runtime()
     smoke = os.environ.get("FLM_SMOKE", "1") == "1"
 
-    # Main and coder are separate weights. Their first architecture is the same
-    # decoder family, but each is independently pretrained on its own real data.
     default_seq = "256" if smoke else ("1024" if kind == "coder" else "768")
     default_layers = "8" if smoke else "12"
     default_heads = "8" if smoke else "12"
@@ -135,7 +135,6 @@ def train_text(kind: str, data_root: Path, output_root: Path) -> dict:
         if step % 5 == 0 or step == steps - 1:
             print(f"{kind} step={step} loss={running:.4f}", flush=True)
 
-    # Test/eval stays on the selected GPU or TPU.
     eval_loss = evaluate(model, eval_data, cfg, runtime)
     result = {
         "kind": kind,
