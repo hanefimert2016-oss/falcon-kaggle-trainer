@@ -1,0 +1,41 @@
+name: Kaggle GPU Slot Audit
+
+on:
+  push:
+    paths:
+      - '.kaggle-slot-audit'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install "kaggle>=2.2.1"
+      - name: Audit all owned kernel statuses
+        shell: bash
+        run: |
+          set -euo pipefail
+          kaggle kernels list --mine -v --page-size 100 | tee /tmp/kernels.csv
+          python - <<'PY' > /tmp/refs.txt
+          import csv
+          from pathlib import Path
+          rows=list(csv.DictReader(Path('/tmp/kernels.csv').read_text().splitlines()))
+          for row in rows:
+              ref=(row.get('ref') or '').strip()
+              if ref:
+                  print(ref)
+          PY
+          while IFS= read -r REF; do
+            echo "=== $REF ==="
+            kaggle kernels status "$REF" 2>&1 || true
+          done < /tmp/refs.txt
+      - name: Quota
+        run: kaggle quota
