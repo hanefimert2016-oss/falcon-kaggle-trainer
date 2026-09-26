@@ -26,7 +26,7 @@ def main() -> int:
     )
 
     meta = {
-        "id": f"{args.owner}/falcon-flm-v04-suite",
+        "id": f"{args.owner}/falcon-flm-v04-three-model-suite",
         "title": "Falcon FLM v04 Three Model Suite",
         "code_file": "train_suite.py",
         "language": "python",
