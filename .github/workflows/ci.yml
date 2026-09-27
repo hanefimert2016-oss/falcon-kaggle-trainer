@@ -276,6 +276,7 @@ jobs:
           from tokenizers import Tokenizer
           from tokenizers.models import BPE
           from tokenizers.pre_tokenizers import ByteLevel
+          from tokenizers.decoders import ByteLevel as ByteLevelDecoder
           from tokenizers.trainers import BpeTrainer
           from flm.computer_use.context import build_context_ids,summarize_action,summarize_action_dict
 
@@ -283,6 +284,7 @@ jobs:
           corpus=root/'c.txt'
           corpus.write_text(('Task Recent actions CLICK DRAG TYPE terminal dosya aç merhaba '*400),encoding='utf-8')
           tok=Tokenizer(BPE(unk_token='<unk>')); tok.pre_tokenizer=ByteLevel(add_prefix_space=False)
+          tok.decoder=ByteLevelDecoder()
           tok.train([str(corpus)],BpeTrainer(vocab_size=256,min_frequency=1,special_tokens=['<pad>','<unk>']))
           pad=tok.token_to_id('<pad>')
           h=[
