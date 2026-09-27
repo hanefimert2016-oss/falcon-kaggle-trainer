@@ -1,0 +1,80 @@
+name: FLM v0.5 Final ZIP Fetch
+
+on:
+  push:
+    paths:
+      - '.flm-v05-final-zip-trigger'
+
+permissions:
+  contents: read
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
+      REF: ${{ vars.KAGGLE_OWNER }}/falcon-flm-v05-full-gpu
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install "kaggle>=2.2.1"
+
+      - name: Verify full training complete
+        run: |
+          set -euo pipefail
+          STATUS="$(kaggle kernels status "$REF" 2>&1)"
+          echo "$STATUS"
+          echo "$STATUS" | grep -q 'KernelWorkerStatus.COMPLETE'
+
+      - name: Download final full outputs
+        run: |
+          set -euo pipefail
+          mkdir -p final_out
+          kaggle kernels output "$REF" -p final_out -o
+          find final_out -maxdepth 4 -type f -printf '%p %s bytes\n' | sort
+
+      - name: Verify final trio
+        run: |
+          set -euo pipefail
+          ROOT="$(find final_out -type f -name suite_metrics.json -printf '%h\n' | head -n1)"
+          test -n "$ROOT"
+          for M in main computer_use coder; do
+            test -s "$ROOT/$M/checkpoint.pt"
+            test -s "$ROOT/$M/metrics.json"
+          done
+          python - "$ROOT" <<'PY'
+          import json,sys
+          from pathlib import Path
+          root=Path(sys.argv[1])
+          suite=json.loads((root/'suite_metrics.json').read_text())
+          assert suite['pipeline_version']=='v0.5'
+          assert suite['accelerator']=='gpu'
+          models={m['kind']:m for m in suite['models']}
+          assert models['main']['steps']==500
+          assert models['computer_use']['steps']==300
+          assert models['coder']['steps']==400
+          print(json.dumps(suite,indent=2))
+          print('FINAL V05 FULL TRIO VERIFIED')
+          PY
+          echo "$ROOT" > /tmp/root.txt
+
+      - name: Create single ZIP
+        run: |
+          set -euo pipefail
+          ROOT="$(cat /tmp/root.txt)"
+          cd "$(dirname "$ROOT")"
+          DIR="$(basename "$ROOT")"
+          zip -r -0 "$GITHUB_WORKSPACE/FLM-v0.5-FULL-FINAL.zip" "$DIR"
+          cd "$GITHUB_WORKSPACE"
+          ls -lh FLM-v0.5-FULL-FINAL.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FLM-v0.5-FULL-FINAL
+          path: FLM-v0.5-FULL-FINAL.zip
+          retention-days: 7
+          compression-level: 0
+          if-no-files-found: error
