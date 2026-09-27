@@ -27,7 +27,7 @@ jobs:
 
       - name: Python compile
         run: |
-          python -m py_compile             falconctl.py             kaggle/train_flm.py             scripts/colab_setup.py             scripts/build_kernel_bundle.py             flm/runtime.py             flm/models/text_lm.py             flm/models/computer_use.py             flm/models/computer_use_v2.py             flm/models/computer_use_v3.py             flm/computer_use/action_protocol.py             flm/computer_use/executor.py             flm/tooling/protocol.py             flm/tooling/runtime.py             flm/data/prepare_hf.py             flm/data/prepare_v05.py             flm/data/prepare_v06.py             flm/data/prepare_v07.py             flm/data/preflight_v05.py             flm/train_v05.py             flm/train_v06.py             flm/train_v07.py             flm/computer_use/agent.py             flm/train_text.py             flm/train_computer_use.py             flm/train_suite.py             run_flm_v06.py             scripts/validate_v06_quality.py             scripts/build_kernel_bundle_v07.py             scripts/validate_v07_quality.py             scripts/run_computer_use_v07.py
+          python -m py_compile             falconctl.py             kaggle/train_flm.py             scripts/colab_setup.py             scripts/build_kernel_bundle.py             flm/runtime.py             flm/models/text_lm.py             flm/models/computer_use.py             flm/models/computer_use_v2.py             flm/models/computer_use_v3.py             flm/computer_use/action_protocol.py             flm/computer_use/context.py             flm/computer_use/executor.py             flm/tooling/protocol.py             flm/tooling/runtime.py             flm/data/prepare_hf.py             flm/data/prepare_v05.py             flm/data/prepare_v06.py             flm/data/prepare_v07.py             flm/data/preflight_v05.py             flm/train_v05.py             flm/train_v06.py             flm/train_v07.py             flm/computer_use/agent.py             flm/train_text.py             flm/train_computer_use.py             flm/train_suite.py             run_flm_v06.py             scripts/validate_v06_quality.py             scripts/build_kernel_bundle_v07.py             scripts/validate_v07_quality.py             scripts/run_computer_use_v07.py
 
       - name: Unit tests
         run: pytest -q
@@ -234,6 +234,36 @@ jobs:
           assert out=='Sonuç 5.'
           assert any(x.get('role')=='tool' and '"result":5' in x['content'] for x in h)
           print('v0.7 tool runtime OK')
+          PY
+
+      - name: FLM v0.7 ComputerUse action-history context regression
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from tokenizers import Tokenizer
+          from tokenizers.models import BPE
+          from tokenizers.pre_tokenizers import ByteLevel
+          from tokenizers.trainers import BpeTrainer
+          from flm.computer_use.context import build_context_ids,summarize_action,summarize_action_dict
+
+          root=Path('/tmp/v07-history'); root.mkdir(exist_ok=True)
+          corpus=root/'c.txt'
+          corpus.write_text(('Task Recent actions CLICK DRAG TYPE terminal dosya aç merhaba '*400),encoding='utf-8')
+          tok=Tokenizer(BPE(unk_token='<unk>')); tok.pre_tokenizer=ByteLevel(add_prefix_space=False)
+          tok.train([str(corpus)],BpeTrainer(vocab_size=256,min_frequency=1,special_tokens=['<pad>','<unk>']))
+          pad=tok.token_to_id('<pad>')
+          h=[
+              summarize_action('CLICK',coord=[.2,.3]),
+              summarize_action('TYPE',payload='merhaba dünya'),
+              summarize_action_dict({'type':'key','keys':['ctrl','s']}),
+          ]
+          ids=build_context_ids(tok,'Dosyayı aç ve kaydet.',h,64,pad)
+          assert len(ids)==64
+          decoded=tok.decode([x for x in ids if x!=pad])
+          assert 'Task' in decoded and ('Recent' in decoded or 'actions' in decoded),decoded
+          assert any(x.startswith('CLICK@') for x in h),h
+          assert h[-1]=='KEY:ctrl+s',h
+          print('v0.7 action-history context OK',h)
           PY
 
       - name: FLM v0.7 ComputerUse pointer-policy regression

@@ -12,6 +12,7 @@ import torch
 from tokenizers import Tokenizer
 
 from flm.computer_use.action_protocol import Action, ActionType
+from flm.computer_use.context import build_context_ids, summarize_action_dict
 from flm.computer_use.executor import (
     DryRunBackend,
     HumanInputExecutor,
@@ -101,9 +102,10 @@ class ComputerUsePolicy:
         arr = (arr - 0.5) / 0.5
         return torch.from_numpy(arr).permute(2, 0, 1).contiguous().unsqueeze(0)
 
-    def _task_tensor(self, task: str) -> torch.Tensor:
-        ids = self.tokenizer.encode(str(task), add_special_tokens=False).ids[: self.cfg.task_len]
-        ids += [self.pad_id] * (self.cfg.task_len - len(ids))
+    def _task_tensor(self, task: str, history=None) -> torch.Tensor:
+        ids = build_context_ids(
+            self.tokenizer, task, history, self.cfg.task_len, self.pad_id
+        )
         return torch.tensor([ids], dtype=torch.long)
 
     @staticmethod
@@ -167,9 +169,9 @@ class ComputerUsePolicy:
         return Action(ActionType.DONE).validate()
 
     @torch.inference_mode()
-    def predict(self, image: Image.Image, task: str) -> PolicyPrediction:
+    def predict(self, image: Image.Image, task: str, history=None) -> PolicyPrediction:
         image_t = self._image_tensor(image).to(self.device)
-        task_t = self._task_tensor(task).to(self.device)
+        task_t = self._task_tensor(task, history).to(self.device)
         raw = self.model.predict(image_t, task_t)
         op_id = int(raw["op"][0].item())
         domain_id = int(raw["domain"][0].item())
@@ -217,7 +219,12 @@ class ComputerUseAgent:
                 dtype=np.float32,
             ) / 255.0
 
-            pred = self.policy.predict(screenshot, task)
+            recent = [
+                summarize_action_dict(x["action"])
+                for x in history[-4:]
+                if x.get("action")
+            ]
+            pred = self.policy.predict(screenshot, task, recent)
             action_json = pred.action.to_json()
             screen_delta = (
                 None

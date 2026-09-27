@@ -20,6 +20,7 @@ from tokenizers import Tokenizer
 
 from flm.models.text_lm import ByteCausalLM, TextConfig
 from flm.models.computer_use_v3 import ComputerUseV3, ComputerUseV3Config
+from flm.computer_use.context import build_context_ids, summarize_action
 from flm.runtime import select_runtime
 from flm.train_v05 import ZipImageStore
 
@@ -450,11 +451,24 @@ def merge_cu_rows(v05_root: Path, v07_root: Path):
         }
         rows.append(rr)
 
+    histories: dict[str, list[str]] = {}
     for line in (v07_root / "cu07_manifest.jsonl").read_text(encoding="utf-8").splitlines():
-        if line.strip():
-            r = json.loads(line)
-            r["_root"] = "v07"
-            rows.append(r)
+        if not line.strip():
+            continue
+        r = json.loads(line)
+        r["_root"] = "v07"
+        episode = str(r.get("episode_id") or "")
+        previous = histories.setdefault(episode, [])
+        r["_history"] = list(previous[-4:])
+        rows.append(r)
+        previous.append(
+            summarize_action(
+                r.get("operation", "OTHER"),
+                coord=r.get("coord"),
+                coord2=r.get("coord2"),
+                payload=r.get("payload", ""),
+            )
+        )
 
     train = [r for r in rows if not heldout(r)]
     eval_rows = [r for r in rows if heldout(r)]
@@ -499,9 +513,8 @@ def patch_index(coord, cfg):
     return min(side - 1, int(y * side)) * side + min(side - 1, int(x * side))
 
 
-def bpe_task(tok, text, cfg, pad_id):
-    ids = tok.encode(str(text), add_special_tokens=False).ids[: cfg.task_len]
-    ids += [pad_id] * (cfg.task_len - len(ids))
+def bpe_task(tok, text, cfg, pad_id, history=None):
+    ids = build_context_ids(tok, text, history, cfg.task_len, pad_id)
     return torch.tensor(ids, dtype=torch.long)
 
 
@@ -520,7 +533,7 @@ def cu_batch(rows, stores, tok, cfg, pad_id, domains, device):
     for r in rows:
         store = stores[r["_root"]]
         images.append(store.image(r["archive"], r["image"], cfg.image_size))
-        tasks.append(bpe_task(tok, r.get("task", ""), cfg, pad_id))
+        tasks.append(bpe_task(tok, r.get("task", ""), cfg, pad_id, r.get("_history")))
         pi, pt = payload_pair(r.get("payload", ""), cfg)
         pins.append(pi)
         ptgts.append(pt)
