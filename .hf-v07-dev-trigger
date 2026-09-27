@@ -1,3 +1,2 @@
-rerun v07 dev computer data after Kaggle slug fix
-cpu-title=Falcon FLM v07 DEV Computer CPU
-gpu-title=Falcon FLM v07 DEV Full GPU
+rerun v07 dev computer data after flm.data package fix
+commit=5593d546
