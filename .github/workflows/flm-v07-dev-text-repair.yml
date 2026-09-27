@@ -1,0 +1,205 @@
+name: FLM v0.7 DEV Text Repair + Full GPU
+
+on:
+  push:
+    paths:
+      - '.hf-v07-dev-text-repair-trigger'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  text-data:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
+      CUDA_VISIBLE_DEVICES: ""
+      HF_HUB_DISABLE_TELEMETRY: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install CPU data stack
+        run: python -m pip install "datasets>=4.0" "huggingface_hub>=0.30" "tokenizers>=0.20" "kaggle>=2.2.1" numpy
+
+      - name: Import smoke test
+        run: |
+          set -euo pipefail
+          test -z "$CUDA_VISIBLE_DEVICES"
+          python - <<'PY'
+          import flm.data.prepare_v07
+          import flm.data.prepare_v07_text_dev
+          print("V07_DEV_TEXT_IMPORT_OK")
+          PY
+          python -m py_compile flm/data/prepare_v07_text_dev.py
+
+      - name: Build massive Main Coder Tool data on GitHub CPU
+        run: |
+          set -euo pipefail
+          test -z "$CUDA_VISIBLE_DEVICES"
+          python -m flm.data.prepare_v07_text_dev \
+            --out prepared_v07_dev_text \
+            --owner "$KAGGLE_OWNER" \
+            --main-bytes 3072000000 \
+            --coder-bytes 512000000 \
+            --vocab-size 16384 \
+            --en-sft-rows 200000 \
+            --tr-knowledge-rows 180000 \
+            --coder-code-rows 150000 \
+            --xlam-tool-rows 60000 \
+            --tool100k-rows 100000
+
+      - name: Verify massive text scale
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('prepared_v07_dev_text/sources.json')
+          x=json.loads(p.read_text())
+          assert x['pipeline_version']=='v0.7-dev-text'
+          s=x['stats']
+          assert s['main_raw']['bytes'] >= 3_000_000_000, s['main_raw']
+          assert s['coder_raw']['content_bytes'] >= 490_000_000, s['coder_raw']
+          assert s['main']['tokens'] >= 800_000_000, s['main']
+          assert s['coder']['tokens'] >= 145_000_000, s['coder']
+          assert s['main_sft_raw']['rows'] >= 450_000, s['main_sft_raw']
+          assert s['main_sft']['supervised_tokens'] >= 300_000_000, s['main_sft']
+          assert s['coder_sft_raw']['rows'] >= 280_000, s['coder_sft_raw']
+          assert s['coder_sft_tool100k']['rows'] >= 85000, s['coder_sft_tool100k']
+          assert s['coder_sft']['supervised_tokens'] >= 60_000_000, s['coder_sft']
+          assert s['tokenizer']['vocab_size'] >= 16000
+          print('V07_DEV_TEXT_VERIFIED')
+          print(json.dumps(s,indent=2,ensure_ascii=False))
+          PY
+          du -sh prepared_v07_dev_text
+
+      - name: Upload private DEV text dataset
+        run: |
+          set -euo pipefail
+          REF="$KAGGLE_OWNER/flm-v07-dev-text"
+          if kaggle datasets list --mine -s flm-v07-dev-text -v | grep -Fq "$REF"; then
+            kaggle datasets version -p prepared_v07_dev_text -m "FLM v0.7 DEV 3GB bilingual pretrain + massive SFT/tool data" -q -t -r skip
+          else
+            kaggle datasets create -p prepared_v07_dev_text -q -t -r skip
+          fi
+          for attempt in $(seq 1 120); do
+            if kaggle datasets files "$REF" --page-size 30; then
+              echo "V07_DEV_TEXT_KAGGLE_READY"
+              exit 0
+            fi
+            sleep 5
+          done
+          exit 1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flm-v07-dev-text-manifest-repaired
+          path: |
+            prepared_v07_dev_text/sources.json
+            prepared_v07_dev_text/tokenizer_meta.json
+          retention-days: 14
+
+  launch-full:
+    needs: text-data
+    runs-on: ubuntu-latest
+    timeout-minutes: 260
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
+      COMPUTER_REF: ${{ vars.KAGGLE_OWNER }}/falcon-flm-v07-dev-computer-cpu
+      GPU_REF: ${{ vars.KAGGLE_OWNER }}/falcon-flm-v07-dev-full-gpu
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install "kaggle>=2.2.1"
+
+      - name: Wait for existing ComputerUse CPU data
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 720); do
+            STATUS="$(kaggle kernels status "$COMPUTER_REF" 2>&1 || true)"
+            echo "$STATUS"
+            if echo "$STATUS" | grep -q 'KernelWorkerStatus.COMPLETE'; then
+              kaggle kernels logs "$COMPUTER_REF" > /tmp/cu.log || true
+              tail -n 180 /tmp/cu.log || true
+              grep -q 'V07_DEV_COMPUTER_COMPLETE' /tmp/cu.log
+              exit 0
+            fi
+            if echo "$STATUS" | grep -Eq 'KernelWorkerStatus.(ERROR|FAILED|CANCELLED)'; then
+              kaggle kernels logs "$COMPUTER_REF" || true
+              exit 1
+            fi
+            sleep 20
+          done
+          echo "ComputerUse data wait timed out"
+          exit 1
+
+      - name: Verify repaired text dataset
+        run: |
+          set -euo pipefail
+          kaggle datasets files "$KAGGLE_OWNER/flm-v07-dev-text" --page-size 30
+
+      - name: Build v0.7 DEV full GPU kernel
+        run: |
+          set -euo pipefail
+          python scripts/build_v07_dev_gpu_kernel.py --owner "$KAGGLE_OWNER" --out kernel_v07_dev_gpu
+          python -m py_compile kernel_v07_dev_gpu/train_v07_dev.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path('kernel_v07_dev_gpu/kernel-metadata.json').read_text())
+          assert m['dataset_sources']==[f"{m['id'].split('/')[0]}/flm-v07-dev-text"]
+          assert m['kernel_sources']==[f"{m['id'].split('/')[0]}/falcon-flm-v07-dev-computer-cpu"]
+          assert m['enable_gpu'] is True
+          assert m['machine_shape']=='NvidiaTeslaT4'
+          print('V07_DEV_GPU_BUNDLE_VERIFIED')
+          PY
+
+      - name: Submit v0.7 DEV full training to 2xT4
+        run: |
+          set -euo pipefail
+          ok=0
+          for attempt in $(seq 1 16); do
+            OUTPUT="$(kaggle kernels push -p kernel_v07_dev_gpu --accelerator NvidiaTeslaT4 --timeout 43200 2>&1 || true)"
+            echo "$OUTPUT"
+            if echo "$OUTPUT" | grep -q 'successfully pushed'; then
+              ok=1
+              break
+            fi
+            if echo "$OUTPUT" | grep -qi 'Maximum batch GPU session count'; then
+              sleep 60
+              continue
+            fi
+            sleep 20
+          done
+          test "$ok" = "1"
+
+      - name: Verify v0.7 DEV GPU session started
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 40); do
+            STATUS="$(kaggle kernels status "$GPU_REF" 2>&1 || true)"
+            echo "$STATUS"
+            if echo "$STATUS" | grep -Eq 'KernelWorkerStatus.(QUEUED|RUNNING|COMPLETE)'; then
+              exit 0
+            fi
+            if echo "$STATUS" | grep -Eq 'KernelWorkerStatus.(ERROR|FAILED|CANCELLED)'; then
+              kaggle kernels logs "$GPU_REF" || true
+              exit 1
+            fi
+            sleep 5
+          done
+          exit 1
