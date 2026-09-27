@@ -1,0 +1,201 @@
+name: FLM v0.7 DEV Training Gate
+
+on:
+  workflow_run:
+    workflows:
+      - "FLM v0.7 DEV Text Repair"
+      - "FLM v0.7 DEV Parallel Data"
+      - "FLM v0.7 DEV Text Repair + Full GPU"
+      - "FLM v0.7 DEV Parallel Data + Full GPU"
+    types:
+      - completed
+  push:
+    paths:
+      - '.flm-v07-dev-gate-trigger'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: flm-v07-dev-training-gate
+  cancel-in-progress: false
+
+jobs:
+  wait-and-launch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      GH_TOKEN: ${{ github.token }}
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
+      TEXT_WORKFLOW: flm-v07-dev-text-repair.yml
+      COMPUTER_WORKFLOW: flm-v07-dev-parallel.yml
+      COMPUTER_REF: ${{ vars.KAGGLE_OWNER }}/falcon-flm-v07-dev-computer-cpu
+      GPU_REF: ${{ vars.KAGGLE_OWNER }}/falcon-flm-v07-dev-full-gpu
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - run: python -m pip install "kaggle>=2.2.1"
+
+      - name: Wait for exactly the two required data jobs
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          latest_run_id() {
+            local workflow="$1"
+            gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?branch=main&per_page=10"               --jq '.workflow_runs[0].id'
+          }
+
+          job_field() {
+            local run_id="$1"
+            local job_name="$2"
+            local field="$3"
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/jobs?per_page=100"               --jq ".jobs[] | select(.name==\"$job_name\") | .$field" | head -n1
+          }
+
+          for attempt in $(seq 1 1000); do
+            TEXT_RUN="$(latest_run_id "$TEXT_WORKFLOW")"
+            COMPUTER_RUN="$(latest_run_id "$COMPUTER_WORKFLOW")"
+
+            TEXT_STATUS="$(job_field "$TEXT_RUN" text-data status || true)"
+            TEXT_RESULT="$(job_field "$TEXT_RUN" text-data conclusion || true)"
+            CU_STATUS="$(job_field "$COMPUTER_RUN" computer-data status || true)"
+            CU_RESULT="$(job_field "$COMPUTER_RUN" computer-data conclusion || true)"
+
+            echo "gate attempt=$attempt text_run=$TEXT_RUN text=$TEXT_STATUS/$TEXT_RESULT computer_run=$COMPUTER_RUN computer=$CU_STATUS/$CU_RESULT"
+
+            if [[ "$TEXT_STATUS" == "completed" && "$TEXT_RESULT" != "success" ]]; then
+              echo "Required Text Repair/text-data failed: $TEXT_RESULT"
+              exit 1
+            fi
+            if [[ "$CU_STATUS" == "completed" && "$CU_RESULT" != "success" ]]; then
+              echo "Required Parallel Data/computer-data failed: $CU_RESULT"
+              exit 1
+            fi
+
+            if [[ "$TEXT_STATUS" == "completed" && "$TEXT_RESULT" == "success" &&
+                  "$CU_STATUS" == "completed" && "$CU_RESULT" == "success" ]]; then
+              echo "V07_DEV_BOTH_DATA_JOBS_SUCCESS"
+              echo "TEXT_RUN=$TEXT_RUN" >> "$GITHUB_ENV"
+              echo "COMPUTER_RUN=$COMPUTER_RUN" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            sleep 20
+          done
+
+          echo "Timed out waiting for the two required data jobs"
+          exit 1
+
+      - name: Verify both v0.7 data products
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Checking text dataset..."
+          kaggle datasets files "$KAGGLE_OWNER/flm-v07-dev-text" --page-size 30
+
+          echo "Checking ComputerUse data kernel..."
+          STATUS="$(kaggle kernels status "$COMPUTER_REF" 2>&1 || true)"
+          echo "$STATUS"
+          echo "$STATUS" | grep -q 'KernelWorkerStatus.COMPLETE'
+
+          kaggle kernels logs "$COMPUTER_REF" > /tmp/cu.log || true
+          tail -n 180 /tmp/cu.log || true
+          grep -q 'V07_DEV_COMPUTER_COMPLETE' /tmp/cu.log
+
+          echo "V07_DEV_BOTH_PRODUCTS_VERIFIED"
+
+      - name: Avoid duplicate full-GPU launch
+        id: duplicate
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Older in-flight DEV workflows may still contain their former
+          # launch-full job. Give that legacy launcher a short chance to claim
+          # the GPU job, then this gate becomes the single fallback launcher.
+          sleep 15
+          STATUS="$(kaggle kernels status "$GPU_REF" 2>&1 || true)"
+          echo "$STATUS"
+
+          if echo "$STATUS" | grep -Eq 'KernelWorkerStatus.(QUEUED|RUNNING|COMPLETE)'; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "V07_DEV_GPU_ALREADY_STARTED"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build v0.7 DEV full GPU kernel
+        if: steps.duplicate.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          python scripts/build_v07_dev_gpu_kernel.py --owner "$KAGGLE_OWNER" --out kernel_v07_dev_gpu
+          python -m py_compile kernel_v07_dev_gpu/train_v07_dev.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path('kernel_v07_dev_gpu/kernel-metadata.json').read_text())
+          owner=m['id'].split('/')[0]
+          assert m['dataset_sources']==[f"{owner}/flm-v07-dev-text"],m
+          assert m['kernel_sources']==[f"{owner}/falcon-flm-v07-dev-computer-cpu"],m
+          assert m['enable_gpu'] is True
+          assert m['machine_shape']=='NvidiaTeslaT4'
+          print('V07_DEV_GATE_GPU_BUNDLE_VERIFIED')
+          PY
+
+      - name: Launch v0.7 training exactly once
+        if: steps.duplicate.outputs.skip != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          ok=0
+          for attempt in $(seq 1 16); do
+            # Recheck immediately before push so a legacy launcher cannot race us.
+            STATUS="$(kaggle kernels status "$GPU_REF" 2>&1 || true)"
+            echo "$STATUS"
+            if echo "$STATUS" | grep -Eq 'KernelWorkerStatus.(QUEUED|RUNNING|COMPLETE)'; then
+              echo "V07_DEV_GPU_ALREADY_STARTED_DURING_GATE"
+              exit 0
+            fi
+
+            OUTPUT="$(kaggle kernels push -p kernel_v07_dev_gpu --accelerator NvidiaTeslaT4 --timeout 43200 2>&1 || true)"
+            echo "$OUTPUT"
+            if echo "$OUTPUT" | grep -q 'successfully pushed'; then
+              ok=1
+              break
+            fi
+            if echo "$OUTPUT" | grep -qi 'Maximum batch GPU session count'; then
+              sleep 45
+              continue
+            fi
+            sleep 20
+          done
+          test "$ok" = "1"
+
+      - name: Verify GPU training is live
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 60); do
+            STATUS="$(kaggle kernels status "$GPU_REF" 2>&1 || true)"
+            echo "$STATUS"
+            if echo "$STATUS" | grep -Eq 'KernelWorkerStatus.(QUEUED|RUNNING|COMPLETE)'; then
+              echo "V07_DEV_TRAINING_GATE_COMPLETE"
+              exit 0
+            fi
+            if echo "$STATUS" | grep -Eq 'KernelWorkerStatus.(ERROR|FAILED|CANCELLED)'; then
+              kaggle kernels logs "$GPU_REF" || true
+              exit 1
+            fi
+            sleep 5
+          done
+          exit 1
