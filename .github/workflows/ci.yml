@@ -27,7 +27,7 @@ jobs:
 
       - name: Python compile
         run: |
-          python -m py_compile             falconctl.py             kaggle/train_flm.py             scripts/colab_setup.py             scripts/build_kernel_bundle.py             flm/runtime.py             flm/models/text_lm.py             flm/models/computer_use.py             flm/models/computer_use_v2.py             flm/models/computer_use_v3.py             flm/computer_use/action_protocol.py             flm/computer_use/executor.py             flm/tooling/protocol.py             flm/tooling/runtime.py             flm/data/prepare_hf.py             flm/data/prepare_v05.py             flm/data/prepare_v06.py             flm/data/preflight_v05.py             flm/train_v05.py             flm/train_v06.py             flm/train_text.py             flm/train_computer_use.py             flm/train_suite.py             run_flm_v06.py             scripts/validate_v06_quality.py
+          python -m py_compile             falconctl.py             kaggle/train_flm.py             scripts/colab_setup.py             scripts/build_kernel_bundle.py             flm/runtime.py             flm/models/text_lm.py             flm/models/computer_use.py             flm/models/computer_use_v2.py             flm/models/computer_use_v3.py             flm/computer_use/action_protocol.py             flm/computer_use/executor.py             flm/tooling/protocol.py             flm/tooling/runtime.py             flm/data/prepare_hf.py             flm/data/prepare_v05.py             flm/data/prepare_v06.py             flm/data/prepare_v07.py             flm/data/preflight_v05.py             flm/train_v05.py             flm/train_v06.py             flm/train_v07.py             flm/computer_use/agent.py             flm/train_text.py             flm/train_computer_use.py             flm/train_suite.py             run_flm_v06.py             scripts/validate_v06_quality.py             scripts/build_kernel_bundle_v07.py             scripts/validate_v07_quality.py             scripts/run_computer_use_v07.py
 
       - name: Unit tests
         run: pytest -q
@@ -226,6 +226,97 @@ jobs:
           assert pred['coord'].shape==(2,2)
           assert len(pred['payload'])==2
           print('v0.7 pointer policy OK loss=',float(loss.detach()))
+          PY
+
+      - name: FLM v0.7 data/action parser regression
+        run: |
+          python - <<'PY'
+          import json
+          from flm.data.prepare_v07 import parse_pyautogui_action
+          a=parse_pyautogui_action("pyautogui.click(960, 540, clicks=1, button='left')",1920,1080)
+          assert a['op']=='CLICK' and abs(a['coord'][0]-.5)<.01 and abs(a['coord'][1]-.5)<.01,a
+          a=parse_pyautogui_action("pyautogui.write('hello world')",1920,1080)
+          assert a=={'op':'TYPE','coord':None,'coord2':None,'payload':'hello world'},a
+          a=parse_pyautogui_action("pyautogui.hotkey('ctrl','l')",1920,1080)
+          assert a['op']=='KEY' and a['payload']=='ctrl+l',a
+          a=parse_pyautogui_action("pyautogui.scroll(-5)",1920,1080)
+          assert a['op']=='SCROLL' and a['payload']=='0,-5',a
+          a=parse_pyautogui_action("pyautogui.moveTo(100,200); pyautogui.dragTo(900,700,duration=.4)",1000,800)
+          assert a['op']=='DRAG' and a['coord'] and a['coord2'],a
+          assert parse_pyautogui_action("BrowserTools.open_privacy_settings()",1920,1080) is None
+          print('v0.7 safe pyautogui parser OK')
+          PY
+
+      - name: FLM v0.7 chat/tool token-mask regression
+        run: |
+          python - <<'PY'
+          import json
+          import numpy as np
+          from pathlib import Path
+          from tokenizers import Tokenizer
+          from tokenizers.models import BPE
+          from tokenizers.pre_tokenizers import ByteLevel
+          from tokenizers.decoders import ByteLevel as ByteLevelDecoder
+          from tokenizers.trainers import BpeTrainer
+          from flm.data.prepare_v07 import SPECIAL,encode_chat_sft
+
+          root=Path('/tmp/v07-chat'); root.mkdir(exist_ok=True)
+          corpus=root/'c.txt'
+          corpus.write_text(('Merhaba hello Python tool call result assistant user system. '*1000),encoding='utf-8')
+          tok=Tokenizer(BPE(unk_token='<unk>'))
+          tok.pre_tokenizer=ByteLevel(add_prefix_space=False)
+          tok.decoder=ByteLevelDecoder()
+          tok.train([str(corpus)],BpeTrainer(vocab_size=512,min_frequency=1,special_tokens=SPECIAL))
+          src=root/'sft.jsonl'
+          src.write_text(json.dumps({'messages':[
+              {'role':'system','content':'Available tool add.'},
+              {'role':'user','content':'2+3'},
+              {'role':'assistant','content':'<|tool_call|>{"name":"add","arguments":{"a":2,"b":3}}<|tool_end|>'},
+              {'role':'tool','content':'<|tool_result|>{"name":"add","result":5}<|tool_end|>'},
+              {'role':'assistant','content':'Sonuç 5.'},
+          ]},ensure_ascii=False)+'\n')
+          st=encode_chat_sft(tok,src,root/'t.u16',root/'m.u8')
+          t=np.fromfile(root/'t.u16',dtype=np.uint16)
+          m=np.fromfile(root/'m.u8',dtype=np.uint8)
+          assert len(t)==len(m)==st['tokens']
+          assert 0<m.sum()<len(m)
+          assert st['assistant_turns']==2
+          for special in ('<|tool_call|>','<|tool_result|>','<|tool_end|>'):
+              assert tok.token_to_id(special) is not None
+          print('v0.7 tool/chat SFT mask OK',st)
+          PY
+
+      - name: FLM v0.7 model parameters and GPU bundle
+        run: |
+          python - <<'PY'
+          import gc
+          from flm.models.text_lm import ByteCausalLM,TextConfig
+          from flm.models.computer_use_v3 import ComputerUseV3,ComputerUseV3Config
+          def count(m): return sum(p.numel() for p in m.parameters())
+          main=ByteCausalLM(TextConfig(vocab_size=16384,seq_len=512,n_layer=14,n_head=12,n_embd=768))
+          n=count(main); print('v07 main params',n); assert 110_000_000 <= n <= 120_000_000
+          del main; gc.collect()
+          coder=ByteCausalLM(TextConfig(vocab_size=16384,seq_len=512,n_layer=12,n_head=12,n_embd=768))
+          n=count(coder); print('v07 coder params',n); assert 95_000_000 <= n <= 105_000_000
+          del coder; gc.collect()
+          cu=ComputerUseV3(ComputerUseV3Config())
+          n=count(cu); print('v07 CU params',n); assert 100_000_000 <= n <= 125_000_000
+          del cu; gc.collect()
+          PY
+          python scripts/build_kernel_bundle_v07.py --owner test-owner --profile pilot --out /tmp/v07
+          python -m py_compile /tmp/v07/train_v07.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads((Path('/tmp/v07')/'kernel-metadata.json').read_text())
+          assert m['id']=='test-owner/falcon-flm-v07-pilot-gpu'
+          assert m['dataset_sources']==['test-owner/flm-hf-v07','test-owner/flm-hf-v05']
+          assert m['machine_shape']=='NvidiaTeslaT4'
+          assert m['enable_gpu'] is True and m['enable_internet'] is False
+          s=(Path('/tmp/v07')/'train_v07.py').read_text()
+          for key in ('FLM_V07_MAIN_SFT_STEPS','FLM_V07_CODER_SFT_STEPS','FLM_V07_CU_STEPS'):
+              assert key in s,key
+          print('v0.7 GPU bundle OK')
           PY
 
       - name: FLM v0.5 parameter targets
