@@ -35,8 +35,21 @@ jobs:
           set -euo pipefail
           test -z "$CUDA_VISIBLE_DEVICES"
           python - <<'PY'
+          from pathlib import Path
+          import tempfile
           import flm.data.prepare_v07
           import flm.data.prepare_v07_text_dev
+          from flm.data.prepare_v07 import copy_prefix
+
+          # Regression: cut deliberately inside the two-byte UTF-8 encoding of ş.
+          root=Path(tempfile.mkdtemp(prefix="v07-utf8-"))
+          src=root/"src.txt"
+          dst=root/"dst.txt"
+          src.write_bytes((b"A"*63) + "ş".encode("utf-8") + (b"B"*100))
+          copy_prefix(src,dst,64)
+          text=dst.read_text(encoding="utf-8")
+          assert text and "\ufffd" not in text
+          print("V07_UTF8_PREFIX_OK",len(dst.read_bytes()),repr(text[-8:]))
           print("V07_DEV_TEXT_IMPORT_OK")
           PY
           python -m py_compile flm/data/prepare_v07_text_dev.py
