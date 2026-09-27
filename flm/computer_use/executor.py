@@ -93,7 +93,11 @@ class PyAutoGUIBackend:
                 self.pg.hotkey("ctrl", "v")
                 return
             if os.environ.get("DISPLAY") and shutil.which("xclip"):
+                # X11 applications are split between CLIPBOARD (Ctrl+V) and
+                # PRIMARY (middle-click/Shift+Insert). Populate both so Unicode
+                # typing works in terminals as well as normal GUI text fields.
                 subprocess.run(["xclip", "-selection", "clipboard"], input=payload, check=True)
+                subprocess.run(["xclip", "-selection", "primary"], input=payload, check=True)
                 self.pg.hotkey("shift", "insert")
                 return
             if os.environ.get("DISPLAY") and shutil.which("xsel"):
