@@ -204,18 +204,64 @@ class ComputerUseAgent:
 
     def run(self, task: str) -> list[dict]:
         history = []
+        previous_frame = None
+        previous_action = None
+        repeated_stall = 0
+
         for step in range(self.max_steps):
             screenshot = self.capture_backend.capture()
+            # A tiny grayscale preview is enough to detect an unchanged desktop
+            # while ignoring most compression/noise differences.
+            frame = np.asarray(
+                screenshot.convert("L").resize((32, 32)),
+                dtype=np.float32,
+            ) / 255.0
+
             pred = self.policy.predict(screenshot, task)
+            action_json = pred.action.to_json()
+            screen_delta = (
+                None
+                if previous_frame is None
+                else float(np.mean(np.abs(frame - previous_frame)))
+            )
+            if (
+                previous_action == action_json
+                and screen_delta is not None
+                and screen_delta < 0.008
+            ):
+                repeated_stall += 1
+            else:
+                repeated_stall = 0
+
             event = {
                 "step": step,
                 "op": OPS_V3[pred.op_id],
                 "domain": self.policy.id_to_domain.get(pred.domain_id, f"id:{pred.domain_id}"),
                 "payload": pred.payload,
                 "action": pred.action.to_dict(),
+                "screen_delta": screen_delta,
+                "repeated_stall": repeated_stall,
             }
             history.append(event)
-            result = self.executor.execute(pred.action)
+
+            if repeated_stall >= 3:
+                # Do not blindly hammer the same pixel/key forever when the UI
+                # did not react. Give the application time to settle, then
+                # re-observe. Abort after repeated failures so a caller can
+                # re-plan or ask for help.
+                wait = Action(ActionType.WAIT, seconds=0.5).validate()
+                event["guard"] = "stalled_repeat"
+                event["executed_action"] = wait.to_dict()
+                result = self.executor.execute(wait)
+                if repeated_stall >= 5:
+                    event["guard"] = "stalled_abort"
+                    return history
+            else:
+                result = self.executor.execute(pred.action)
+
+            previous_frame = frame
+            previous_action = action_json
+
             if result["done"]:
                 return history
             if self.executor.sleep_enabled and self.settle_seconds:

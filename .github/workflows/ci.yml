@@ -163,6 +163,53 @@ jobs:
           print('v0.7 real-input executor dry-run OK events=',len(backend.events))
           PY
 
+      - name: FLM v0.7 real X11 mouse keyboard integration
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb xterm xclip xdotool
+          python -m pip install pyautogui mss
+          Xvfb :99 -screen 0 1024x768x24 >/tmp/flm-xvfb.log 2>&1 &
+          export DISPLAY=:99
+          sleep 1
+          xterm -T FLMInputTest -geometry 80x24+80+80 -e bash -lc 'IFS= read -r line; printf "%s" "$line" >/tmp/flm-x11-input.txt; sleep 1' >/tmp/flm-xterm.log 2>&1 &
+          sleep 1
+          WIN="$(xdotool search --name FLMInputTest | head -n1)"
+          test -n "$WIN"
+          xdotool windowfocus "$WIN"
+          python - <<'PY'
+          import time
+          from pathlib import Path
+          from flm.computer_use.action_protocol import Action,ActionType
+          from flm.computer_use.executor import HumanInputExecutor,PyAutoGUIBackend,ScreenGeometry
+          from flm.computer_use.agent import MSSCapture
+
+          cap=MSSCapture(1)
+          geo=cap.geometry()
+          assert geo.width==1024 and geo.height==768,(geo.width,geo.height)
+          shot=cap.capture()
+          assert shot.size==(1024,768),shot.size
+
+          backend=PyAutoGUIBackend(fail_safe=False)
+          ex=HumanInputExecutor(backend,ScreenGeometry(1024,768),sleep_enabled=False,seed=7)
+          ex.execute(Action(ActionType.MOVE,x=.5,y=.5).validate())
+          px,py=backend.position()
+          assert abs(px-512)<8 and abs(py-384)<8,(px,py)
+
+          # Real X11 keyboard events, including Turkish Unicode through xclip.
+          ex.execute(Action(ActionType.TYPE,text='merhaba dünya çığöşü').validate())
+          ex.execute(Action(ActionType.KEY,keys=('enter',)).validate())
+          target=Path('/tmp/flm-x11-input.txt')
+          for _ in range(40):
+              if target.exists():
+                  break
+              time.sleep(.1)
+          assert target.exists(),'xterm did not receive keyboard input'
+          value=target.read_text(encoding='utf-8')
+          assert value=='merhaba dünya çığöşü',repr(value)
+          print('REAL_X11_INPUT_OK',px,py,value)
+          PY
+
       - name: FLM v0.7 tool-call protocol regression
         run: |
           python - <<'PY'
@@ -226,6 +273,17 @@ jobs:
           assert pred['coord'].shape==(2,2)
           assert len(pred['payload'])==2
           print('v0.7 pointer policy OK loss=',float(loss.detach()))
+          PY
+
+      - name: FLM v0.7 Kaggle metadata title regression
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text=Path('flm/data/prepare_v07.py').read_text(encoding='utf-8')
+          title='FLM v0.7 Bilingual Tool Desktop Data'
+          assert title in text
+          assert 6 <= len(title) <= 50,len(title)
+          print('v0.7 Kaggle title OK',len(title))
           PY
 
       - name: FLM v0.7 data/action parser regression

@@ -840,7 +840,7 @@ def main() -> int:
     }
     (out / "sources.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
     meta = {
-        "title": "Falcon FLM v07 bilingual chat code tool and desktop-action data",
+        "title": "FLM v0.7 Bilingual Tool Desktop Data",
         "id": f"{args.owner}/flm-hf-v07",
         "licenses": [{"name": "other"}],
     }

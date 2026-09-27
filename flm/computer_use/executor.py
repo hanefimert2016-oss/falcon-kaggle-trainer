@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
+import os
 import random
+import shutil
+import subprocess
 import time
 from typing import Protocol
 
@@ -73,7 +76,40 @@ class PyAutoGUIBackend:
             self.pg.hscroll(x)
         if y:
             self.pg.scroll(y)
-    def write(self, text, interval): self.pg.write(text, interval=interval)
+    def write(self, text, interval):
+        text = str(text)
+        if text.isascii():
+            self.pg.write(text, interval=interval)
+            return
+
+        # pyautogui.write cannot reliably type Unicode/Turkish characters.
+        # Use the native clipboard on Linux and paste through a real key event.
+        # This keeps ComputerUse usable for ç, ğ, ı, İ, ö, ş, ü and arbitrary
+        # UTF-8 text instead of silently corrupting it.
+        payload = text.encode("utf-8")
+        if os.name == "posix":
+            if os.environ.get("WAYLAND_DISPLAY") and shutil.which("wl-copy"):
+                subprocess.run(["wl-copy"], input=payload, check=True)
+                self.pg.hotkey("ctrl", "v")
+                return
+            if os.environ.get("DISPLAY") and shutil.which("xclip"):
+                subprocess.run(["xclip", "-selection", "clipboard"], input=payload, check=True)
+                self.pg.hotkey("shift", "insert")
+                return
+            if os.environ.get("DISPLAY") and shutil.which("xsel"):
+                subprocess.run(["xsel", "--clipboard", "--input"], input=payload, check=True)
+                self.pg.hotkey("shift", "insert")
+                return
+
+        try:
+            import pyperclip
+            pyperclip.copy(text)
+            self.pg.hotkey("ctrl", "v")
+            return
+        except Exception as exc:
+            raise RuntimeError(
+                "Unicode typing requires wl-copy, xclip/xsel, or a working pyperclip backend"
+            ) from exc
     def hotkey(self, *keys): self.pg.hotkey(*keys)
     def key_down(self, key): self.pg.keyDown(key)
     def key_up(self, key): self.pg.keyUp(key)
