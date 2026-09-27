@@ -201,8 +201,11 @@ def prepare_coder_raw(out: Path, target_bytes: int, sample_bytes: int = 96_000_0
         if sample_written < sample_bytes:
             payload = (doc + "\n").encode("utf-8", "ignore")
             remain = sample_bytes - sample_written
-            sfh.write(payload[:remain])
-            sample_written += min(len(payload), remain)
+            # Never end tokenizer input in the middle of a multi-byte UTF-8
+            # code point. This matters for Turkish characters (ç, ğ, ı, ö, ş, ü).
+            chunk = payload[:remain].decode("utf-8", "ignore").encode("utf-8")
+            sfh.write(chunk)
+            sample_written += len(chunk)
         return True
 
     with path.open("wb") as fh, sample.open("wb") as sfh:
@@ -742,14 +745,36 @@ def prepare_rexx(out: Path, max_trajectories: int) -> dict:
 
 
 def copy_prefix(src: Path, dst: Path, budget: int) -> int:
+    """Copy a bounded tokenizer sample while preserving valid UTF-8.
+
+    Byte-budget truncation can land inside a Turkish/non-ASCII code point.
+    Tokenizers requires valid UTF-8, so use an incremental decoder and drop
+    only an incomplete/invalid tail instead of corrupting the whole sample.
+    """
+    import codecs
+
     written = 0
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="ignore")
     with src.open("rb") as i, dst.open("wb") as o:
         while written < budget:
             chunk = i.read(min(1024 * 1024, budget - written))
             if not chunk:
                 break
-            o.write(chunk)
-            written += len(chunk)
+            clean = decoder.decode(chunk, final=False).encode("utf-8")
+            if len(clean) > budget - written:
+                clean = clean[: budget - written].decode("utf-8", "ignore").encode("utf-8")
+            o.write(clean)
+            written += len(clean)
+        if written < budget:
+            tail = decoder.decode(b"", final=True).encode("utf-8")
+            if tail:
+                tail = tail[: budget - written].decode("utf-8", "ignore").encode("utf-8")
+                o.write(tail)
+                written += len(tail)
+
+    # Fail here, close to the source of the problem, rather than minutes later
+    # inside tokenizers with an opaque Rust "stream did not contain UTF-8".
+    dst.read_text(encoding="utf-8")
     return written
 
 
