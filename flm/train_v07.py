@@ -43,7 +43,7 @@ ID_TO_OP = {v: k for k, v in OPS_V3.items()}
 
 
 def resolve_pipeline_root(version: str) -> Path:
-    env_name = "FLM_V07_DATA_ROOT" if version == "v0.7" else "FLM_V05_DATA_ROOT"
+    env_name = "FLM_V07_DATA_ROOT" if version.startswith("v0.7") else "FLM_V05_DATA_ROOT"
     configured = os.environ.get(env_name, "").strip()
     candidates: list[Path] = []
     if configured:
@@ -683,7 +683,11 @@ def main() -> int:
     ap.add_argument("--only", choices=("all", "main", "coder", "computer_use"), default="all")
     args = ap.parse_args()
 
-    v07 = resolve_pipeline_root("v0.7")
+    text_version = os.environ.get("FLM_V07_TEXT_VERSION", "v0.7")
+    computer_version = os.environ.get("FLM_V07_COMPUTER_VERSION", text_version)
+    v07 = resolve_pipeline_root(text_version)
+    computer_root = v07 if computer_version == text_version else resolve_pipeline_root(computer_version)
+    print(f"v07_text_version={text_version} computer_version={computer_version}", flush=True)
     out = Path(os.environ.get("FLM_V07_OUTPUT_ROOT", "/kaggle/working/flm-v0.7-full"))
     out.mkdir(parents=True, exist_ok=True)
     runtime = select_runtime("gpu")
@@ -759,12 +763,14 @@ def main() -> int:
             torch.cuda.empty_cache()
 
     if args.only in {"all", "computer_use"}:
-        cu = train_computer_use(v07, out, runtime, tok, vocab_size, cu_steps)
+        cu = train_computer_use(computer_root, out, runtime, tok, vocab_size, cu_steps)
         summary["models"]["computer_use"] = cu
         checkpoint_result(out, summary)
 
     for name in ("tokenizer.json", "tokenizer_meta.json", "sources.json"):
         shutil.copy2(v07 / name, out / ("text_sources.json" if name == "sources.json" else name))
+    if computer_root != v07 and (computer_root / "sources.json").is_file():
+        shutil.copy2(computer_root / "sources.json", out / "computer_sources.json")
     (out / "suite_metrics.json").write_text(
         json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8"
     )
