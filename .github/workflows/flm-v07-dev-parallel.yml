@@ -31,7 +31,7 @@ jobs:
         run: |
           set -euo pipefail
           test -z "$CUDA_VISIBLE_DEVICES"
-          python flm/data/prepare_v07_text_dev.py \
+          python -m flm.data.prepare_v07_text_dev \
             --out prepared_v07_dev_text \
             --owner "$KAGGLE_OWNER" \
             --main-bytes 3072000000 \
