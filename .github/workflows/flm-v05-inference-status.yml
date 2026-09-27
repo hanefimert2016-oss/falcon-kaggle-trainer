@@ -1,0 +1,73 @@
+name: FLM v0.5 Final Inference Status
+
+on:
+  push:
+    paths:
+      - '.flm-v05-inference-status-trigger'
+
+permissions:
+  contents: read
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
+      REF: ${{ vars.KAGGLE_OWNER }}/falcon-flm-v05-final-inference-test
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install "kaggle>=2.2.1"
+
+      - name: Status
+        id: state
+        shell: bash
+        run: |
+          set -euo pipefail
+          STATUS="$(kaggle kernels status "$REF" 2>&1 || true)"
+          echo "$STATUS"
+          if echo "$STATUS" | grep -q 'KernelWorkerStatus.COMPLETE'; then
+            echo "state=complete" >> "$GITHUB_OUTPUT"
+          elif echo "$STATUS" | grep -Eq 'KernelWorkerStatus.(ERROR|FAILED|CANCELLED)'; then
+            echo "state=failed" >> "$GITHUB_OUTPUT"
+          elif echo "$STATUS" | grep -q 'KernelWorkerStatus.RUNNING'; then
+            echo "state=running" >> "$GITHUB_OUTPUT"
+          else
+            echo "state=queued" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Logs
+        run: kaggle kernels logs "$REF" || true
+
+      - name: Download test results
+        if: steps.state.outputs.state == 'complete'
+        run: |
+          set -euo pipefail
+          mkdir -p test_out
+          kaggle kernels output "$REF" -p test_out -o
+          find test_out -maxdepth 4 -type f -printf '%p %s bytes\n' | sort
+          RESULT="$(find test_out -name results.json | head -n1)"
+          test -s "$RESULT"
+          cat "$RESULT"
+          python - "$RESULT" <<'PY'
+          import json,sys,math
+          x=json.load(open(sys.argv[1]))
+          assert x['main']['params'] > 90_000_000
+          assert x['coder']['params'] > 80_000_000
+          assert x['computer_use']['params'] > 90_000_000
+          assert math.isfinite(x['main']['eval']['loss'])
+          assert math.isfinite(x['coder']['eval']['loss'])
+          assert x['computer_use']['tested'] >= 8
+          print('FINAL_INFERENCE_RESULTS_VERIFIED')
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: steps.state.outputs.state == 'complete'
+        with:
+          name: flm-v05-final-inference-results
+          path: test_out/
+          retention-days: 7
+          if-no-files-found: error
