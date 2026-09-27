@@ -61,7 +61,7 @@ exec(compile({json.dumps(src)},"prepare_v07_computer_dev.py","exec"),{{"__name__
     (out / "prepare_computer.py").write_text(wrapper, encoding="utf-8")
     meta = {
         "id": f"{args.owner}/falcon-flm-v07-dev-computer-cpu",
-        "title": "Falcon FLM v07 DEV ComputerUse CPU Data",
+        "title": "Falcon FLM v07 DEV Computer CPU",
         "code_file": "prepare_computer.py",
         "language": "python",
         "kernel_type": "script",
