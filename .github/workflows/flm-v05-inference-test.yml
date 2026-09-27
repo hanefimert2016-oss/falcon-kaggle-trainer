@@ -1,0 +1,55 @@
+name: FLM v0.5 Final Inference GPU Test
+
+on:
+  push:
+    paths:
+      - '.flm-v05-inference-trigger'
+
+permissions:
+  contents: read
+
+jobs:
+  launch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
+      REF: ${{ vars.KAGGLE_OWNER }}/falcon-flm-v05-final-inference-test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install "kaggle>=2.2.1"
+
+      - name: Syntax check inference builder
+        run: python -m py_compile scripts/build_v05_inference_test_kernel.py
+
+      - name: Build final inference test kernel
+        run: |
+          python scripts/build_v05_inference_test_kernel.py             --owner "$KAGGLE_OWNER"             --out kernel_v05_inference
+          cat kernel_v05_inference/kernel-metadata.json
+
+      - name: Submit inference test to T4
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUTPUT="$(kaggle kernels push -p kernel_v05_inference --accelerator NvidiaTeslaT4 --timeout 7200 2>&1 || true)"
+          echo "$OUTPUT"
+          echo "$OUTPUT" | grep -q 'successfully pushed'
+
+      - name: Verify test session exists
+        run: |
+          set -euo pipefail
+          ok=0
+          for attempt in $(seq 1 12); do
+            STATUS="$(kaggle kernels status "$REF" 2>&1 || true)"
+            echo "$STATUS"
+            if echo "$STATUS" | grep -Eq 'KernelWorkerStatus.(QUEUED|RUNNING|COMPLETE)'; then
+              ok=1
+              break
+            fi
+            sleep 3
+          done
+          test "$ok" = "1"
