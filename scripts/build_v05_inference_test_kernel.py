@@ -19,7 +19,6 @@ def package_payload(root: Path) -> str:
 
 
 TEST_CODE = r'''
-from __future__ import annotations
 import base64, io, json, math, os, random, sys, zipfile
 from pathlib import Path
 
