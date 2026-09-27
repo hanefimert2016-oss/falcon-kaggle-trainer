@@ -1,0 +1,73 @@
+name: FLM v0.7 GPU Pilot
+
+on:
+  workflow_run:
+    workflows:
+      - FLM v0.7 Data CPU
+    types:
+      - completed
+  push:
+    paths:
+      - '.flm-v07-pilot-trigger'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pilot:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
+      REF: ${{ vars.KAGGLE_OWNER }}/falcon-flm-v07-pilot-gpu
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install "kaggle>=2.2.1"
+      - name: Verify v0.7 and v0.5 datasets
+        run: |
+          set -euo pipefail
+          kaggle datasets files "$KAGGLE_OWNER/flm-hf-v07" --page-size 50 | tee /tmp/v07-files.txt
+          grep -q 'main_train.u16' /tmp/v07-files.txt
+          grep -q 'coder_sft_tokens.u16' /tmp/v07-files.txt
+          grep -q 'cu07_manifest.jsonl' /tmp/v07-files.txt
+          kaggle datasets files "$KAGGLE_OWNER/flm-hf-v05" --page-size 20 | grep -q 'computer_manifest.jsonl'
+      - name: Build production-shape pilot
+        run: |
+          set -euo pipefail
+          python scripts/build_kernel_bundle_v07.py --owner "$KAGGLE_OWNER" --profile pilot --out kernel_v07
+          python -m py_compile kernel_v07/train_v07.py
+          cat kernel_v07/kernel-metadata.json
+      - name: Submit pilot to 2xT4
+        run: |
+          set -euo pipefail
+          OUTPUT="$(kaggle kernels push -p kernel_v07 --accelerator NvidiaTeslaT4 --timeout 7200 2>&1 || true)"
+          echo "$OUTPUT"
+          echo "$OUTPUT" | grep -q 'successfully pushed'
+      - name: Wait for pilot completion
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 150); do
+            STATUS="$(kaggle kernels status "$REF" 2>&1 || true)"
+            echo "$STATUS"
+            if echo "$STATUS" | grep -q 'KernelWorkerStatus.COMPLETE'; then
+              kaggle kernels logs "$REF" > /tmp/pilot.log
+              cat /tmp/pilot.log
+              grep -q 'V07_SUITE_COMPLETE' /tmp/pilot.log
+              ! grep -q 'non-finite' /tmp/pilot.log
+              exit 0
+            fi
+            if echo "$STATUS" | grep -Eq 'KernelWorkerStatus.(ERROR|FAILED|CANCELLED)'; then
+              kaggle kernels logs "$REF" || true
+              exit 1
+            fi
+            sleep 12
+          done
+          echo "pilot timed out waiting for Kaggle"
+          kaggle kernels logs "$REF" || true
+          exit 1
