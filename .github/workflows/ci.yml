@@ -169,7 +169,8 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq xvfb xterm xclip xdotool
           python -m pip install pyautogui mss
-          Xvfb :99 -screen 0 1024x768x24 >/tmp/flm-xvfb.log 2>&1 &
+          touch "$HOME/.Xauthority"
+          Xvfb :99 -ac -screen 0 1024x768x24 >/tmp/flm-xvfb.log 2>&1 &
           export DISPLAY=:99
           sleep 1
           xterm -T FLMInputTest -geometry 80x24+80+80 -e bash -lc 'IFS= read -r line; printf "%s" "$line" >/tmp/flm-x11-input.txt; sleep 1' >/tmp/flm-xterm.log 2>&1 &
