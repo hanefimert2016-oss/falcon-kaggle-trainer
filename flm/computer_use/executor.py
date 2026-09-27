@@ -98,7 +98,11 @@ class PyAutoGUIBackend:
                 # typing works in terminals as well as normal GUI text fields.
                 subprocess.run(["xclip", "-selection", "clipboard"], input=payload, check=True)
                 subprocess.run(["xclip", "-selection", "primary"], input=payload, check=True)
+                # X11 selection transfer is asynchronous. Without a tiny
+                # settle delay a following Enter can beat the paste response.
+                time.sleep(0.05)
                 self.pg.hotkey("shift", "insert")
+                time.sleep(0.12)
                 return
             if os.environ.get("DISPLAY") and shutil.which("xsel"):
                 subprocess.run(["xsel", "--clipboard", "--input"], input=payload, check=True)
