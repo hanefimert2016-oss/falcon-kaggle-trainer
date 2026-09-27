@@ -12,7 +12,7 @@ permissions:
 jobs:
   computer-data:
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    timeout-minutes: 360
     env:
       KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
       KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
@@ -34,27 +34,42 @@ jobs:
       - name: Submit ComputerUse data build to Kaggle CPU
         run: |
           set -euo pipefail
-          OUTPUT="$(kaggle kernels push -p kernel_v07_dev_cpu --timeout 7200 2>&1 || true)"
-          echo "$OUTPUT"
-          echo "$OUTPUT" | grep -q 'successfully pushed'
+          ok=0
+          for attempt in $(seq 1 6); do
+            OUTPUT="$(kaggle kernels push -p kernel_v07_dev_cpu --timeout 21600 2>&1 || true)"
+            echo "$OUTPUT"
+            if echo "$OUTPUT" | grep -q 'successfully pushed'; then
+              ok=1
+              break
+            fi
+            if echo "$OUTPUT" | grep -Eqi '429|rate.?limit|temporar|timeout|timed out|connection|502|503|504'; then
+              sleep $((attempt * 20))
+              continue
+            fi
+            break
+          done
+          test "$ok" = "1"
       - name: Wait for Kaggle CPU data
         run: |
           set -euo pipefail
-          for attempt in $(seq 1 600); do
+          for attempt in $(seq 1 1000); do
             STATUS="$(kaggle kernels status "$REF" 2>&1 || true)"
             echo "$STATUS"
-            if echo "$STATUS" | grep -q 'KernelWorkerStatus.COMPLETE'; then
+            if echo "$STATUS" | grep -Eq '(KernelWorkerStatus\.)?COMPLETE'; then
               kaggle kernels logs "$REF" > /tmp/cu.log
-              tail -n 250 /tmp/cu.log
+              tail -n 300 /tmp/cu.log
               grep -q 'V07_DEV_COMPUTER_COMPLETE' /tmp/cu.log
               exit 0
             fi
-            if echo "$STATUS" | grep -Eq 'KernelWorkerStatus.(ERROR|FAILED|CANCELLED)'; then
-              kaggle kernels logs "$REF" || true
+            if echo "$STATUS" | grep -Eq '(KernelWorkerStatus\.)?(ERROR|FAILED|CANCELLED)'; then
+              echo "Kaggle ComputerUse kernel failed; dumping diagnostic log"
+              kaggle kernels logs "$REF" > /tmp/cu.log 2>&1 || true
+              tail -n 500 /tmp/cu.log || true
               exit 1
             fi
             sleep 20
           done
           echo "Kaggle CPU data timeout"
-          kaggle kernels logs "$REF" || true
+          kaggle kernels logs "$REF" > /tmp/cu.log 2>&1 || true
+          tail -n 500 /tmp/cu.log || true
           exit 1
