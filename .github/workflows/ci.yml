@@ -410,6 +410,19 @@ jobs:
           print('v0.7 tool/chat SFT mask OK',st)
           PY
 
+      - name: FLM v0.7 native-data-only regression
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('flm/train_v07.py').read_text(encoding='utf-8')
+          assert 'v05 = resolve_pipeline_root("v0.5")' not in s
+          assert 'computer_v05_sources.json' not in s
+          assert 'def train_computer_use(v07_root' in s
+          b=Path('scripts/build_kernel_bundle_v07.py').read_text(encoding='utf-8')
+          assert 'flm-hf-v05' not in b
+          print('v0.7 native-data-only wiring OK')
+          PY
+
       - name: FLM v0.7 model parameters and GPU bundle
         run: |
           python - <<'PY'
@@ -434,7 +447,7 @@ jobs:
           from pathlib import Path
           m=json.loads((Path('/tmp/v07')/'kernel-metadata.json').read_text())
           assert m['id']=='test-owner/falcon-flm-v07-pilot-gpu'
-          assert m['dataset_sources']==['test-owner/flm-hf-v07','test-owner/flm-hf-v05']
+          assert m['dataset_sources']==['test-owner/flm-hf-v07']
           assert m['machine_shape']=='NvidiaTeslaT4'
           assert m['enable_gpu'] is True and m['enable_internet'] is False
           s=(Path('/tmp/v07')/'train_v07.py').read_text()

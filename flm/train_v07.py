@@ -419,38 +419,14 @@ def heldout(row: dict) -> bool:
     return int.from_bytes(h, "big") % 10 == 0
 
 
-def merge_cu_rows(v05_root: Path, v07_root: Path):
-    rows = []
-    for line in (v05_root / "computer_manifest.jsonl").read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        r = json.loads(line)
-        old = str(r.get("operation") or "OTHER").upper()
-        mapped = old if old in {"CLICK", "TYPE", "KEY", "SCROLL", "MOVE"} else None
-        if old == "DRAG" and r.get("coord2"):
-            mapped = "DRAG"
-        if old == "GAME_ACTION":
-            # Keep only actions that can become an actual key event.
-            payload = old_payload(r, "KEY")
-            if payload and len(payload) <= 80:
-                mapped = "KEY"
-            else:
-                continue
-        if mapped is None:
-            continue
-        coord = r.get("coord")
-        if mapped in {"CLICK", "MOVE"} and not coord:
-            continue
-        rr = {
-            **r,
-            "_root": "v05",
-            "operation": mapped,
-            "coord2": r.get("coord2"),
-            "payload": old_payload(r, mapped),
-            "domain": str(r.get("domain") or "legacy:desktop"),
-        }
-        rows.append(rr)
+def merge_cu_rows(v07_root: Path):
+    """Load only native v0.7 executable REXX desktop actions.
 
+    v0.7 deliberately does not mix the older v0.5 pseudo/action data. This
+    keeps ComputerUse v3 training aligned with the real executable action
+    protocol produced by prepare_v07.py.
+    """
+    rows = []
     histories: dict[str, list[str]] = {}
     for line in (v07_root / "cu07_manifest.jsonl").read_text(encoding="utf-8").splitlines():
         if not line.strip():
@@ -473,7 +449,7 @@ def merge_cu_rows(v05_root: Path, v07_root: Path):
     train = [r for r in rows if not heldout(r)]
     eval_rows = [r for r in rows if heldout(r)]
     if len(train) < 1000 or len(eval_rows) < 50:
-        raise RuntimeError(f"CU split too small train={len(train)} eval={len(eval_rows)}")
+        raise RuntimeError(f"CU v0.7 split too small train={len(train)} eval={len(eval_rows)}")
     return train, eval_rows
 
 
@@ -599,8 +575,8 @@ def eval_cu(model, rows, stores, tok, cfg, pad_id, domains, device, batches=64):
     }
 
 
-def train_computer_use(v05_root, v07_root, out_root, runtime, tok, vocab_size, steps):
-    train_rows, eval_rows = merge_cu_rows(v05_root, v07_root)
+def train_computer_use(v07_root, out_root, runtime, tok, vocab_size, steps):
+    train_rows, eval_rows = merge_cu_rows(v07_root)
     domain_names = sorted({str(r.get("domain") or "") for r in train_rows + eval_rows})
     if len(domain_names) >= 256:
         raise RuntimeError(f"too many CU domains: {len(domain_names)}")
@@ -622,7 +598,7 @@ def train_computer_use(v05_root, v07_root, out_root, runtime, tok, vocab_size, s
         payload_len=int(os.environ.get("FLM_V07_CU_PAYLOAD_LEN", "128")),
     )
     batch = int(os.environ.get("FLM_V07_CU_BATCH", "4"))
-    stores = {"v05": ZipImageStore(v05_root), "v07": ZipImageStore(v07_root)}
+    stores = {"v07": ZipImageStore(v07_root)}
     sampler = BalancedSampler(train_rows)
 
     # v0.6 fp16 eventually produced a non-finite loss. v0.7 deliberately keeps
@@ -708,7 +684,6 @@ def main() -> int:
     args = ap.parse_args()
 
     v07 = resolve_pipeline_root("v0.7")
-    v05 = resolve_pipeline_root("v0.5")
     out = Path(os.environ.get("FLM_V07_OUTPUT_ROOT", "/kaggle/working/flm-v0.7-full"))
     out.mkdir(parents=True, exist_ok=True)
     runtime = select_runtime("gpu")
@@ -784,13 +759,12 @@ def main() -> int:
             torch.cuda.empty_cache()
 
     if args.only in {"all", "computer_use"}:
-        cu = train_computer_use(v05, v07, out, runtime, tok, vocab_size, cu_steps)
+        cu = train_computer_use(v07, out, runtime, tok, vocab_size, cu_steps)
         summary["models"]["computer_use"] = cu
         checkpoint_result(out, summary)
 
     for name in ("tokenizer.json", "tokenizer_meta.json", "sources.json"):
         shutil.copy2(v07 / name, out / ("text_sources.json" if name == "sources.json" else name))
-    shutil.copy2(v05 / "sources.json", out / "computer_v05_sources.json")
     (out / "suite_metrics.json").write_text(
         json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8"
     )

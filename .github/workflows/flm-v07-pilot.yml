@@ -29,14 +29,25 @@ jobs:
         with:
           python-version: '3.11'
       - run: python -m pip install "kaggle>=2.2.1"
-      - name: Verify v0.7 and v0.5 datasets
+      - name: Verify native v0.7 dataset
         run: |
           set -euo pipefail
-          kaggle datasets files "$KAGGLE_OWNER/flm-hf-v07" --page-size 50 | tee /tmp/v07-files.txt
-          grep -q 'main_train.u16' /tmp/v07-files.txt
-          grep -q 'coder_sft_tokens.u16' /tmp/v07-files.txt
-          grep -q 'cu07_manifest.jsonl' /tmp/v07-files.txt
-          kaggle datasets files "$KAGGLE_OWNER/flm-hf-v05" --page-size 20 | grep -q 'computer_manifest.jsonl'
+          mkdir -p /tmp/v07verify
+          kaggle datasets download "$KAGGLE_OWNER/flm-hf-v07" -f sources.json -p /tmp/v07verify --unzip
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=next(Path('/tmp/v07verify').rglob('sources.json'))
+          x=json.loads(p.read_text(encoding='utf-8'))
+          assert x['pipeline_version']=='v0.7'
+          s=x['stats']
+          assert s['main']['tokens'] >= 280_000_000
+          assert s['coder']['tokens'] >= 78_000_000
+          assert s['main_sft']['rows'] >= 220_000
+          assert s['coder_sft']['rows'] >= 118_000
+          assert s['computer_rexx']['examples'] >= 1500
+          print('V07_NATIVE_DATASET_VERIFIED',p)
+          PY
       - name: Build production-shape pilot
         run: |
           set -euo pipefail

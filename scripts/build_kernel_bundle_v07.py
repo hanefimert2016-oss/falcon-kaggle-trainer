@@ -125,7 +125,6 @@ raise SystemExit(main())
         "machine_shape": "NvidiaTeslaT4",
         "dataset_sources": [
             f"{args.owner}/flm-hf-v07",
-            f"{args.owner}/flm-hf-v05",
         ],
         "competition_sources": [],
         "kernel_sources": [],
