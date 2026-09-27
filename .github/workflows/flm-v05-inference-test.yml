@@ -26,9 +26,15 @@ jobs:
       - name: Syntax check inference builder
         run: python -m py_compile scripts/build_v05_inference_test_kernel.py
 
-      - name: Build final inference test kernel
+      - name: Build and syntax-check generated Kaggle script
         run: |
-          python scripts/build_v05_inference_test_kernel.py             --owner "$KAGGLE_OWNER"             --out kernel_v05_inference
+          set -euo pipefail
+          python scripts/build_v05_inference_test_kernel.py \
+            --owner "$KAGGLE_OWNER" \
+            --out kernel_v05_inference
+          echo "future-import occurrences in generated script:"
+          grep -n "from __future__" kernel_v05_inference/test_v05.py || true
+          python -m py_compile kernel_v05_inference/test_v05.py
           cat kernel_v05_inference/kernel-metadata.json
 
       - name: Submit inference test to T4
