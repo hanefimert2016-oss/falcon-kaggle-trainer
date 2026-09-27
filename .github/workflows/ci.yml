@@ -27,7 +27,7 @@ jobs:
 
       - name: Python compile
         run: |
-          python -m py_compile             falconctl.py             kaggle/train_flm.py             scripts/colab_setup.py             scripts/build_kernel_bundle.py             flm/runtime.py             flm/models/text_lm.py             flm/models/computer_use.py             flm/models/computer_use_v2.py             flm/data/prepare_hf.py             flm/data/prepare_v05.py             flm/data/prepare_v06.py             flm/data/preflight_v05.py             flm/train_v05.py             flm/train_v06.py             flm/train_text.py             flm/train_computer_use.py             flm/train_suite.py             run_flm_v06.py             scripts/validate_v06_quality.py
+          python -m py_compile             falconctl.py             kaggle/train_flm.py             scripts/colab_setup.py             scripts/build_kernel_bundle.py             flm/runtime.py             flm/models/text_lm.py             flm/models/computer_use.py             flm/models/computer_use_v2.py             flm/models/computer_use_v3.py             flm/computer_use/action_protocol.py             flm/computer_use/executor.py             flm/tooling/protocol.py             flm/tooling/runtime.py             flm/data/prepare_hf.py             flm/data/prepare_v05.py             flm/data/prepare_v06.py             flm/data/preflight_v05.py             flm/train_v05.py             flm/train_v06.py             flm/train_text.py             flm/train_computer_use.py             flm/train_suite.py             run_flm_v06.py             scripts/validate_v06_quality.py
 
       - name: Unit tests
         run: pytest -q
@@ -131,6 +131,101 @@ jobs:
           assert result['eval_loss']>0
           assert (out/'computer_use/checkpoint.pt').stat().st_size>0
           print('mounted image dir regression OK')
+          PY
+
+      - name: FLM v0.7 real input executor regression
+        run: |
+          python - <<'PY'
+          from flm.computer_use.action_protocol import Action,ActionType,parse_action
+          from flm.computer_use.executor import DryRunBackend,HumanInputExecutor,ScreenGeometry
+
+          backend=DryRunBackend()
+          ex=HumanInputExecutor(backend,ScreenGeometry(1920,1080),sleep_enabled=False,seed=1)
+          actions=[
+              parse_action('{"type":"click","x":0.5,"y":0.25}'),
+              Action(ActionType.TYPE,text='hello').validate(),
+              Action(ActionType.KEY,keys=('ctrl','l')).validate(),
+              Action(ActionType.DRAG,x=.1,y=.2,x2=.8,y2=.7,duration=.2).validate(),
+              Action(ActionType.SCROLL,scroll_y=-4).validate(),
+              Action(ActionType.DONE).validate(),
+          ]
+          done=[]
+          for a in actions:
+              done.append(ex.execute(a)['done'])
+          assert done[-1] is True and not any(done[:-1])
+          assert any(e[0]=='click' for e in backend.events)
+          assert any(e[0]=='write' for e in backend.events)
+          assert any(e[0]=='hotkey' for e in backend.events)
+          assert any(e[0]=='drag_to' for e in backend.events)
+          assert any(e[0]=='scroll' for e in backend.events)
+          # Human-like movement must create intermediate mouse moves.
+          assert sum(e[0]=='move_to' for e in backend.events) >= 4
+          print('v0.7 real-input executor dry-run OK events=',len(backend.events))
+          PY
+
+      - name: FLM v0.7 tool-call protocol regression
+        run: |
+          python - <<'PY'
+          from flm.tooling import ToolCall,ToolRegistry,extract_tool_calls,format_tool_call,run_tool_loop
+          call=ToolCall('add',{'a':2,'b':3},'c1')
+          encoded=format_tool_call(call)
+          decoded=extract_tool_calls(encoded)
+          assert decoded==[call],(encoded,decoded)
+
+          reg=ToolRegistry()
+          reg.register('add',lambda a,b:a+b,description='Add numbers',schema={
+              'type':'object',
+              'properties':{'a':{'type':'number'},'b':{'type':'number'}},
+              'required':['a','b'],
+          })
+          def gen(history):
+              if not any(x.get('role')=='tool' for x in history):
+                  return '<|tool_call|>{"name":"add","arguments":{"a":2,"b":3},"id":"c1"}<|tool_end|>'
+              return 'Sonuç 5.'
+          out,h=run_tool_loop(gen,[{'role':'user','content':'2+3 kaç?'}],reg)
+          assert out=='Sonuç 5.'
+          assert any(x.get('role')=='tool' and '"result":5' in x['content'] for x in h)
+          print('v0.7 tool runtime OK')
+          PY
+
+      - name: FLM v0.7 ComputerUse pointer-policy regression
+        run: |
+          python - <<'PY'
+          import torch
+          from flm.models.computer_use_v3 import ComputerUseV3,ComputerUseV3Config
+          cfg=ComputerUseV3Config(
+              text_vocab=128,task_len=16,image_size=32,patch=16,
+              embd=32,text_layers=1,vision_layers=1,n_head=4,
+              num_ops=12,num_domains=16,payload_len=12,
+          )
+          m=ComputerUseV3(cfg)
+          b=2
+          img=torch.randn(b,3,32,32)
+          task=torch.randint(1,128,(b,16))
+          pin=torch.randint(0,255,(b,12))
+          ptgt=torch.randint(0,255,(b,12))
+          out,loss,parts=m(
+              img,task,pin,
+              op_target=torch.tensor([1,4]),
+              op_valid=torch.ones(b,dtype=torch.bool),
+              pointer_target=torch.tensor([0,3]),
+              pointer_valid=torch.ones(b,dtype=torch.bool),
+              pointer2_target=torch.tensor([2,1]),
+              pointer2_valid=torch.tensor([0,1],dtype=torch.bool),
+              domain_target=torch.tensor([1,2]),
+              domain_valid=torch.ones(b,dtype=torch.bool),
+              payload_target=ptgt,
+              payload_valid=torch.ones(b,dtype=torch.bool),
+          )
+          assert torch.isfinite(loss),loss
+          assert out['pointer_logits'].shape==(2,4)
+          assert out['coord'].shape==(2,2)
+          assert torch.all((out['coord']>=0)&(out['coord']<=1))
+          loss.backward()
+          pred=m.predict(img,task)
+          assert pred['coord'].shape==(2,2)
+          assert len(pred['payload'])==2
+          print('v0.7 pointer policy OK loss=',float(loss.detach()))
           PY
 
       - name: FLM v0.5 parameter targets
