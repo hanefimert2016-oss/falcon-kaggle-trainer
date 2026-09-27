@@ -1,0 +1,63 @@
+name: FLM v0.7 Full GPU
+
+on:
+  workflow_run:
+    workflows:
+      - FLM v0.7 GPU Pilot
+    types:
+      - completed
+  push:
+    paths:
+      - '.flm-v07-full-trigger'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  launch:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
+      REF: ${{ vars.KAGGLE_OWNER }}/falcon-flm-v07-full-gpu
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install "kaggle>=2.2.1"
+      - name: Build full v0.7 bundle
+        run: |
+          set -euo pipefail
+          python scripts/build_kernel_bundle_v07.py --owner "$KAGGLE_OWNER" --profile full --out kernel_v07
+          python -m py_compile kernel_v07/train_v07.py
+          cat kernel_v07/kernel-metadata.json
+      - name: Submit full training to 2xT4
+        run: |
+          set -euo pipefail
+          ok=0
+          for attempt in $(seq 1 12); do
+            OUTPUT="$(kaggle kernels push -p kernel_v07 --accelerator NvidiaTeslaT4 --timeout 7200 2>&1 || true)"
+            echo "$OUTPUT"
+            if echo "$OUTPUT" | grep -q 'successfully pushed'; then
+              ok=1
+              break
+            fi
+            sleep 45
+          done
+          test "$ok" = "1"
+      - name: Verify full session exists
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 20); do
+            STATUS="$(kaggle kernels status "$REF" 2>&1 || true)"
+            echo "$STATUS"
+            if echo "$STATUS" | grep -Eq 'KernelWorkerStatus.(QUEUED|RUNNING|COMPLETE)'; then
+              exit 0
+            fi
+            sleep 5
+          done
+          exit 1
