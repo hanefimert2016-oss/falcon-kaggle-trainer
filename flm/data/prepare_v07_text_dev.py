@@ -263,7 +263,7 @@ def main():
     ap.add_argument("--wiki-tr-bytes",type=int,default=768_000_000)
     ap.add_argument("--wiki-en-bytes",type=int,default=768_000_000)
     ap.add_argument("--coder-bytes",type=int,default=768_000_000)
-    ap.add_argument("--vocab-size",type=int,default=16_384)
+    ap.add_argument("--vocab-size",type=int,default=32_768)
     ap.add_argument("--en-sft-rows",type=int,default=200_000)
     ap.add_argument("--tr-knowledge-rows",type=int,default=180_000)
     ap.add_argument("--coder-code-rows",type=int,default=150_000)
