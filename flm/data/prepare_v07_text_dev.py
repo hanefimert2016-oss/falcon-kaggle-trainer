@@ -176,6 +176,41 @@ def normalize_agentic_coder_messages(raw):
     return out
 
 
+def compact_agentic_for_context(messages, max_chars: int = 12_000):
+    """Keep a coherent multi-step prefix plus the real final answer within ~4K tokens."""
+    if not messages:
+        return []
+    prefix=[]
+    rest=[]
+    final=None
+    for m in messages:
+        if m["role"] in {"system","user"} and len(prefix)<2:
+            x=dict(m); x["content"]=x["content"][:2000]
+            prefix.append(x)
+        elif m["role"]=="assistant" and "<|final|>" in m["content"]:
+            final=dict(m); final["content"]=final["content"][:2200]
+        else:
+            rest.append(dict(m))
+
+    used=sum(len(m["content"]) for m in prefix)
+    reserve=(len(final["content"]) if final else 0)+256
+    body=[]
+    for m in rest:
+        room=max_chars-used-reserve
+        if room<=256:
+            break
+        content=m["content"][:min(len(m["content"]),2400,room)]
+        if not content:
+            continue
+        x=dict(m); x["content"]=content
+        body.append(x)
+        used+=len(content)
+    out=prefix+body
+    if final is not None and final not in out:
+        out.append(final)
+    return out
+
+
 def append_coder_agent_trajectories(path: Path, limit: int) -> dict:
     source=DEV_SOURCES["coder_agent_menv"]
     ds=load_dataset(source["repo"],split="train",streaming=True)
@@ -183,7 +218,9 @@ def append_coder_agent_trajectories(path: Path, limit: int) -> dict:
     plan_turns=tool_turns=final_turns=0
     with path.open("a",encoding="utf-8") as fh:
         for row in ds:
-            msgs=normalize_agentic_coder_messages(row.get("messages"))
+            msgs=compact_agentic_for_context(
+                normalize_agentic_coder_messages(row.get("messages"))
+            )
             if len(msgs)<8:
                 continue
             plans=sum("<|plan|>" in m["content"] for m in msgs if m["role"]=="assistant")
