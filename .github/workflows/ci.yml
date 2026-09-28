@@ -40,6 +40,12 @@ jobs:
           bash -n scripts/monitor_v07_local.sh
           python - <<'PY'
           import numpy as np
+          from pathlib import Path
+          launcher=Path('scripts/train_v07_local_gpu.sh').read_text()
+          assert 'flm.train_interface_v07' in launcher
+          assert 'python -u -m flm.train_v07' not in launcher
+          assert 'flm-v07-dev-computer' not in launcher
+          assert 'flm-v07-semantic-text-r4' in launcher
           from flm.train_v07 import ShuffledStartPool, BalancedSampler
 
           starts=np.arange(100,dtype=np.int64)
