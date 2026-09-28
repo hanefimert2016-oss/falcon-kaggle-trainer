@@ -87,6 +87,8 @@ def validate_pipeline_inputs(text_root: Path, computer_root: Path) -> dict:
         "coder_tokens": int((ts.get("coder") or {}).get("tokens", 0)),
         "main_sft_supervised": int((ts.get("main_sft") or {}).get("supervised_tokens", 0)),
         "coder_sft_supervised": int((ts.get("coder_sft") or {}).get("supervised_tokens", 0)),
+        "coder_agent_rows": int((ts.get("coder_sft_agentic") or {}).get("rows", 0)),
+        "coder_agent_plan_turns": int((ts.get("coder_sft_agentic") or {}).get("plan_turns", 0)),
         "tokenizer_vocab": int((ts.get("tokenizer") or {}).get("vocab_size", 0)),
     }
     if required_text["main_tokens"] < 1_000_000_000:
@@ -95,8 +97,10 @@ def validate_pipeline_inputs(text_root: Path, computer_root: Path) -> dict:
         raise RuntimeError(f"coder token corpus too small: {required_text}")
     if required_text["main_sft_supervised"] < 300_000_000:
         raise RuntimeError(f"main SFT corpus too small: {required_text}")
-    if required_text["coder_sft_supervised"] < 90_000_000:
+    if required_text["coder_sft_supervised"] < 75_000_000:
         raise RuntimeError(f"coder SFT corpus too small: {required_text}")
+    if required_text["coder_agent_rows"] < 2_500 or required_text["coder_agent_plan_turns"] < 5_000:
+        raise RuntimeError(f"agentic Coder corpus too small: {required_text}")
     if required_text["tokenizer_vocab"] < 30_000:
         raise RuntimeError(f"tokenizer too small: {required_text}")
 
