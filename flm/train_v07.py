@@ -66,6 +66,61 @@ def resolve_pipeline_root(version: str) -> Path:
     raise SystemExit(f"could not locate FLM {version} sources.json")
 
 
+def validate_pipeline_inputs(text_root: Path, computer_root: Path) -> dict:
+    text_manifest = json.loads((text_root / "sources.json").read_text(encoding="utf-8"))
+    computer_manifest = json.loads((computer_root / "sources.json").read_text(encoding="utf-8"))
+
+    if text_manifest.get("pipeline_version") != "v0.7-dev-text":
+        raise RuntimeError(f"wrong text pipeline: {text_manifest.get('pipeline_version')}")
+    if computer_manifest.get("pipeline_version") != "v0.7-dev-computer":
+        raise RuntimeError(f"wrong ComputerUse pipeline: {computer_manifest.get('pipeline_version')}")
+
+    ts = text_manifest.get("stats") or {}
+    cs = computer_manifest.get("stats") or {}
+    required_text = {
+        "main_tokens": int((ts.get("main") or {}).get("tokens", 0)),
+        "coder_tokens": int((ts.get("coder") or {}).get("tokens", 0)),
+        "main_sft_supervised": int((ts.get("main_sft") or {}).get("supervised_tokens", 0)),
+        "coder_sft_supervised": int((ts.get("coder_sft") or {}).get("supervised_tokens", 0)),
+        "tokenizer_vocab": int((ts.get("tokenizer") or {}).get("vocab_size", 0)),
+    }
+    if required_text["main_tokens"] < 800_000_000:
+        raise RuntimeError(f"main token corpus too small: {required_text}")
+    if required_text["coder_tokens"] < 145_000_000:
+        raise RuntimeError(f"coder token corpus too small: {required_text}")
+    if required_text["main_sft_supervised"] < 300_000_000:
+        raise RuntimeError(f"main SFT corpus too small: {required_text}")
+    if required_text["coder_sft_supervised"] < 60_000_000:
+        raise RuntimeError(f"coder SFT corpus too small: {required_text}")
+    if required_text["tokenizer_vocab"] < 16_000:
+        raise RuntimeError(f"tokenizer too small: {required_text}")
+
+    examples = int(cs.get("examples", 0))
+    ops = cs.get("ops") or {}
+    sources = cs.get("sources") or {}
+    domains = int(cs.get("domains", 0))
+    if examples < 30_000:
+        raise RuntimeError(f"ComputerUse corpus too small: {examples}")
+    if int(ops.get("CLICK", 0)) < 20_000:
+        raise RuntimeError(f"ComputerUse CLICK coverage too small: {ops}")
+    if int(ops.get("KEY", 0)) < 100 or int(ops.get("TYPE", 0)) < 10:
+        raise RuntimeError(f"ComputerUse keyboard/type coverage too small: {ops}")
+    if len(sources) < 2 or domains < 2:
+        raise RuntimeError(f"ComputerUse source/domain diversity too small: sources={sources} domains={domains}")
+
+    result = {
+        "text": required_text,
+        "computer": {
+            "examples": examples,
+            "ops": ops,
+            "sources": sources,
+            "domains": domains,
+        },
+    }
+    print("V07_INPUT_QUALITY_OK=" + json.dumps(result, ensure_ascii=False), flush=True)
+    return result
+
+
 def mmap_tokens(path: Path) -> np.memmap:
     if not path.is_file() or path.stat().st_size < 4096:
         raise RuntimeError(f"token file missing/small: {path}")
@@ -76,6 +131,19 @@ def mmap_mask(path: Path) -> np.memmap:
     if not path.is_file() or path.stat().st_size < 1024:
         raise RuntimeError(f"mask file missing/small: {path}")
     return np.memmap(path, mode="r", dtype=np.uint8)
+
+
+def split_train_eval_stream(data, seq_len: int, *, eval_fraction: float = 0.01):
+    n = len(data)
+    minimum = seq_len * 32
+    if n < minimum * 3:
+        raise RuntimeError(f"token stream too small for holdout: n={n} seq={seq_len}")
+    holdout = max(minimum, int(n * eval_fraction))
+    holdout = min(holdout, n // 5)
+    cut = n - holdout
+    if cut <= seq_len * 4 or holdout <= seq_len * 4:
+        raise RuntimeError(f"invalid holdout split: n={n} cut={cut} holdout={holdout}")
+    return data[:cut], data[cut:]
 
 
 def make_xy(data, starts: np.ndarray, seq: int, device):
@@ -158,35 +226,67 @@ def eval_text(model, data, cfg, runtime, rng, batches=8):
     return sum(vals) / len(vals)
 
 
+@torch.no_grad()
+def eval_sft(model, data, mask, cfg, runtime, rng, batches=8):
+    model.eval()
+    vals = []
+    supervised = 0
+    for _ in range(max(1, batches)):
+        x, y, sup = make_sft_batch(
+            data, mask, rng, cfg.seq_len, 1, runtime.device, min_supervised=4
+        )
+        with runtime.autocast():
+            _, loss = model(x, y)
+            if loss.ndim:
+                loss = loss.mean()
+        if not torch.isfinite(loss):
+            raise RuntimeError("non-finite SFT eval loss")
+        vals.append(float(loss.detach()))
+        supervised += int(sup)
+    model.train()
+    return sum(vals) / len(vals), supervised
+
+
 def train_text_pretrain(kind, data, out_root, runtime, vocab_size, steps, batch, accum):
     cfg = text_config(kind, vocab_size)
+    train_data, eval_data = split_train_eval_stream(data, cfg.seq_len, eval_fraction=0.01)
     base = ByteCausalLM(cfg).to(runtime.device)
     model = base
     if runtime.kind == "gpu" and torch.cuda.device_count() > 1 and batch >= 2:
         model = torch.nn.DataParallel(base)
-    opt = torch.optim.AdamW(base.parameters(), lr=2.5e-4, betas=(0.9, 0.95), weight_decay=0.1)
+
+    lr_max = float(os.environ.get("FLM_V07_PRETRAIN_LR", "2.5e-4"))
+    min_lr = float(os.environ.get("FLM_V07_PRETRAIN_MIN_LR", "2.5e-5"))
+    opt = torch.optim.AdamW(base.parameters(), lr=lr_max, betas=(0.9, 0.95), weight_decay=0.1)
     scaler = torch.amp.GradScaler("cuda", enabled=runtime.kind == "gpu")
     rng = np.random.default_rng(707 if kind == "main" else 717)
+    eval_rng = np.random.default_rng(1707 if kind == "main" else 1717)
     warmup = max(20, min(800, steps // 20))
-    min_lr = 2.5e-5
+    eval_interval = int(os.environ.get("FLM_V07_TEXT_EVAL_INTERVAL", str(max(250, min(2000, max(1, steps // 12))))))
+    checkpoint_interval = int(os.environ.get("FLM_V07_TEXT_CHECKPOINT_INTERVAL", "5000"))
+    eval_batches = int(os.environ.get("FLM_V07_EVAL_BATCHES", "12"))
     start_time = time.time()
     tokens_seen = 0
     last = float("nan")
+    best_eval = float("inf")
+    best_step = -1
+    stage = out_root / kind
+    best_path = stage / "checkpoint_best_pretrain.pt"
 
     for step in range(steps):
         if step < warmup:
-            lr = 2.5e-4 * (step + 1) / warmup
+            lr = lr_max * (step + 1) / warmup
         else:
             p = (step - warmup) / max(1, steps - warmup - 1)
-            lr = min_lr + 0.5 * (2.5e-4 - min_lr) * (1 + math.cos(math.pi * p))
+            lr = min_lr + 0.5 * (lr_max - min_lr) * (1 + math.cos(math.pi * p))
         for g in opt.param_groups:
             g["lr"] = lr
 
         opt.zero_grad(set_to_none=True)
         total = 0.0
         for _ in range(accum):
-            starts = sample_starts(rng, len(data), cfg.seq_len, batch)
-            x, y = make_xy(data, starts, cfg.seq_len, runtime.device)
+            starts = sample_starts(rng, len(train_data), cfg.seq_len, batch)
+            x, y = make_xy(train_data, starts, cfg.seq_len, runtime.device)
             with runtime.autocast():
                 _, loss = model(x, y)
                 if loss.ndim:
@@ -202,9 +302,46 @@ def train_text_pretrain(kind, data, out_root, runtime, vocab_size, steps, batch,
             tokens_seen += batch * cfg.seq_len
         if scaler.is_enabled():
             scaler.unscale_(opt)
-        torch.nn.utils.clip_grad_norm_(base.parameters(), 1.0)
+        grad = torch.nn.utils.clip_grad_norm_(base.parameters(), 1.0)
+        if not torch.isfinite(torch.as_tensor(grad)):
+            raise RuntimeError(f"non-finite {kind} pretrain gradient step={step}")
         runtime.optimizer_step(opt, scaler)
         last = total
+
+        should_eval = (step + 1) % eval_interval == 0 or step == steps - 1
+        if should_eval:
+            ev_now = eval_text(model, eval_data, cfg, runtime, eval_rng, eval_batches)
+            print(
+                f"v07 {kind} pretrain eval step={step + 1}/{steps} "
+                f"eval_loss={ev_now:.4f} best={best_eval:.4f}",
+                flush=True,
+            )
+            if math.isfinite(ev_now) and ev_now < best_eval:
+                best_eval = ev_now
+                best_step = step + 1
+                atomic_torch_save(
+                    {
+                        "model": base.state_dict(),
+                        "config": cfg.__dict__,
+                        "step": best_step,
+                        "eval_loss": best_eval,
+                        "tokens_seen": tokens_seen,
+                    },
+                    best_path,
+                )
+
+        if checkpoint_interval > 0 and (step + 1) % checkpoint_interval == 0:
+            atomic_torch_save(
+                {
+                    "model": base.state_dict(),
+                    "config": cfg.__dict__,
+                    "step": step + 1,
+                    "tokens_seen": tokens_seen,
+                    "train_loss": last,
+                },
+                stage / "checkpoint_resume_pretrain.pt",
+            )
+
         if step % 100 == 0 or step == steps - 1:
             print(
                 f"v07 {kind} pretrain step={step}/{steps} loss={last:.4f} "
@@ -212,7 +349,10 @@ def train_text_pretrain(kind, data, out_root, runtime, vocab_size, steps, batch,
                 flush=True,
             )
 
-    ev = eval_text(model, data, cfg, runtime, rng, int(os.environ.get("FLM_V07_EVAL_BATCHES", "8")))
+    if best_path.is_file():
+        best_obj = torch.load(best_path, map_location=runtime.device, weights_only=False)
+        base.load_state_dict(best_obj["model"])
+    final_eval = eval_text(base, eval_data, cfg, runtime, eval_rng, eval_batches)
     result = {
         "kind": kind,
         "stage": "pretrain",
@@ -221,12 +361,15 @@ def train_text_pretrain(kind, data, out_root, runtime, vocab_size, steps, batch,
         "parameters": sum(p.numel() for p in base.parameters()),
         "steps": steps,
         "tokens_seen": tokens_seen,
+        "train_tokens": len(train_data),
+        "heldout_tokens": len(eval_data),
         "train_loss": last,
-        "eval_loss": ev,
+        "eval_loss": final_eval,
+        "best_eval_loss": best_eval,
+        "best_step": best_step,
         "elapsed_s": time.time() - start_time,
         "config": cfg.__dict__,
     }
-    stage = out_root / kind
     atomic_torch_save(
         {"model": base.state_dict(), "config": cfg.__dict__, "result": result},
         stage / "checkpoint_pretrain.pt",
@@ -237,8 +380,14 @@ def train_text_pretrain(kind, data, out_root, runtime, vocab_size, steps, batch,
         torch.cuda.empty_cache()
     return base, cfg, result
 
-
 def train_text_sft(kind, base, cfg, data, mask, out_root, runtime, steps, batch, accum):
+    if len(data) != len(mask):
+        raise RuntimeError(f"{kind} SFT token/mask mismatch")
+    train_data, eval_data = split_train_eval_stream(data, cfg.seq_len, eval_fraction=0.02)
+    cut = len(train_data)
+    train_mask = mask[:cut]
+    eval_mask = mask[cut:]
+
     model = base
     wrapped = model
     if runtime.kind == "gpu" and torch.cuda.device_count() > 1 and batch >= 2:
@@ -248,10 +397,18 @@ def train_text_sft(kind, base, cfg, data, mask, out_root, runtime, steps, batch,
     opt = torch.optim.AdamW(model.parameters(), lr=lr_max, betas=(0.9, 0.95), weight_decay=0.05)
     scaler = torch.amp.GradScaler("cuda", enabled=runtime.kind == "gpu")
     rng = np.random.default_rng(727 if kind == "main" else 737)
+    eval_rng = np.random.default_rng(1727 if kind == "main" else 1737)
     warmup = max(20, min(300, steps // 15))
+    eval_interval = int(os.environ.get("FLM_V07_SFT_EVAL_INTERVAL", str(max(200, min(1000, max(1, steps // 10))))))
+    checkpoint_interval = int(os.environ.get("FLM_V07_TEXT_CHECKPOINT_INTERVAL", "5000"))
+    eval_batches = int(os.environ.get("FLM_V07_EVAL_BATCHES", "12"))
     start_time = time.time()
     supervised_seen = 0
     last = float("nan")
+    best_eval = float("inf")
+    best_step = -1
+    stage = out_root / kind
+    best_path = stage / "checkpoint_best_sft.pt"
 
     for step in range(steps):
         if step < warmup:
@@ -264,7 +421,9 @@ def train_text_sft(kind, base, cfg, data, mask, out_root, runtime, steps, batch,
         opt.zero_grad(set_to_none=True)
         total = 0.0
         for _ in range(accum):
-            x, y, sup = make_sft_batch(data, mask, rng, cfg.seq_len, batch, runtime.device)
+            x, y, sup = make_sft_batch(
+                train_data, train_mask, rng, cfg.seq_len, batch, runtime.device
+            )
             with runtime.autocast():
                 _, loss = wrapped(x, y)
                 if loss.ndim:
@@ -280,9 +439,48 @@ def train_text_sft(kind, base, cfg, data, mask, out_root, runtime, steps, batch,
             supervised_seen += sup
         if scaler.is_enabled():
             scaler.unscale_(opt)
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+        grad = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+        if not torch.isfinite(torch.as_tensor(grad)):
+            raise RuntimeError(f"non-finite {kind} SFT gradient step={step}")
         runtime.optimizer_step(opt, scaler)
         last = total
+
+        should_eval = (step + 1) % eval_interval == 0 or step == steps - 1
+        if should_eval:
+            ev_now, ev_sup = eval_sft(
+                wrapped, eval_data, eval_mask, cfg, runtime, eval_rng, eval_batches
+            )
+            print(
+                f"v07 {kind} sft eval step={step + 1}/{steps} "
+                f"eval_loss={ev_now:.4f} supervised={ev_sup} best={best_eval:.4f}",
+                flush=True,
+            )
+            if math.isfinite(ev_now) and ev_now < best_eval:
+                best_eval = ev_now
+                best_step = step + 1
+                atomic_torch_save(
+                    {
+                        "model": model.state_dict(),
+                        "config": cfg.__dict__,
+                        "step": best_step,
+                        "eval_loss": best_eval,
+                        "supervised_seen": supervised_seen,
+                    },
+                    best_path,
+                )
+
+        if checkpoint_interval > 0 and (step + 1) % checkpoint_interval == 0:
+            atomic_torch_save(
+                {
+                    "model": model.state_dict(),
+                    "config": cfg.__dict__,
+                    "step": step + 1,
+                    "supervised_seen": supervised_seen,
+                    "train_loss": last,
+                },
+                stage / "checkpoint_resume_sft.pt",
+            )
+
         if step % 100 == 0 or step == steps - 1:
             print(
                 f"v07 {kind} sft step={step}/{steps} loss={last:.4f} "
@@ -290,14 +488,24 @@ def train_text_sft(kind, base, cfg, data, mask, out_root, runtime, steps, batch,
                 flush=True,
             )
 
+    if best_path.is_file():
+        best_obj = torch.load(best_path, map_location=runtime.device, weights_only=False)
+        model.load_state_dict(best_obj["model"])
+    final_eval, eval_supervised = eval_sft(
+        model, eval_data, eval_mask, cfg, runtime, eval_rng, eval_batches
+    )
     result = {
         "stage": "sft",
         "steps": steps,
         "supervised_tokens_seen": supervised_seen,
+        "heldout_tokens": len(eval_data),
+        "heldout_supervised_sampled": eval_supervised,
         "train_loss": last,
+        "eval_loss": final_eval,
+        "best_eval_loss": best_eval,
+        "best_step": best_step,
         "elapsed_s": time.time() - start_time,
     }
-    stage = out_root / kind
     atomic_torch_save(
         {"model": model.state_dict(), "config": cfg.__dict__, "result": result},
         stage / "checkpoint.pt",
@@ -307,7 +515,6 @@ def train_text_sft(kind, base, cfg, data, mask, out_root, runtime, steps, batch,
     if runtime.kind == "gpu":
         torch.cuda.empty_cache()
     return model, result
-
 
 def chat_prefix(tok: Tokenizer, user: str, system: str | None = None) -> list[int]:
     ids = []
@@ -688,6 +895,7 @@ def main() -> int:
     v07 = resolve_pipeline_root(text_version)
     computer_root = v07 if computer_version == text_version else resolve_pipeline_root(computer_version)
     print(f"v07_text_version={text_version} computer_version={computer_version}", flush=True)
+    input_quality = validate_pipeline_inputs(v07, computer_root)
     out = Path(os.environ.get("FLM_V07_OUTPUT_ROOT", "/kaggle/working/flm-v0.7-full"))
     out.mkdir(parents=True, exist_ok=True)
     runtime = select_runtime("gpu")
@@ -714,6 +922,7 @@ def main() -> int:
         "accelerator": runtime.kind,
         "gpu_names": runtime.gpu_names,
         "tokenizer_vocab_size": vocab_size,
+        "data_validation": input_quality,
         "models": {},
     }
 
