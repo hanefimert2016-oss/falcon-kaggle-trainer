@@ -88,6 +88,7 @@ class InterfaceAgent:
         self.render_top_k=int(render_top_k)
         self.render_top_p=float(render_top_p)
         self.repetition_penalty=float(repetition_penalty)
+        self._recent_answers: list[str] = []
         self.semantic_compiler=SemanticCompiler()
         self.deterministic_renderer=DeterministicRenderer()
 
@@ -209,7 +210,7 @@ class InterfaceAgent:
         core_result="<|core_result|>"+json.dumps(
             payload,ensure_ascii=False,separators=(",",":")
         )+"<|core_end|>"
-        return self.generate([
+        render_messages=[
             {
                 "role":"system",
                 "content":(
@@ -224,10 +225,21 @@ class InterfaceAgent:
             {"role":"user","content":prompt},
             {"role":"assistant","content":ir},
             {"role":"tool","content":core_result},
-        ],
-            max_new=384,
-            temperature=self.render_temperature,
-            top_k=self.render_top_k,
-            top_p=self.render_top_p,
-            repetition_penalty=self.repetition_penalty,
-        )
+        ]
+        answer=""
+        for _ in range(3):
+            candidate=self.generate(
+                render_messages,
+                max_new=384,
+                temperature=self.render_temperature,
+                top_k=self.render_top_k,
+                top_p=self.render_top_p,
+                repetition_penalty=self.repetition_penalty,
+            ).strip()
+            answer=candidate
+            if candidate and candidate not in self._recent_answers[-4:]:
+                break
+        if answer:
+            self._recent_answers.append(answer)
+            self._recent_answers=self._recent_answers[-8:]
+        return answer
