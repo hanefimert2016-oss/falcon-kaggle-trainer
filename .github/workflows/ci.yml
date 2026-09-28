@@ -251,7 +251,7 @@ jobs:
           assert gpu['id']=='test-owner/falcon-flm-v07-semantic-interface-gpu',gpu
           assert gpu['title']=='Falcon FLM v07 Semantic Interface Transformer',gpu
           assert gpu['enable_gpu'] is True
-          assert gpu['dataset_sources']==['test-owner/flm-v07-dev-text'],gpu
+          assert gpu['dataset_sources']==['test-owner/flm-v07-semantic-text-r3'],gpu
           assert 'flm-v07-dev-computer' not in json.dumps(gpu)
 
           wrapper=Path('/tmp/v07-semantic-interface/train_interface_v07.py').read_text()
@@ -340,16 +340,34 @@ jobs:
           assert verified.ok
 
           from flm.data.semantic_curriculum import messages_for
-          joined='\n'.join(x['content'] for x in messages_for(2))
-          assert '<|semantic_ir|>' in joined
-          assert '<|semantic_end|>' in joined
-          assert '<|core_result|>' in joined
-          assert '<|final|>' in joined
+          from flm.core.semantic_ir import Program
+          import re, json
+          seen_ops=set()
+          for mode in range(9):
+              messages=messages_for(mode)
+              joined='\n'.join(x['content'] for x in messages)
+              assert '<|semantic_ir|>' in joined
+              assert '<|semantic_end|>' in joined
+              assert '<|core_result|>' in joined
+              assert '<|final|>' in joined
+              assistant=next(x['content'] for x in messages if x['role']=='assistant' and '<|semantic_ir|>' in x['content'])
+              raw=re.search(r'<\\|semantic_ir\\|>(.*?)<\\|semantic_end\\|>',assistant,re.S).group(1)
+              program=Program.from_json(raw)
+              result=FLMCore().execute(program)
+              for op in program.operations:
+                  seen_ops.add(op.kind)
+              if program.queries:
+                  assert result.results and result.results[0].answer is True
+              for item in result.operation_results:
+                  assert item['ok'] is True,item
+          assert seen_ops=={'ARITHMETIC','ANALYZE_CODE','STATE_PLAN','UI_PLAN','VERIFY'},seen_ops
+          print('SEMANTIC_CURRICULUM_ALL_MODES_OK',sorted(seen_ops))
 
           gate=Path('.github/workflows/flm-v07-dev-training-gate.yml').read_text()
           assert 'falcon-flm-v07-semantic-interface-gpu' in gate
           assert 'FLM v0.7 DEV Text Repair' in gate
           assert 'flm-v07-dev-computer' not in gate
+          assert 'flm-v07-semantic-text-r3' in gate
           assert "data_revision',0))>=3" in gate
           assert 'if: ${{ false }}' not in gate
           print('SEMANTIC_FLM_SINGLE_TRANSFORMER_PIPELINE_OK')
