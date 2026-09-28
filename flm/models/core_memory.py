@@ -78,9 +78,9 @@ class CoreMemoryBank(nn.Module):
         self.slots = int(fingerprints.numel())
         self.top_k = int(token_ids.size(1))
         # The memory is data, not trainable model parameters.
-        self.register_buffer("fingerprints", fingerprints.to(torch.int64), persistent=True)
-        self.register_buffer("token_ids", token_ids.to(torch.int64), persistent=True)
-        self.register_buffer("weights", weights.to(torch.float32), persistent=True)
+        self.register_buffer("fingerprints", fingerprints.to(torch.int64), persistent=False)
+        self.register_buffer("token_ids", token_ids.to(torch.int64), persistent=False)
+        self.register_buffer("weights", weights.to(torch.float32), persistent=False)
 
     def _lookup_windows(self, idx: torch.Tensor):
         if idx.size(1) < self.order:
