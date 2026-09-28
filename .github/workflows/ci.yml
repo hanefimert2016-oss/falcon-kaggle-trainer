@@ -149,8 +149,8 @@ jobs:
           from pathlib import Path
 
           gpu=json.loads(Path('/tmp/v07-quality-gpu/kernel-metadata.json').read_text())
-          assert gpu['id']=='test-owner/falcon-flm-v07-quality-gpu',gpu
-          assert gpu['title']=='Falcon FLM v07 Quality GPU',gpu
+          assert gpu['id']=='test-owner/falcon-flm-v07-quality-v2-gpu',gpu
+          assert gpu['title']=='Falcon FLM v07 Quality V2 GPU',gpu
           assert gpu['enable_gpu'] is True and gpu['machine_shape']=='NvidiaTeslaT4'
           assert gpu['dataset_sources']==[
               'test-owner/flm-v07-dev-text',
@@ -201,7 +201,7 @@ jobs:
           assert 'python -m flm.data.prepare_v07_computer_dev' in data_workflow
 
           gate=Path('.github/workflows/flm-v07-dev-training-gate.yml').read_text()
-          assert 'falcon-flm-v07-quality-gpu' in gate
+          assert 'falcon-flm-v07-quality-v2-gpu' in gate
           assert 'flm-v07-dev-computer' in gate
           assert 'falcon-flm-v07-dev-computer-cpu' not in gate
           print('v0.7 GitHub-data quality pipeline OK')
