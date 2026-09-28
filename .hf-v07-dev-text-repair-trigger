@@ -1,10 +1,16 @@
-FLM v0.7 r4 Semantic Interface rebuild
+FLM v0.7 r5 Semantic Interface build
 architecture=single-interface-transformer
 semantic_core=training-free
-semantic_curriculum=v2-executable-12-modes
-canonical_types=fixed
-simple_turkish_code_eval=enabled
-coder_sft_min_supervised=70000000
-semantic_sft=240000
-dataset=flm-v07-semantic-text-r4
+semantic_curriculum=v3-executable-16-modes-bilingual
+semantic_anti_copy=true
+semantic_identity_stable_diverse=true
+semantic_sft=600000
+semantic_language_target=300000_tr_300000_en
+en_sft=260000
+tr_knowledge=260000
+coder_code=200000
+xlam_tools=80000
+coder_agent=5000
+dataset=flm-v07-semantic-text-r5
+data_revision=5
 vocab=32768
