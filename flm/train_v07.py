@@ -19,6 +19,7 @@ from PIL import Image
 from tokenizers import Tokenizer
 
 from flm.models.text_lm import ByteCausalLM, TextConfig
+from flm.models.core_memory import CoreMemoryBank
 from flm.models.computer_use_v3 import ComputerUseV3, ComputerUseV3Config
 from flm.computer_use.context import build_context_ids, summarize_action
 from flm.runtime import select_runtime
@@ -343,6 +344,23 @@ def text_config(kind: str, vocab_size: int) -> TextConfig:
     )
 
 
+def attach_configured_core_memory(model: ByteCausalLM, runtime) -> str | None:
+    configured=os.environ.get("FLM_V07_CORE_MEMORY_PATH","").strip()
+    if not configured:
+        return None
+    path=Path(configured)
+    if not path.is_file():
+        raise RuntimeError(f"configured CoreMemory file is missing: {path}")
+    bank=CoreMemoryBank.load(path,map_location="cpu").to(runtime.device)
+    model.attach_core_memory(bank)
+    print(
+        f"V07_CORE_MEMORY_ATTACHED path={path} slots={bank.slots} "
+        f"order={bank.order} top_k={bank.top_k}",
+        flush=True,
+    )
+    return str(path)
+
+
 def training_seq_len(kind: str, cfg: TextConfig) -> int:
     key=f"FLM_V07_{kind.upper()}_TRAIN_SEQ"
     seq=int(os.environ.get(key, str(cfg.seq_len)))
@@ -395,6 +413,7 @@ def train_text_pretrain(kind, data, out_root, runtime, vocab_size, steps, batch,
     train_seq = training_seq_len(kind, cfg)
     train_data, eval_data = split_train_eval_stream(data, train_seq, eval_fraction=0.01)
     base = ByteCausalLM(cfg).to(runtime.device)
+    core_memory_path = attach_configured_core_memory(base, runtime)
     if init_checkpoint is not None:
         init_checkpoint = Path(init_checkpoint)
         if not init_checkpoint.is_file():
@@ -592,6 +611,7 @@ def train_text_pretrain(kind, data, out_root, runtime, vocab_size, steps, batch,
         "completed_epochs": tokens_seen / max(1, len(train_starts) * train_seq),
         "training_seq_len": train_seq,
         "sampler": "shuffled_nonoverlap_no_replacement",
+        "core_memory": core_memory_path,
         "train_loss": last,
         "eval_loss": final_eval,
         "best_eval_loss": best_eval,
