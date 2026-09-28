@@ -54,7 +54,7 @@ def build_context_ids(tok, task: str, history, length: int, pad_id: int):
     if length <= 0:
         raise ValueError("context length must be positive")
     task_ids = tok.encode("Task: " + str(task), add_special_tokens=False).ids
-    hist = [str(x) for x in (history or []) if str(x).strip()][-4:]
+    hist = [str(x) for x in (history or []) if str(x).strip()][-8:]
     if hist:
         marker_ids = tok.encode(
             "\nRecent actions:",
@@ -66,7 +66,7 @@ def build_context_ids(tok, task: str, history, length: int, pad_id: int):
         ).ids
         hist_budget = min(
             len(marker_ids) + len(action_ids),
-            max(len(marker_ids) + 8, length // 3),
+            max(len(marker_ids) + 16, length // 2),
         )
         # Preserve the semantic marker and keep the newest action tokens.
         action_budget = max(0, hist_budget - len(marker_ids))
