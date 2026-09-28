@@ -109,6 +109,22 @@ class SemanticCompiler:
                 )])
         raise ValueError("sentence is outside deterministic rule grammar")
 
+    def identity_canonical(self,text:str)->Program:
+        text=_norm(text).rstrip("?.!").casefold()
+        patterns=(
+            r"sen kimsin",
+            r"kimsin",
+            r"sen nesin",
+            r"kendini tanıt",
+            r"kendini tanit",
+            r"who are you",
+            r"what are you",
+            r"introduce yourself",
+        )
+        if any(re.fullmatch(p,text,re.I) for p in patterns):
+            return Program(operations=[Operation("IDENTITY",{})])
+        raise ValueError("sentence is outside deterministic identity grammar")
+
     def operation_canonical(self,text:str)->Program:
         raw=unicodedata.normalize("NFKC",str(text or "")).strip()
         normalized=_norm(raw)
@@ -152,6 +168,7 @@ class SemanticCompiler:
             except Exception:
                 pass
         for fn in (
+            self.identity_canonical,
             self.query_canonical,
             self.rule_canonical,
             self.compile_canonical,
