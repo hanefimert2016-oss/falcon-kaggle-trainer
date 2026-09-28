@@ -363,7 +363,7 @@ jobs:
               assert '<|core_result|>' in joined
               assert '<|final|>' in joined
               assistant=next(x['content'] for x in messages if x['role']=='assistant' and '<|semantic_ir|>' in x['content'])
-              raw=re.search(r'<\\|semantic_ir\\|>(.*?)<\\|semantic_end\\|>',assistant,re.S).group(1)
+              raw=re.search(r'<\|semantic_ir\|>(.*?)<\|semantic_end\|>',assistant,re.S).group(1)
               program=Program.from_json(raw)
               result=FLMCore().execute(program)
               for op in program.operations:
