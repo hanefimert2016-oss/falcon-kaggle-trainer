@@ -22,6 +22,7 @@ from flm.models.text_lm import ByteCausalLM, TextConfig
 from flm.models.computer_use_v3 import ComputerUseV3, ComputerUseV3Config
 from flm.computer_use.context import build_context_ids, summarize_action
 from flm.runtime import select_runtime
+from flm.quality_v07 import validate_suite
 from flm.train_v05 import ZipImageStore
 
 
@@ -980,9 +981,37 @@ def main() -> int:
         shutil.copy2(v07 / name, out / ("text_sources.json" if name == "sources.json" else name))
     if computer_root != v07 and (computer_root / "sources.json").is_file():
         shutil.copy2(computer_root / "sources.json", out / "computer_sources.json")
+    quality_errors = []
+    if args.only == "all":
+        quality_errors = validate_suite(summary)
+        summary["quality_gate"] = {
+            "passed": not quality_errors,
+            "errors": quality_errors,
+        }
+    else:
+        summary["quality_gate"] = {
+            "passed": None,
+            "errors": [],
+            "reason": f"partial training mode: {args.only}",
+        }
+
     (out / "suite_metrics.json").write_text(
         json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8"
     )
+
+    if quality_errors:
+        (out / "quality_gate_errors.json").write_text(
+            json.dumps(quality_errors, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        print("V07_QUALITY_GATE_FAILED", flush=True)
+        for error in quality_errors:
+            print(" - " + error, flush=True)
+        raise RuntimeError(
+            f"v0.7 quality gate failed with {len(quality_errors)} error(s)"
+        )
+
+    if args.only == "all":
+        print("V07_QUALITY_GATE_PASSED", flush=True)
     print(f"V07_SUITE_COMPLETE output={out}", flush=True)
     return 0
 
