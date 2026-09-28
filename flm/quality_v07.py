@@ -47,6 +47,11 @@ def _check_text_metrics(kind: str, model: dict, errors: list[str]) -> None:
         errors.append(f"{kind} pretrain heldout loss too high: {pre['eval_loss']}")
     if _finite_number(sft.get("eval_loss")) and float(sft["eval_loss"]) >= 8.0:
         errors.append(f"{kind} SFT heldout loss too high: {sft['eval_loss']}")
+    cfg = pre.get("config") or {}
+    if int(cfg.get("seq_len", 0)) < 4096:
+        errors.append(f"{kind} context is below 4096 tokens: {cfg.get('seq_len')}")
+    if cfg.get("position_encoding") != "rope":
+        errors.append(f"{kind} is not using RoPE: {cfg.get('position_encoding')!r}")
 
 
 def validate_suite(suite: dict) -> list[str]:
@@ -108,6 +113,28 @@ def validate_suite(suite: dict) -> list[str]:
                     f"coder sample {i} missing Python function structure: {out[:180]!r}"
                 )
 
+    if not coder_model.get("initialized_from_main"):
+        errors.append("Coder was not initialized from the trained Main checkpoint")
+
+    normal = (quality.get("coder_normal") or {}).get("output", "")
+    if not natural_text(normal, min_chars=60):
+        errors.append(f"Coder normal-answer mode is not coherent: {normal[:180]!r}")
+    if any(tag in normal for tag in ("<|tool_call|>", "<|plan|>", "<|plan_end|>")):
+        errors.append(f"Coder normal-answer mode leaked agent protocol: {normal[:180]!r}")
+
+    planning = (quality.get("coder_planning") or {}).get("output", "")
+    if "<|plan|>" not in planning or "<|plan_end|>" not in planning:
+        errors.append(f"Coder planning mode is missing plan boundaries: {planning[:240]!r}")
+    if "<|final|>" not in planning:
+        errors.append(f"Coder planning mode is missing a final answer: {planning[:240]!r}")
+    plan_body = planning.split("<|plan|>", 1)[-1].split("<|plan_end|>", 1)[0]
+    plan_words = re.findall(r"[A-Za-zÇĞİÖŞÜçğıöşü]{2,}", plan_body)
+    if len(plan_words) < 30:
+        errors.append(f"Coder plan is too shallow: {planning[:240]!r}")
+    planning_topics = ("log", "config", "test", "repro", "rollback")
+    if sum(k in plan_body.lower() for k in planning_topics) < 3:
+        errors.append(f"Coder plan misses debugging stages: {planning[:240]!r}")
+
     try:
         calls = extract_tool_calls(tool)
         if not calls or calls[0].name != "add":
@@ -123,6 +150,16 @@ def validate_suite(suite: dict) -> list[str]:
 
     cu = models.get("computer_use") or {}
     if cu:
+        if not cu.get("task_embedding_initialized_from_main"):
+            errors.append("ComputerUse task embedding was not initialized from Main")
+        action_counts = cu.get("action_counts") or {}
+        minimum_actions = {
+            "CLICK": 20_000, "KEY": 1_000, "TYPE": 1_000, "SCROLL": 750,
+            "DRAG": 300, "RIGHT_CLICK": 200, "DOUBLE_CLICK": 200, "DONE": 500,
+        }
+        for op, minimum in minimum_actions.items():
+            if int(action_counts.get(op, 0)) < minimum:
+                errors.append(f"ComputerUse {op} training coverage too small: {action_counts.get(op,0)}/{minimum}")
         if not _finite_number(cu.get("train_loss")):
             errors.append(f"CU train loss is not finite: {cu.get('train_loss')}")
         if float(cu.get("op_accuracy", 0)) < 0.50:
@@ -135,6 +172,11 @@ def validate_suite(suite: dict) -> list[str]:
             errors.append(
                 f"CU pointer L2 invalid/high: {cu.get('pointer_mean_l2')}"
             )
+        by_class = cu.get("op_accuracy_by_class") or {}
+        for op in ("KEY", "TYPE", "SCROLL", "DRAG"):
+            item = by_class.get(op) or {}
+            if int(item.get("count", 0)) >= 3 and float(item.get("accuracy", 0)) < 0.20:
+                errors.append(f"CU held-out {op} accuracy too low: {item}")
     else:
         errors.append("missing ComputerUse metrics")
 
