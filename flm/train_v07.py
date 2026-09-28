@@ -312,20 +312,23 @@ def resume_enabled() -> bool:
 
 
 def text_config(kind: str, vocab_size: int) -> TextConfig:
+    pos = os.environ.get("FLM_V07_POSITION_ENCODING", "rope")
     if kind == "main":
         return TextConfig(
             vocab_size=vocab_size,
-            seq_len=int(os.environ.get("FLM_V07_MAIN_SEQ", "512")),
+            seq_len=int(os.environ.get("FLM_V07_MAIN_SEQ", "4096")),
             n_layer=int(os.environ.get("FLM_V07_MAIN_LAYERS", "14")),
             n_head=int(os.environ.get("FLM_V07_MAIN_HEADS", "12")),
             n_embd=int(os.environ.get("FLM_V07_MAIN_EMBD", "768")),
+            position_encoding=pos,
         )
     return TextConfig(
         vocab_size=vocab_size,
-        seq_len=int(os.environ.get("FLM_V07_CODER_SEQ", "512")),
-        n_layer=int(os.environ.get("FLM_V07_CODER_LAYERS", "12")),
+        seq_len=int(os.environ.get("FLM_V07_CODER_SEQ", "4096")),
+        n_layer=int(os.environ.get("FLM_V07_CODER_LAYERS", "14")),
         n_head=int(os.environ.get("FLM_V07_CODER_HEADS", "12")),
         n_embd=int(os.environ.get("FLM_V07_CODER_EMBD", "768")),
+        position_encoding=pos,
     )
 
 
@@ -366,10 +369,22 @@ def eval_sft(model, data, mask, cfg, runtime, rng, batches=8):
     return sum(vals) / len(vals), supervised
 
 
-def train_text_pretrain(kind, data, out_root, runtime, vocab_size, steps, batch, accum):
+def train_text_pretrain(kind, data, out_root, runtime, vocab_size, steps, batch, accum, init_checkpoint=None):
     cfg = text_config(kind, vocab_size)
     train_data, eval_data = split_train_eval_stream(data, cfg.seq_len, eval_fraction=0.01)
     base = ByteCausalLM(cfg).to(runtime.device)
+    if init_checkpoint is not None:
+        init_checkpoint = Path(init_checkpoint)
+        if not init_checkpoint.is_file():
+            raise RuntimeError(f"missing initialization checkpoint: {init_checkpoint}")
+        seed = torch.load(init_checkpoint, map_location="cpu", weights_only=False)
+        seed_cfg = TextConfig(**seed["config"])
+        if seed_cfg != cfg:
+            raise RuntimeError(
+                f"{kind} Main-inheritance config mismatch: main={seed_cfg} target={cfg}"
+            )
+        base.load_state_dict(seed["model"], strict=True)
+        print(f"V07_{kind.upper()}_INITIALIZED_FROM_MAIN={init_checkpoint}", flush=True)
     base.gradient_checkpointing = os.environ.get(
         "FLM_V07_GRADIENT_CHECKPOINTING", "0"
     ).strip().lower() in {"1", "true", "yes", "on"}
@@ -379,8 +394,12 @@ def train_text_pretrain(kind, data, out_root, runtime, vocab_size, steps, batch,
     if runtime.kind == "gpu" and torch.cuda.device_count() > 1 and batch >= 2:
         model = torch.nn.DataParallel(base)
 
-    lr_max = float(os.environ.get("FLM_V07_PRETRAIN_LR", "2.5e-4"))
-    min_lr = float(os.environ.get("FLM_V07_PRETRAIN_MIN_LR", "2.5e-5"))
+    if kind == "coder" and init_checkpoint is not None:
+        lr_max = float(os.environ.get("FLM_V07_CODER_PRETRAIN_LR", "1.2e-4"))
+        min_lr = float(os.environ.get("FLM_V07_CODER_PRETRAIN_MIN_LR", "1.2e-5"))
+    else:
+        lr_max = float(os.environ.get("FLM_V07_PRETRAIN_LR", "2.5e-4"))
+        min_lr = float(os.environ.get("FLM_V07_PRETRAIN_MIN_LR", "2.5e-5"))
     opt = torch.optim.AdamW(base.parameters(), lr=lr_max, betas=(0.9, 0.95), weight_decay=0.1)
     scaler = torch.amp.GradScaler("cuda", enabled=runtime.kind == "gpu")
     rng = np.random.default_rng(707 if kind == "main" else 717)
@@ -1224,6 +1243,10 @@ def main() -> int:
         )
         summary["models"]["main"] = {"pretrain": pre, "sft": sft}
         checkpoint_result(out, summary)
+        if args.only == "all":
+            main_model = main_model.to("cpu")
+            if runtime.kind == "gpu":
+                torch.cuda.empty_cache()
 
     if args.only in {"all", "coder"}:
         coder_data = mmap_tokens(v07 / "coder_train.u16")
@@ -1231,17 +1254,30 @@ def main() -> int:
         coder_sft_mask = mmap_mask(v07 / "coder_sft_mask.u8")
         if len(coder_sft_data) != len(coder_sft_mask):
             raise RuntimeError("coder SFT token/mask mismatch")
+        main_seed = None
+        if os.environ.get("FLM_V07_CODER_INIT_FROM_MAIN", "1").strip().lower() not in {"0", "false", "no", "off"}:
+            candidate = out / "main" / "checkpoint.pt"
+            if candidate.is_file():
+                main_seed = candidate
+            elif args.only == "all":
+                raise RuntimeError("Coder is configured to inherit Main, but Main checkpoint.pt is missing")
         coder_model, coder_cfg, pre = train_text_pretrain(
-            "coder", coder_data, out, runtime, vocab_size, coder_steps, batch, accum
+            "coder", coder_data, out, runtime, vocab_size, coder_steps, batch, accum,
+            init_checkpoint=main_seed,
         )
         coder_model, sft = train_text_sft(
             "coder", coder_model, coder_cfg, coder_sft_data, coder_sft_mask,
             out, runtime, coder_sft_steps, batch, accum,
         )
-        summary["models"]["coder"] = {"pretrain": pre, "sft": sft}
+        summary["models"]["coder"] = {
+            "pretrain": pre,
+            "sft": sft,
+            "initialized_from_main": bool(main_seed),
+        }
         checkpoint_result(out, summary)
 
     if args.only == "all" and main_model is not None and coder_model is not None:
+        main_model = main_model.to(runtime.device)
         quality = sample_quality(main_model, main_cfg, coder_model, coder_cfg, tok, runtime.device)
         summary["quality_samples"] = quality
         (out / "quality_samples.json").write_text(
