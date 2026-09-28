@@ -90,6 +90,8 @@ SPECIAL = [
     "<pad>", "<unk>", "<bos>", "<eos>", "<doc>",
     "<|system|>", "<|user|>", "<|assistant|>",
     "<|tool_call|>", "<|tool_result|>", "<|tool_end|>",
+    "<|semantic_ir|>", "<|semantic_end|>",
+    "<|core_result|>", "<|core_end|>",
     "<|plan|>", "<|plan_end|>", "<|final|>", "<|end|>",
 ]
 
