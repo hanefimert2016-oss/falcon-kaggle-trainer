@@ -1,8 +1,10 @@
 FLM v0.7 r4 Semantic Interface rebuild
 architecture=single-interface-transformer
 semantic_core=training-free
-semantic_curriculum=v2-executable-12-modes
-canonical_types=fixed
 semantic_sft=240000
+curriculum=core-executed-operations
+operations=ARITHMETIC,ANALYZE_CODE,STATE_PLAN,UI_PLAN,VERIFY
+local_launcher=single-transformer-only
 dataset=flm-v07-semantic-text-r4
 vocab=32768
+rebuild_generation=2
