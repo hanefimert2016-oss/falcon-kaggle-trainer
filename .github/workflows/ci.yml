@@ -32,6 +32,44 @@ jobs:
       - name: Unit tests
         run: pytest -q
 
+      - name: FLM v0.7 local GPU launcher and resume regression
+        run: |
+          set -euo pipefail
+          bash -n scripts/train_v07_local_gpu.sh
+          bash -n scripts/monitor_v07_local.sh
+          python - <<'PY'
+          import numpy as np
+          from flm.train_v07 import ShuffledStartPool, BalancedSampler
+
+          starts=np.arange(100,dtype=np.int64)
+          a=ShuffledStartPool(starts,123)
+          a.take(17)
+          state=a.state_dict()
+          expected=a.take(23)
+          b=ShuffledStartPool(starts,999)
+          b.load_state_dict(state)
+          actual=b.take(23)
+          assert np.array_equal(expected,actual)
+          assert b.pos==a.pos and b.epoch==a.epoch
+
+          rows=[
+              {"operation":"CLICK","id":1},
+              {"operation":"KEY","id":2},
+              {"operation":"TYPE","id":3},
+              {"operation":"SCROLL","id":4},
+          ]
+          x=BalancedSampler(rows,321)
+          for _ in range(5):
+              x.sample(3)
+          s=x.state_dict()
+          expected=[r["id"] for r in x.sample(12)]
+          y=BalancedSampler(rows,777)
+          y.load_state_dict(s)
+          actual=[r["id"] for r in y.sample(12)]
+          assert expected==actual
+          print("V07_LOCAL_RESUME_HELPERS_OK")
+          PY
+
       - name: Parse workflow YAML
         run: |
           python - <<'PY'
