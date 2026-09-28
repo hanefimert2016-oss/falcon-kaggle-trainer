@@ -62,11 +62,30 @@ class Query:
     atom: Atom
 
 
+@dataclass(frozen=True)
+class Operation:
+    """Executable request consumed by the training-free FLM Core."""
+    kind: str
+    args: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self):
+        if not self.kind or not re.match(r"^[A-Z][A-Z0-9_]*$", self.kind):
+            raise ValueError(f"invalid operation kind: {self.kind!r}")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"kind": self.kind, "args": self.args}
+
+    @classmethod
+    def from_dict(cls, obj: dict[str, Any]) -> "Operation":
+        return cls(str(obj["kind"]).upper(), dict(obj.get("args") or {}))
+
+
 @dataclass
 class Program:
     facts: list[Atom] = field(default_factory=list)
     rules: list[Rule] = field(default_factory=list)
     queries: list[Query] = field(default_factory=list)
+    operations: list[Operation] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -74,6 +93,7 @@ class Program:
             "facts": [x.to_dict() for x in self.facts],
             "rules": [x.to_dict() for x in self.rules],
             "queries": [{"atom": q.atom.to_dict()} for q in self.queries],
+            "operations": [x.to_dict() for x in self.operations],
             "metadata": self.metadata,
         }
 
@@ -86,6 +106,7 @@ class Program:
             facts=[Atom.from_dict(x) for x in obj.get("facts", [])],
             rules=[Rule.from_dict(x) for x in obj.get("rules", [])],
             queries=[Query(Atom.from_dict(x["atom"])) for x in obj.get("queries", [])],
+            operations=[Operation.from_dict(x) for x in obj.get("operations", [])],
             metadata=dict(obj.get("metadata") or {}),
         )
 
