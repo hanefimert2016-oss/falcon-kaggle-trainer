@@ -32,7 +32,6 @@ jobs:
       KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
       KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
       TARGET_REF: ${{ vars.KAGGLE_OWNER }}/flm-v07-dev-computer
-      LEGACY_REF: ${{ vars.KAGGLE_OWNER }}/falcon-flm-v07-dev-computer-cpu
     steps:
       - uses: actions/checkout@v4
         with:
@@ -70,11 +69,13 @@ jobs:
           p=Path('/tmp/v07-existing/sources.json')
           x=json.loads(p.read_text(encoding='utf-8'))
           assert x.get('pipeline_version') == 'v0.7-dev-computer'
+          assert int(x.get('data_revision',0)) >= 2
           s=x.get('stats') or {}
-          assert int(s.get('examples',0)) >= 30000
-          assert int((s.get('ops') or {}).get('CLICK',0)) >= 20000
-          assert int((s.get('ops') or {}).get('KEY',0)) >= 100
-          assert int((s.get('ops') or {}).get('TYPE',0)) >= 10
+          ops=s.get('ops') or {}
+          assert int(s.get('examples',0)) >= 40000
+          minimum={'CLICK':20000,'KEY':1000,'TYPE':1000,'SCROLL':750,'DRAG':300,'RIGHT_CLICK':200,'DOUBLE_CLICK':200,'DONE':500}
+          for op,n in minimum.items():
+              assert int(ops.get(op,0)) >= n,(op,ops)
           print('EXISTING_COMPUTER_DATASET_METADATA_VALID',s.get('examples'),s.get('ops'))
           PY
               then
@@ -103,47 +104,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf prepared_v07_dev_computer legacy_v07_computer
-
-          REBUILD="${{ github.event.inputs.rebuild || 'false' }}"
-
-          # Fast migration path: reuse the already-finished legacy CPU output once.
-          # This does not execute a Kaggle CPU kernel. New/rebuilt data is always
-          # generated directly on this GitHub Actions runner.
-          if [[ "$REBUILD" != "true" ]]; then
-            mkdir -p legacy_v07_computer
-            if kaggle kernels output "$LEGACY_REF" -p legacy_v07_computer -q 2>/tmp/legacy.err; then
-              ROOT="$(find legacy_v07_computer -type f -name sources.json -print -quit | xargs -r dirname || true)"
-              if [[ -n "$ROOT" ]] && python - "$ROOT/sources.json" <<'PY'
-          import json,sys
-          p=sys.argv[1]
-          x=json.load(open(p,encoding='utf-8'))
-          assert x.get('pipeline_version')=='v0.7-dev-computer',x.get('pipeline_version')
-          assert int((x.get('stats') or {}).get('examples',0)) >= 30000
-          print('LEGACY_PREPARED_DATA_VALID')
-          PY
-              then
-                cp -a "$ROOT" prepared_v07_dev_computer
-                echo "source=migrated-prepared-output" >> "$GITHUB_OUTPUT"
-              fi
-            else
-              cat /tmp/legacy.err || true
-            fi
-          fi
-
-          if [[ ! -f prepared_v07_dev_computer/sources.json ]]; then
-            echo "Building ComputerUse data on GitHub Actions CPU"
-            python -m flm.data.prepare_v07_computer_dev \
-              --out prepared_v07_dev_computer \
-              --owner "$KAGGLE_OWNER" \
-              --rexx-trajectories 5000 \
-              --groundcua 8000 \
-              --salesforce 18000 \
-              --showui 7496 \
-              --click100k-max 6000 \
-              --min-rows 30000
-            echo "source=github-actions-cpu" >> "$GITHUB_OUTPUT"
-          fi
+          rm -rf prepared_v07_dev_computer
+          echo "Building ComputerUse r2 data on GitHub Actions CPU"
+          python -m flm.data.prepare_v07_computer_dev \
+            --out prepared_v07_dev_computer \
+            --owner "$KAGGLE_OWNER" \
+            --rexx-trajectories 5000 \
+            --groundcua 8000 \
+            --salesforce 18000 \
+            --showui 7496 \
+            --click100k-max 6000 \
+            --min-rows 40000
+          echo "source=github-actions-cpu-r2" >> "$GITHUB_OUTPUT"
 
           python - "$KAGGLE_OWNER" <<'PY'
           import json,sys
@@ -152,16 +124,17 @@ jobs:
           owner=sys.argv[1]
           x=json.loads((root/'sources.json').read_text(encoding='utf-8'))
           assert x['pipeline_version']=='v0.7-dev-computer'
-          s=x['stats']
-          assert s['examples'] >= 30000,s
-          assert s['ops'].get('CLICK',0) >= 20000,s['ops']
-          assert s['ops'].get('KEY',0) >= 100,s['ops']
-          assert s['ops'].get('TYPE',0) >= 10,s['ops']
+          assert int(x.get('data_revision',0)) >= 2,x.get('data_revision')
+          s=x['stats']; ops=s['ops']
+          assert s['examples'] >= 40000,s
+          minimum={'CLICK':20000,'KEY':1000,'TYPE':1000,'SCROLL':750,'DRAG':300,'RIGHT_CLICK':200,'DOUBLE_CLICK':200,'DONE':500}
+          for op,n in minimum.items():
+              assert ops.get(op,0) >= n,(op,ops)
           meta={
             'title':'FLM v07 DEV Computer',
             'id':f'{owner}/flm-v07-dev-computer',
             'licenses':[{'name':'other'}],
-            'description':'FLM v0.7 ComputerUse data prepared/orchestrated by GitHub Actions CPU.'
+            'description':'FLM v0.7 r2 balanced multi-action ComputerUse data prepared on GitHub Actions CPU.'
           }
           (root/'dataset-metadata.json').write_text(json.dumps(meta,indent=2)+'\n',encoding='utf-8')
           print('V07_GITHUB_COMPUTER_DATA_VERIFIED',s['examples'],s['ops'])
@@ -176,7 +149,7 @@ jobs:
           if kaggle datasets files "$TARGET_REF" --page-size 100 >/tmp/existing.txt 2>&1; then
             kaggle datasets version \
               -p prepared_v07_dev_computer \
-              -m "FLM v0.7 ComputerUse data from GitHub Actions CPU" \
+              -m "FLM v0.7 r2 balanced ComputerUse data from GitHub Actions CPU" \
               -q -t -r skip
           else
             kaggle datasets create \
@@ -195,8 +168,12 @@ jobs:
           root=Path('/tmp/v07-published')
           x=json.loads((root/'sources.json').read_text(encoding='utf-8'))
           assert x.get('pipeline_version')=='v0.7-dev-computer'
-          s=x.get('stats') or {}
-          assert int(s.get('examples',0)) >= 30000
+          assert int(x.get('data_revision',0)) >= 2
+          s=x.get('stats') or {}; ops=s.get('ops') or {}
+          assert int(s.get('examples',0)) >= 40000
+          minimum={'CLICK':20000,'KEY':1000,'TYPE':1000,'SCROLL':750,'DRAG':300,'RIGHT_CLICK':200,'DOUBLE_CLICK':200,'DONE':500}
+          for op,n in minimum.items():
+              assert int(ops.get(op,0)) >= n,(op,ops)
           assert (root/'cu07_manifest.jsonl').stat().st_size > 1000
           print('V07_GITHUB_COMPUTER_DATA_READY',s.get('examples'),s.get('ops'))
           PY
