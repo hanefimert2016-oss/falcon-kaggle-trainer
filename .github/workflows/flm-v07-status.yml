@@ -1,4 +1,4 @@
-name: FLM v0.7 Full Status and Fetch
+name: FLM v0.7 Quality Status and Fetch
 
 on:
   push:
@@ -16,7 +16,7 @@ jobs:
     env:
       KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
       KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
-      REF: ${{ vars.KAGGLE_OWNER }}/falcon-flm-v07-full-gpu
+      REF: ${{ vars.KAGGLE_OWNER }}/falcon-flm-v07-quality-gpu
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -29,11 +29,11 @@ jobs:
           set -euo pipefail
           STATUS="$(kaggle kernels status "$REF" 2>&1 || true)"
           echo "$STATUS"
-          if echo "$STATUS" | grep -q 'KernelWorkerStatus.COMPLETE'; then
+          if echo "$STATUS" | grep -q '(KernelWorkerStatus\.)?COMPLETE'; then
             echo "state=complete" >> "$GITHUB_OUTPUT"
-          elif echo "$STATUS" | grep -Eq 'KernelWorkerStatus.(ERROR|FAILED|CANCELLED)'; then
+          elif echo "$STATUS" | grep -Eq '(KernelWorkerStatus\.)?(ERROR|FAILED|CANCELLED)'; then
             echo "state=failed" >> "$GITHUB_OUTPUT"
-          elif echo "$STATUS" | grep -q 'KernelWorkerStatus.RUNNING'; then
+          elif echo "$STATUS" | grep -q '(KernelWorkerStatus\.)?RUNNING'; then
             echo "state=running" >> "$GITHUB_OUTPUT"
           else
             echo "state=queued" >> "$GITHUB_OUTPUT"
@@ -63,14 +63,14 @@ jobs:
           set -euo pipefail
           ROOT="$(cat /tmp/v07-root.txt)"
           cd "$(dirname "$ROOT")"
-          zip -r -0 "$GITHUB_WORKSPACE/FLM-v0.7-FULL-FINAL.zip" "$(basename "$ROOT")"
+          zip -r -0 "$GITHUB_WORKSPACE/FLM-v0.7-QUALITY-FINAL.zip" "$(basename "$ROOT")"
           cd "$GITHUB_WORKSPACE"
-          ls -lh FLM-v0.7-FULL-FINAL.zip
+          ls -lh FLM-v0.7-QUALITY-FINAL.zip
       - uses: actions/upload-artifact@v4
         if: steps.state.outputs.state == 'complete'
         with:
-          name: FLM-v0.7-FULL-FINAL
-          path: FLM-v0.7-FULL-FINAL.zip
+          name: FLM-v0.7-QUALITY-FINAL
+          path: FLM-v0.7-QUALITY-FINAL.zip
           retention-days: 7
           compression-level: 0
           if-no-files-found: error
