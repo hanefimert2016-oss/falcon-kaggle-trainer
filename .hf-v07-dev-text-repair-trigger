@@ -1,4 +1,4 @@
-FLM v0.7 r2 text rebuild
+FLM v0.7 r2 text rebuild retry
 knowledge=wikipedia-tr-en
-coder=agentic-planning
+coder=python-java-go-agentic
 vocab=32768
