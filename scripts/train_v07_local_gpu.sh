@@ -70,6 +70,12 @@ gpu_profile() {
     PROFILE="8GB-safe"
   fi
 
+  if (( MIN_VRAM < 11500 )); then
+    TEXT_GRAD_CKPT=1
+  else
+    TEXT_GRAD_CKPT=0
+  fi
+
   # DataParallel needs at least one sample per participating GPU.
   if (( GPU_COUNT > 1 && TEXT_BATCH < GPU_COUNT )); then
     TEXT_BATCH="$GPU_COUNT"
@@ -82,6 +88,7 @@ gpu_profile() {
   done
   echo "  text batch=$TEXT_BATCH accum=$TEXT_ACCUM effective=$((TEXT_BATCH * TEXT_ACCUM))"
   echo "  computer-use batch=$CU_BATCH"
+  echo "  activation-checkpointing=$TEXT_GRAD_CKPT"
 }
 
 if [[ "$MODE" == "self-test" ]]; then
@@ -189,6 +196,7 @@ export FLM_V07_CODER_EMBD="${FLM_V07_CODER_EMBD:-768}"
 
 export FLM_V07_TEXT_BATCH="${FLM_V07_TEXT_BATCH:-$TEXT_BATCH}"
 export FLM_V07_TEXT_ACCUM="${FLM_V07_TEXT_ACCUM:-$TEXT_ACCUM}"
+export FLM_V07_GRADIENT_CHECKPOINTING="${FLM_V07_GRADIENT_CHECKPOINTING:-$TEXT_GRAD_CKPT}"
 export FLM_V07_MAIN_STEPS="${FLM_V07_MAIN_STEPS:-70000}"
 export FLM_V07_MAIN_SFT_STEPS="${FLM_V07_MAIN_SFT_STEPS:-12000}"
 export FLM_V07_CODER_STEPS="${FLM_V07_CODER_STEPS:-25000}"
