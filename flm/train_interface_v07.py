@@ -144,6 +144,7 @@ def train_pretrain_stage(
     stage_dir=out/"stages"
     stage_dir.mkdir(parents=True,exist_ok=True)
     resume=stage_dir/f"{name}_resume.pt"
+    best_path=stage_dir/f"{name}_best.pt"
     final=stage_dir/f"{name}.pt"
     start_step=0
     tokens_seen=0
@@ -206,7 +207,14 @@ def train_pretrain_stage(
         if (step+1)%eval_interval==0 or step==steps-1:
             ev=eval_pretrain(model,held,train_seq,runtime.device,eval_rng,
                              int(os.environ.get("FLM_INTERFACE_EVAL_BATCHES","16")))
-            best=min(best,ev)
+            if ev < best:
+                best=ev
+                atomic_torch_save({
+                    "model":model.state_dict(),
+                    "config":cfg.__dict__,
+                    "eval_loss":ev,
+                    "step":step+1,
+                },best_path)
             print(
                 f"interface {name} step={step+1}/{steps} loss={loss_sum:.4f} "
                 f"eval={ev:.4f} best={best:.4f} tokens={tokens_seen}",
@@ -218,6 +226,9 @@ def train_pretrain_stage(
                 {"tokens_seen":tokens_seen,"best_eval":best},
             )
 
+    if best_path.is_file():
+        best_ck=torch.load(best_path,map_location=runtime.device,weights_only=False)
+        model.load_state_dict(best_ck["model"])
     ev=eval_pretrain(model,held,train_seq,runtime.device,eval_rng,
                      int(os.environ.get("FLM_INTERFACE_EVAL_BATCHES","16")))
     metrics={
@@ -277,6 +288,7 @@ def train_mixed_sft(
     if runtime.kind=="gpu" and torch.cuda.device_count()>1 and batch>=2:
         wrapped=torch.nn.DataParallel(model)
     resume=out/"stages"/"mixed_sft_resume.pt"
+    best_path=out/"stages"/"mixed_sft_best.pt"
     final=out/"stages"/"mixed_sft.pt"
     start_step=0
     best=float("inf")
@@ -284,6 +296,12 @@ def train_mixed_sft(
     eval_rng=np.random.default_rng(8333)
     ckpt_interval=int(os.environ.get("FLM_INTERFACE_CKPT_INTERVAL","500"))
     eval_interval=int(os.environ.get("FLM_INTERFACE_SFT_EVAL_INTERVAL","250"))
+
+    if resume_enabled() and final.is_file():
+        ck=torch.load(final,map_location=runtime.device,weights_only=False)
+        if ck.get("config")==cfg.__dict__ and int(ck.get("steps",0))>=steps:
+            model.load_state_dict(ck["model"])
+            return ck["metrics"]
 
     if resume_enabled() and resume.is_file():
         ck=torch.load(resume,map_location=runtime.device,weights_only=False)
@@ -334,7 +352,14 @@ def train_mixed_sft(
             em=eval_sft(model,me,mem,seq,runtime.device,eval_rng,8)
             ec=eval_sft(model,ce,cem,seq,runtime.device,eval_rng,8)
             score=0.65*em+0.35*ec
-            best=min(best,score)
+            if score < best:
+                best=score
+                atomic_torch_save({
+                    "model":model.state_dict(),
+                    "config":cfg.__dict__,
+                    "score":score,
+                    "step":step+1,
+                },best_path)
             print(
                 f"interface mixed_sft step={step+1}/{steps} loss={total:.4f} "
                 f"main_eval={em:.4f} coder_eval={ec:.4f} score={score:.4f}",
@@ -356,6 +381,9 @@ def train_mixed_sft(
                 "config":cfg.__dict__,
             },resume)
 
+    if best_path.is_file():
+        best_ck=torch.load(best_path,map_location=runtime.device,weights_only=False)
+        model.load_state_dict(best_ck["model"])
     em=eval_sft(model,me,mem,seq,runtime.device,eval_rng,12)
     ec=eval_sft(model,ce,cem,seq,runtime.device,eval_rng,12)
     metrics={
