@@ -455,9 +455,12 @@ def _code_explain_case(i:int,tr:bool):
 
 
 def messages_for(i:int):
-    tr=(i%2==0)
-    names=TR_NAMES if tr else EN_NAMES
     mode=i%SEMANTIC_MODES
+    cycle=i//SEMANTIC_MODES
+    # Every semantic mode appears in both languages instead of mode parity
+    # accidentally locking a task to only Turkish or only English.
+    tr=(cycle%2==0)
+    names=TR_NAMES if tr else EN_NAMES
     if mode==0:
         a=names[i%len(names)]
         tr_type,en_type,sym=TYPES[(i//4)%len(TYPES)]
@@ -525,6 +528,7 @@ def append_semantic_curriculum(path:Path,rows:int=600_000,seed:int=7071)->dict:
     indices=list(range(rows))
     rng.shuffle(indices)
     mode_counts={str(i):0 for i in range(SEMANTIC_MODES)}
+    language_counts={"tr":0,"en":0}
     with path.open("a",encoding="utf-8") as fh:
         for i in indices:
             messages=messages_for(i)
@@ -533,10 +537,12 @@ def append_semantic_curriculum(path:Path,rows:int=600_000,seed:int=7071)->dict:
                 "source":"synthetic:flm-semantic-curriculum-v3",
             },ensure_ascii=False)+"\n")
             mode_counts[str(i%SEMANTIC_MODES)]+=1
+            language_counts["tr" if ((i//SEMANTIC_MODES)%2==0) else "en"]+=1
     return {
         "rows":rows,
         "modes":SEMANTIC_MODES,
         "mode_counts":mode_counts,
+        "language_counts":language_counts,
         "source":"synthetic:flm-semantic-curriculum-v3",
         "core_executed":True,
         "anti_copy_verified":True,
