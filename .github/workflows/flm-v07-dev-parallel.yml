@@ -52,7 +52,53 @@ jobs:
             "numpy>=1.26" \
             "kaggle>=2.2.1"
 
+      - name: Check existing prepared ComputerUse dataset
+        id: existing
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/v07-existing
+          mkdir -p /tmp/v07-existing
+          ready=false
+
+          for attempt in $(seq 1 24); do
+            rm -rf /tmp/v07-existing/*
+            if kaggle datasets download -d "$TARGET_REF" -f sources.json -p /tmp/v07-existing -q --force 2>/tmp/v07-existing.err; then
+              if python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('/tmp/v07-existing/sources.json')
+          x=json.loads(p.read_text(encoding='utf-8'))
+          assert x.get('pipeline_version') == 'v0.7-dev-computer'
+          s=x.get('stats') or {}
+          assert int(s.get('examples',0)) >= 30000
+          assert int((s.get('ops') or {}).get('CLICK',0)) >= 20000
+          assert int((s.get('ops') or {}).get('KEY',0)) >= 100
+          assert int((s.get('ops') or {}).get('TYPE',0)) >= 10
+          print('EXISTING_COMPUTER_DATASET_METADATA_VALID',s.get('examples'),s.get('ops'))
+          PY
+              then
+                if kaggle datasets download -d "$TARGET_REF" -f cu07_manifest.jsonl -p /tmp/v07-existing -q --force 2>/tmp/v07-manifest.err; then
+                  test -s /tmp/v07-existing/cu07_manifest.jsonl
+                  ready=true
+                  break
+                fi
+              fi
+            fi
+            sleep 5
+          done
+
+          echo "ready=$ready" >> "$GITHUB_OUTPUT"
+          if [[ "$ready" == "true" ]]; then
+            echo "V07_EXISTING_COMPUTER_DATASET_READY"
+          else
+            cat /tmp/v07-existing.err 2>/dev/null || true
+            cat /tmp/v07-manifest.err 2>/dev/null || true
+            echo "V07_EXISTING_COMPUTER_DATASET_NOT_READY"
+          fi
+
       - name: Reuse existing prepared data or build on GitHub CPU
+        if: steps.existing.outputs.ready != 'true'
         id: prepare
         shell: bash
         run: |
@@ -124,6 +170,7 @@ jobs:
           df -h .
 
       - name: Publish prepared ComputerUse dataset
+        if: steps.existing.outputs.ready != 'true'
         run: |
           set -euo pipefail
           if kaggle datasets files "$TARGET_REF" --page-size 100 >/tmp/existing.txt 2>&1; then
@@ -137,20 +184,32 @@ jobs:
               -q -t -r skip
           fi
 
-          for attempt in $(seq 1 120); do
-            if kaggle datasets files "$TARGET_REF" --page-size 100 >/tmp/files.txt 2>&1; then
-              cat /tmp/files.txt
-              grep -q 'sources.json' /tmp/files.txt
-              grep -q 'cu07_manifest.jsonl' /tmp/files.txt
-              echo "V07_GITHUB_COMPUTER_DATA_READY"
+          rm -rf /tmp/v07-published
+          mkdir -p /tmp/v07-published
+          for attempt in $(seq 1 180); do
+            rm -rf /tmp/v07-published/*
+            if kaggle datasets download -d "$TARGET_REF" -f sources.json -p /tmp/v07-published -q --force 2>/tmp/publish-meta.err               && kaggle datasets download -d "$TARGET_REF" -f cu07_manifest.jsonl -p /tmp/v07-published -q --force 2>/tmp/publish-manifest.err; then
+              python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('/tmp/v07-published')
+          x=json.loads((root/'sources.json').read_text(encoding='utf-8'))
+          assert x.get('pipeline_version')=='v0.7-dev-computer'
+          s=x.get('stats') or {}
+          assert int(s.get('examples',0)) >= 30000
+          assert (root/'cu07_manifest.jsonl').stat().st_size > 1000
+          print('V07_GITHUB_COMPUTER_DATA_READY',s.get('examples'),s.get('ops'))
+          PY
               exit 0
             fi
             sleep 5
           done
-          cat /tmp/files.txt || true
+          cat /tmp/publish-meta.err 2>/dev/null || true
+          cat /tmp/publish-manifest.err 2>/dev/null || true
           exit 1
 
       - uses: actions/upload-artifact@v4
+        if: steps.existing.outputs.ready != 'true'
         with:
           name: flm-v07-github-computer-manifest
           path: |
