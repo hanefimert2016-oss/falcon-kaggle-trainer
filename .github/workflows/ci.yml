@@ -315,7 +315,14 @@ jobs:
           compiler=SemanticCompiler()
           parsed=compiler.compile_canonical('Mert bir bilgisayardır.')
           assert parsed.facts[0].predicate=='IsA'
-          assert parsed.facts[0].args==('Mert','bilgisayar')
+          assert parsed.facts[0].args==('Mert','Computer')
+          parsed_en=compiler.compile_canonical('Mert is a computer.')
+          assert parsed_en.facts[0].args==('Mert','Computer')
+          rule_prog=compiler.rule_canonical('Her memeli sıcakkanlıdır.')
+          assert rule_prog.rules[0].conclusion.predicate=='WarmBlooded'
+          math_prog=compiler.operation_canonical('Hesapla: (27+15)*2')
+          assert math_prog.operations[0].kind=='ARITHMETIC'
+          assert FLMCore().execute(math_prog).operation_results[0]['value']==84
 
           from flm.core.code_engine import CodeEngine
           graph=CodeEngine().analyze_python('import os\ndef f(x):\n    return print(x)\n')
