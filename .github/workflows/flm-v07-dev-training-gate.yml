@@ -21,7 +21,8 @@ concurrency:
 
 jobs:
   launch-quality-training:
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    # Kaggle GPU launch intentionally disabled: v0.7 training moved to local GPU.
+    if: ${{ false }}
     runs-on: ubuntu-latest
     timeout-minutes: 360
     env:
