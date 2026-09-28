@@ -59,8 +59,8 @@ raise SystemExit(main())
 '''
     (out/"train_v07_dev.py").write_text(wrapper,encoding="utf-8")
     meta={
-        "id":f"{args.owner}/falcon-flm-v07-quality-gpu",
-        "title":"Falcon FLM v07 Quality GPU",
+        "id":f"{args.owner}/falcon-flm-v07-quality-v2-gpu",
+        "title":"Falcon FLM v07 Quality V2 GPU",
         "code_file":"train_v07_dev.py",
         "language":"python","kernel_type":"script","is_private":True,
         "enable_gpu":True,"enable_internet":False,"machine_shape":"NvidiaTeslaT4",
