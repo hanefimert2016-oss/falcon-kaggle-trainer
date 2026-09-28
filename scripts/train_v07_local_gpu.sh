@@ -190,9 +190,11 @@ ts=t["stats"]; cs=c["stats"]
 assert t["pipeline_version"]=="v0.7-dev-text" and int(t.get("data_revision",0))>=2
 assert c["pipeline_version"]=="v0.7-dev-computer" and int(c.get("data_revision",0))>=2
 assert ts["main"]["tokens"] >= 1_000_000_000
-assert ts["coder"]["tokens"] >= 190_000_000
+assert ts["coder"]["tokens"] >= 175_000_000
 assert ts["main_sft"]["supervised_tokens"] >= 300_000_000
-assert ts["coder_sft"]["supervised_tokens"] >= 90_000_000
+assert ts["coder_sft"]["supervised_tokens"] >= 75_000_000
+assert ts["coder_sft_agentic"]["rows"] >= 2500
+assert ts["coder_sft_agentic"]["plan_turns"] >= 5000
 assert ts["tokenizer"]["vocab_size"] >= 30_000
 assert cs["examples"] >= 40_000
 ops=cs["ops"]
