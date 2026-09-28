@@ -28,6 +28,7 @@ jobs:
           refs=(
             "mertsigma/falcon-flm-v07-quality-gpu"
             "mertsigma/falcon-flm-v07-quality-v2-gpu"
+            "mertsigma/falcon-flm-v07-semantic-interface-gpu"
           )
           for ref in "${refs[@]}"; do
             echo "Checking $ref"
