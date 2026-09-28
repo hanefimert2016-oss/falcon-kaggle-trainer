@@ -948,7 +948,7 @@ def merge_cu_rows(v07_root: Path):
         r["_root"] = "v07"
         episode = str(r.get("episode_id") or "")
         previous = histories.setdefault(episode, [])
-        r["_history"] = list(previous[-4:])
+        r["_history"] = list(previous[-8:])
         rows.append(r)
         previous.append(
             summarize_action(
