@@ -71,7 +71,8 @@ jobs:
             --coder-code-rows 150000 \
             --xlam-tool-rows 60000 \
             --tool100k-rows 100000 \
-            --coder-agent-rows 3000
+            --coder-agent-rows 3000 \
+            --semantic-sft-rows 120000
 
       - name: Verify massive text scale
         run: |
@@ -82,7 +83,7 @@ jobs:
           p=Path('prepared_v07_dev_text/sources.json')
           x=json.loads(p.read_text())
           assert x['pipeline_version']=='v0.7-dev-text'
-          assert int(x.get('data_revision',0)) >= 2, x.get('data_revision')
+          assert int(x.get('data_revision',0)) >= 3, x.get('data_revision')
           s=x['stats']
           assert s['main_raw']['bytes'] >= 3_000_000_000, s['main_raw']
           assert s['main_raw']['bytes_total_with_knowledge'] >= 4_400_000_000, s['main_raw']
@@ -91,7 +92,8 @@ jobs:
           assert s['coder_raw']['content_bytes'] >= 730_000_000, s['coder_raw']
           assert s['main']['tokens'] >= 1_000_000_000, s['main']
           assert s['coder']['tokens'] >= 190_000_000, s['coder']
-          assert s['main_sft_raw']['rows'] >= 450_000, s['main_sft_raw']
+          assert s['main_sft_raw']['rows'] >= 550_000, s['main_sft_raw']
+          assert s['semantic_interface_sft']['rows'] >= 100_000, s['semantic_interface_sft']
           assert s['main_sft']['supervised_tokens'] >= 300_000_000, s['main_sft']
           assert s['coder_sft_raw']['rows'] >= 280_000, s['coder_sft_raw']
           assert s['coder_sft_tool100k']['rows'] >= 85000, s['coder_sft_tool100k']
@@ -99,6 +101,9 @@ jobs:
           assert s['coder_sft_agentic']['plan_turns'] >= 5000, s['coder_sft_agentic']
           assert s['coder_sft']['supervised_tokens'] >= 75_000_000, s['coder_sft']
           assert s['tokenizer']['vocab_size'] >= 30000
+          special=s['tokenizer']['special_ids']
+          for token in ('<|semantic_ir|>','<|semantic_end|>','<|core_result|>','<|core_end|>'):
+              assert special.get(token) is not None,(token,special)
           print('V07_DEV_TEXT_VERIFIED')
           print(json.dumps(s,indent=2,ensure_ascii=False))
           PY
@@ -109,7 +114,7 @@ jobs:
           set -euo pipefail
           REF="$KAGGLE_OWNER/flm-v07-dev-text"
           if kaggle datasets list --mine -s flm-v07-dev-text -v | grep -Fq "$REF"; then
-            kaggle datasets version -p prepared_v07_dev_text -m "FLM v0.7 r2 4.6GB bilingual knowledge + agentic coder data" -q -t -r skip
+            kaggle datasets version -p prepared_v07_dev_text -m "FLM v0.7 r3 single-interface Semantic Core data" -q -t -r skip
           else
             kaggle datasets create -p prepared_v07_dev_text -q -t -r skip
           fi
