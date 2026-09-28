@@ -263,12 +263,15 @@ jobs:
               ('FLM_INTERFACE_KV_HEADS','4'),
               ('FLM_INTERFACE_GENERAL_SEQ','1024'),
               ('FLM_INTERFACE_CODE_SEQ','2048'),
+              ('FLM_INTERFACE_REFRESH_SEQ','2048'),
+              ('FLM_INTERFACE_REFRESH_EPOCHS','0.12'),
               ('FLM_INTERFACE_SFT_SEQ','4096'),
           ):
               assert key in wrapper and value in wrapper,(key,value)
 
           trainer=Path('flm/train_interface_v07.py').read_text()
           assert trainer.count('InterfaceTransformer(cfg)')==1
+          assert 'general_refresh' in trainer
           assert 'ComputerUseV3(' not in trainer
           assert 'ByteCausalLM(' not in trainer
           assert 'train_computer_use' not in trainer
