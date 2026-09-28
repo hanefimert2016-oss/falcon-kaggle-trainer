@@ -370,6 +370,11 @@ def train_text_pretrain(kind, data, out_root, runtime, vocab_size, steps, batch,
     cfg = text_config(kind, vocab_size)
     train_data, eval_data = split_train_eval_stream(data, cfg.seq_len, eval_fraction=0.01)
     base = ByteCausalLM(cfg).to(runtime.device)
+    base.gradient_checkpointing = os.environ.get(
+        "FLM_V07_GRADIENT_CHECKPOINTING", "0"
+    ).strip().lower() in {"1", "true", "yes", "on"}
+    if base.gradient_checkpointing:
+        print(f"V07_{kind.upper()}_ACTIVATION_CHECKPOINTING=1", flush=True)
     model = base
     if runtime.kind == "gpu" and torch.cuda.device_count() > 1 and batch >= 2:
         model = torch.nn.DataParallel(base)
