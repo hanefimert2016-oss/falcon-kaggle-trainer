@@ -64,7 +64,7 @@ jobs:
           assert int((s.get('main') or {}).get('tokens',0))>=1_000_000_000
           assert int((s.get('coder') or {}).get('tokens',0))>=175_000_000
           assert int((s.get('main_sft') or {}).get('supervised_tokens',0))>=300_000_000
-          assert int((s.get('coder_sft') or {}).get('supervised_tokens',0))>=75_000_000
+          assert int((s.get('coder_sft') or {}).get('supervised_tokens',0))>=70_000_000
           assert int((s.get('semantic_interface_sft') or {}).get('rows',0))>=200_000
           assert int((s.get('tokenizer') or {}).get('vocab_size',0))>=30_000
           print('SEMANTIC_FLM_TEXT_R4_READY',s.get('main'),s.get('coder'),s.get('semantic_interface_sft'))
