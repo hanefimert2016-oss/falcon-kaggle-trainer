@@ -1,0 +1,45 @@
+name: FLM v0.7 Stop Kaggle Training
+
+on:
+  push:
+    paths:
+      - '.flm-v07-stop-kaggle-trigger'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install Kaggle CLI
+        run: python -m pip install "kaggle>=2.2.1"
+      - name: Stop obsolete FLM Kaggle jobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          refs=(
+            "mertsigma/falcon-flm-v07-quality-gpu"
+            "mertsigma/falcon-flm-v07-quality-v2-gpu"
+          )
+          for ref in "${refs[@]}"; do
+            echo "Checking $ref"
+            if kaggle kernels status "$ref" >/tmp/status.txt 2>&1; then
+              cat /tmp/status.txt
+              # Current Kaggle CLI has no non-destructive cancel-by-slug command.
+              # These kernels are generated from GitHub and are obsolete now, so
+              # deleting the kernel is the supported way we use to terminate them.
+              kaggle kernels delete "$ref" -y
+              echo "FLM_KAGGLE_KERNEL_REMOVED=$ref"
+            else
+              cat /tmp/status.txt || true
+              echo "FLM_KAGGLE_KERNEL_ALREADY_ABSENT=$ref"
+            fi
+          done
