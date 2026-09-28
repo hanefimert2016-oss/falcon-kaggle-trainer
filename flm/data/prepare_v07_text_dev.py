@@ -35,6 +35,23 @@ DEV_SOURCES = {
         "license": "apache-2.0",
         "role": "100k full-cycle tool-calling conversations",
     },
+    "main_wiki_tr": {
+        "repo": "wikimedia/wikipedia",
+        "config": "20231101.tr",
+        "license": "cc-by-sa-3.0/gfdl",
+        "role": "clean Turkish encyclopedic pretraining",
+    },
+    "main_wiki_en": {
+        "repo": "wikimedia/wikipedia",
+        "config": "20231101.en",
+        "license": "cc-by-sa-3.0/gfdl",
+        "role": "clean English encyclopedic pretraining",
+    },
+    "coder_agent_menv": {
+        "repo": "AmanPriyanshu/tool-reasoning-sft-CODING-MEnvData-SWE-Trajectory-data-cleaned-rectified",
+        "license": "apache-2.0",
+        "role": "validated multi-step software-engineering planning and tool trajectories",
+    },
 }
 
 
@@ -74,6 +91,122 @@ def normalize_messages(messages):
         if content:
             out.append({"role":role,"content":content})
     return out
+
+
+def append_wikipedia_knowledge(path: Path, source_key: str, target_bytes: int) -> dict:
+    source=DEV_SOURCES[source_key]
+    written=rows=0
+    ds=load_dataset(source["repo"],source["config"],split="train",streaming=True)
+    with path.open("a",encoding="utf-8") as fh:
+        for row in ds:
+            text=" ".join(clean_text(row.get("text") or "").split())
+            title=" ".join(clean_text(row.get("title") or "").split())
+            if len(text)<200:
+                continue
+            doc=(title+"\n"+text).strip()
+            raw=(doc+"\n").encode("utf-8","ignore")
+            remain=target_bytes-written
+            if remain<=0:
+                break
+            if len(raw)>remain:
+                raw=raw[:remain].decode("utf-8","ignore").encode("utf-8")
+            if not raw:
+                continue
+            fh.write(raw.decode("utf-8","ignore"))
+            written+=len(raw)
+            rows+=1
+            if written>=target_bytes-4:
+                break
+    if written < int(target_bytes*0.90):
+        raise RuntimeError(f"{source_key} underfilled {written}/{target_bytes}")
+    return {"bytes":written,"articles":rows,"source":source["repo"],"config":source["config"]}
+
+
+def _strip_wrapped(text: str, start: str, end: str) -> str:
+    text=clean_text(text)
+    if text.startswith(start) and text.endswith(end):
+        text=text[len(start):-len(end)]
+    return text.strip()
+
+
+def normalize_agentic_coder_messages(raw):
+    if isinstance(raw,str):
+        try:
+            raw=json.loads(raw)
+        except Exception:
+            return []
+    if not isinstance(raw,list):
+        return []
+    out=[]
+    for m in raw:
+        if not isinstance(m,dict):
+            continue
+        role=str(m.get("role") or "").strip().lower()
+        content=clean_text(m.get("content") or "")
+        if not content:
+            continue
+        if len(content)>16000:
+            content=content[:16000]
+        if role in {"system","user"}:
+            out.append({"role":role,"content":content})
+        elif role=="reasoning":
+            content=_strip_wrapped(content,"<think>","</think>")
+            out.append({
+                "role":"assistant",
+                "content":"<|plan|>\n"+content+"\n<|plan_end|>",
+            })
+        elif role=="tool_call":
+            content=content.replace("<tool_call>","<|tool_call|>").replace("</tool_call>","<|tool_end|>")
+            if "<|tool_call|>" not in content:
+                content="<|tool_call|>"+content+"<|tool_end|>"
+            out.append({"role":"assistant","content":content})
+        elif role=="tool_output":
+            content=content.replace("<tool_response>","").replace("</tool_response>","").strip()
+            out.append({
+                "role":"tool",
+                "content":"<|tool_result|>"+content+"<|tool_end|>",
+            })
+        elif role=="answer":
+            content=_strip_wrapped(content,"<answer>","</answer>")
+            out.append({"role":"assistant","content":"<|final|>\n"+content})
+        elif role=="assistant":
+            out.append({"role":"assistant","content":content})
+        elif role=="tool":
+            out.append({"role":"tool","content":content})
+    return out
+
+
+def append_coder_agent_trajectories(path: Path, limit: int) -> dict:
+    source=DEV_SOURCES["coder_agent_menv"]
+    ds=load_dataset(source["repo"],split="train",streaming=True)
+    added=0
+    plan_turns=tool_turns=final_turns=0
+    with path.open("a",encoding="utf-8") as fh:
+        for row in ds:
+            msgs=normalize_agentic_coder_messages(row.get("messages"))
+            if len(msgs)<8:
+                continue
+            plans=sum("<|plan|>" in m["content"] for m in msgs if m["role"]=="assistant")
+            tools=sum("<|tool_call|>" in m["content"] for m in msgs if m["role"]=="assistant")
+            finals=sum("<|final|>" in m["content"] for m in msgs if m["role"]=="assistant")
+            if plans<2 or tools<1 or finals<1:
+                continue
+            fh.write(json.dumps({"messages":msgs,"source":source["repo"]},ensure_ascii=False)+"\n")
+            added+=1
+            plan_turns+=plans
+            tool_turns+=tools
+            final_turns+=finals
+            if added>=limit:
+                break
+    if added < int(limit*0.85):
+        raise RuntimeError(f"agentic coder trajectories underfilled {added}/{limit}")
+    return {
+        "rows":added,
+        "plan_turns":plan_turns,
+        "tool_turns":tool_turns,
+        "final_turns":final_turns,
+        "source":source["repo"],
+    }
 
 
 def append_turkish_knowledge(path: Path, limit: int) -> dict:
@@ -127,13 +260,16 @@ def main():
     ap.add_argument("--out",default="prepared_v07_dev_text")
     ap.add_argument("--owner",required=True)
     ap.add_argument("--main-bytes",type=int,default=3_072_000_000)
-    ap.add_argument("--coder-bytes",type=int,default=512_000_000)
+    ap.add_argument("--wiki-tr-bytes",type=int,default=768_000_000)
+    ap.add_argument("--wiki-en-bytes",type=int,default=768_000_000)
+    ap.add_argument("--coder-bytes",type=int,default=768_000_000)
     ap.add_argument("--vocab-size",type=int,default=16_384)
     ap.add_argument("--en-sft-rows",type=int,default=200_000)
     ap.add_argument("--tr-knowledge-rows",type=int,default=180_000)
     ap.add_argument("--coder-code-rows",type=int,default=150_000)
     ap.add_argument("--xlam-tool-rows",type=int,default=60_000)
     ap.add_argument("--tool100k-rows",type=int,default=100_000)
+    ap.add_argument("--coder-agent-rows",type=int,default=3_000)
     args=ap.parse_args()
 
     out=Path(args.out)
@@ -144,6 +280,9 @@ def main():
     stats={}
     print("V07_DEV_TEXT main_raw_start",flush=True)
     stats["main_raw"]=prepare_main_raw(out,args.main_bytes)
+    stats["main_wiki_tr"]=append_wikipedia_knowledge(out/"main.raw.txt","main_wiki_tr",args.wiki_tr_bytes)
+    stats["main_wiki_en"]=append_wikipedia_knowledge(out/"main.raw.txt","main_wiki_en",args.wiki_en_bytes)
+    stats["main_raw"]["bytes_total_with_knowledge"]=(out/"main.raw.txt").stat().st_size
     print("V07_DEV_TEXT main_raw_done",json.dumps(stats["main_raw"]),flush=True)
 
     print("V07_DEV_TEXT coder_raw_start",flush=True)
@@ -161,6 +300,7 @@ def main():
 
     stats["coder_sft_base"]=prepare_coder_sft(out,args.coder_code_rows,args.xlam_tool_rows,6_000)
     stats["coder_sft_tool100k"]=append_tool_100k(out/"coder_sft.jsonl",args.tool100k_rows)
+    stats["coder_sft_agentic"]=append_coder_agent_trajectories(out/"coder_sft.jsonl",args.coder_agent_rows)
     stats["coder_sft_raw"]={
         "file":"coder_sft.jsonl",
         "rows":count_jsonl(out/"coder_sft.jsonl"),
@@ -186,6 +326,7 @@ def main():
 
     manifest={
         "pipeline_version":"v0.7-dev-text",
+        "data_revision":2,
         "training_pipeline":"v0.7",
         "owner":args.owner,
         "sources":{**SOURCES,**DEV_SOURCES},
@@ -194,7 +335,8 @@ def main():
             "main_train.u16":"uint16 BPE token IDs",
             "coder_train.u16":"uint16 BPE token IDs; code formatting preserved",
             "main_sft_*":"packed bilingual chat SFT + assistant mask",
-            "coder_sft_*":"packed code/tool SFT + assistant mask",
+            "coder_sft_*":"packed code/tool/agentic-plan SFT + assistant mask",
+            "planning_tokens":["<|plan|>","<|plan_end|>","<|final|>"],
         },
     }
     (out/"sources.json").write_text(json.dumps(manifest,indent=2,ensure_ascii=False),encoding="utf-8")
