@@ -47,9 +47,9 @@ def resolve_text_root(version: str = "v0.7-dev-text") -> Path:
             obj=json.loads(manifest.read_text(encoding="utf-8"))
         except Exception:
             continue
-        if obj.get("pipeline_version")==version and int(obj.get("data_revision",0))>=3:
+        if obj.get("pipeline_version")==version and int(obj.get("data_revision",0))>=4:
             return manifest.parent
-    raise SystemExit(f"could not locate {version} data revision 3+")
+    raise SystemExit(f"could not locate {version} data revision 4+")
 
 
 def config(vocab_size:int)->InterfaceConfig:
@@ -417,10 +417,10 @@ def main()->int:
 
     root=resolve_text_root(os.environ.get("FLM_V07_TEXT_VERSION","v0.7-dev-text"))
     manifest=json.loads((root/"sources.json").read_text(encoding="utf-8"))
-    if int(manifest.get("data_revision",0))<3:
-        raise RuntimeError("single-transformer FLM requires text data revision 3+")
+    if int(manifest.get("data_revision",0))<4:
+        raise RuntimeError("single-transformer FLM requires text data revision 4+")
     semantic_rows=int(((manifest.get("stats") or {}).get("semantic_interface_sft") or {}).get("rows",0))
-    if semantic_rows<100_000:
+    if semantic_rows<200_000:
         raise RuntimeError(f"semantic interface curriculum too small: {semantic_rows}")
 
     tok=Tokenizer.from_file(str(root/"tokenizer.json"))
