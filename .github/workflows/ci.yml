@@ -332,6 +332,17 @@ jobs:
           math_prog=compiler.operation_canonical('Hesapla: (27+15)*2')
           assert math_prog.operations[0].kind=='ARITHMETIC'
           assert FLMCore().execute(math_prog).operation_results[0]['value']==84
+          identity_prog=compiler.identity_canonical('Sen kimsin?')
+          identity=FLMCore().execute(identity_prog).operation_results[0]
+          assert identity['kind']=='IDENTITY' and identity['name']=='FLM'
+          synthesis=Program.from_dict({
+              'operations':[{'kind':'SYNTHESIZE_FACTS','args':{'facts':[
+                  {'subject':'Ada','predicate':'type','object':'cat'},
+                  {'subject':'Ada','predicate':'class','object':'mammal'},
+              ]}}],
+          })
+          synth=FLMCore().execute(synthesis).operation_results[0]
+          assert synth['ok'] and len(synth['facts'])==2
 
           from flm.core.code_engine import CodeEngine
           graph=CodeEngine().analyze_python('import os\ndef f(x):\n    return print(x)\n')
@@ -357,13 +368,17 @@ jobs:
           ])
           assert verified.ok
 
-          from flm.data.semantic_curriculum import messages_for
+          from flm.data.semantic_curriculum import messages_for,SEMANTIC_MODES,copy_similarity
           from flm.core.semantic_ir import Program
           import re, json
           seen_ops=set()
-          for mode in range(12):
+          for mode in range(SEMANTIC_MODES):
               messages=messages_for(mode)
               joined='\n'.join(x['content'] for x in messages)
+              user_text=next(x['content'] for x in messages if x['role']=='user')
+              final_text=next(x['content'].split('<|final|>',1)[-1].strip() for x in messages if x['role']=='assistant' and '<|final|>' in x['content'])
+              if len(final_text)>=18:
+                  assert copy_similarity(user_text,final_text)<0.88,(mode,user_text,final_text)
               assert '<|semantic_ir|>' in joined
               assert '<|semantic_end|>' in joined
               assert '<|core_result|>' in joined
@@ -386,7 +401,10 @@ jobs:
               if mode==9:
                   ops=[a['op'] for item in result.operation_results for a in item.get('actions',[])]
                   assert 'TYPE' in ops,ops
-          assert seen_ops=={'ARITHMETIC','ANALYZE_CODE','STATE_PLAN','UI_PLAN','VERIFY'},seen_ops
+          assert seen_ops=={
+              'ARITHMETIC','ANALYZE_CODE','STATE_PLAN','UI_PLAN','VERIFY',
+              'IDENTITY','SYNTHESIZE_FACTS'
+          },seen_ops
           print('SEMANTIC_CURRICULUM_ALL_MODES_OK',sorted(seen_ops))
 
           gate=Path('.github/workflows/flm-v07-dev-training-gate.yml').read_text()
