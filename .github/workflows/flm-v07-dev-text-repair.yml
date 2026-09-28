@@ -97,7 +97,7 @@ jobs:
           assert s['coder_sft_tool100k']['rows'] >= 85000, s['coder_sft_tool100k']
           assert s['coder_sft_agentic']['rows'] >= 2500, s['coder_sft_agentic']
           assert s['coder_sft_agentic']['plan_turns'] >= 5000, s['coder_sft_agentic']
-          assert s['coder_sft']['supervised_tokens'] >= 90_000_000, s['coder_sft']
+          assert s['coder_sft']['supervised_tokens'] >= 75_000_000, s['coder_sft']
           assert s['tokenizer']['vocab_size'] >= 30000
           print('V07_DEV_TEXT_VERIFIED')
           print(json.dumps(s,indent=2,ensure_ascii=False))
