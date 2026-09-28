@@ -40,7 +40,7 @@ jobs:
 
       - run: python -m pip install "kaggle>=2.2.1"
 
-      - name: Verify Semantic FLM text r3 dataset
+      - name: Verify Semantic FLM text r4 dataset
         shell: bash
         run: |
           set -euo pipefail
@@ -103,6 +103,9 @@ jobs:
               '1024',
               'FLM_INTERFACE_CODE_SEQ',
               '2048',
+              'FLM_INTERFACE_REFRESH_SEQ',
+              'FLM_INTERFACE_REFRESH_EPOCHS',
+              '0.12',
               'FLM_INTERFACE_SFT_SEQ',
               '4096',
           ):
