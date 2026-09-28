@@ -123,12 +123,24 @@ class InterfaceAgent:
         return m.group(1).strip()
 
     def compile(self,prompt:str)->Program:
+        # Explicit canonical TR/EN forms do not need the neural interface at all.
+        # This keeps a genuine training-free path for facts and queries.
+        for compiler in (
+            self.semantic_compiler.query_canonical,
+            self.semantic_compiler.compile_canonical,
+        ):
+            try:
+                return compiler(prompt)
+            except ValueError:
+                pass
+
         system=(
-            "You are the FLM Interface Transformer. Convert the user's request into "
-            "FLM Semantic IR JSON inside <|semantic_ir|>...<|semantic_end|>. "
-            "Do not solve logical/code/math/UI/planning steps yourself; FLM Core executes "
-            "facts, rules, queries and operations. Use operations ARITHMETIC, ANALYZE_CODE, "
-            "STATE_PLAN, UI_PLAN or VERIFY when appropriate."
+            "You are the only trainable FLM Interface Transformer. Translate the "
+            "user's language/code request into executable FLM Semantic IR JSON inside "
+            "<|semantic_ir|>...<|semantic_end|>. Do not solve logical, code, math, UI "
+            "or planning steps yourself. FLM Core executes facts, rules, queries and "
+            "operations. Use ARITHMETIC, ANALYZE_CODE, STATE_PLAN, UI_PLAN or VERIFY "
+            "when appropriate."
         )
         raw=self.generate([
             {"role":"system","content":system},
