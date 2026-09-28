@@ -65,7 +65,13 @@ jobs:
           assert int((s.get('coder') or {}).get('tokens',0))>=175_000_000
           assert int((s.get('main_sft') or {}).get('supervised_tokens',0))>=450_000_000
           assert int((s.get('coder_sft') or {}).get('supervised_tokens',0))>=75_000_000
-          assert int((s.get('semantic_interface_sft') or {}).get('rows',0))>=550_000
+          sem=s.get('semantic_interface_sft') or {}
+          assert int(sem.get('rows',0))>=550_000
+          assert sem.get('anti_copy_verified') is True
+          langs=sem.get('language_counts') or {}
+          assert int(langs.get('tr',0))>=290_000 and int(langs.get('en',0))>=290_000
+          modes=sem.get('mode_counts') or {}
+          assert len(modes)>=16 and min(map(int,modes.values()))>=35_000
           assert int((s.get('tokenizer') or {}).get('vocab_size',0))>=30_000
           print('SEMANTIC_FLM_TEXT_R5_READY',s.get('main'),s.get('coder'),s.get('semantic_interface_sft'))
           PY
