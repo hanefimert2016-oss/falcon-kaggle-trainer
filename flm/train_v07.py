@@ -147,6 +147,91 @@ def split_train_eval_stream(data, seq_len: int, *, eval_fraction: float = 0.01):
     return data[:cut], data[cut:]
 
 
+class ShuffledStartPool:
+    """Epoch-aware start sampler: every block is used once before reshuffling."""
+    def __init__(self, starts: np.ndarray, seed: int):
+        starts = np.asarray(starts, dtype=np.int64)
+        if starts.size == 0:
+            raise RuntimeError("empty shuffled start pool")
+        self.starts = starts
+        self.rng = np.random.default_rng(seed)
+        self.order = self.rng.permutation(len(starts))
+        self.pos = 0
+        self.epoch = 0
+
+    def take(self, count: int) -> np.ndarray:
+        parts = []
+        need = int(count)
+        while need > 0:
+            remaining = len(self.order) - self.pos
+            if remaining == 0:
+                self.epoch += 1
+                self.order = self.rng.permutation(len(self.starts))
+                self.pos = 0
+                remaining = len(self.order)
+            n = min(need, remaining)
+            idx = self.order[self.pos:self.pos + n]
+            parts.append(self.starts[idx])
+            self.pos += n
+            need -= n
+        return np.concatenate(parts)
+
+
+def nonoverlap_starts(length: int, seq: int) -> np.ndarray:
+    high = length - seq - 1
+    if high <= 0:
+        raise RuntimeError(f"dataset too short for seq={seq}: {length}")
+    # seq+1 keeps x/y windows disjoint, so an epoch has real coverage semantics.
+    starts = np.arange(0, high, seq + 1, dtype=np.int64)
+    if starts.size == 0:
+        raise RuntimeError(f"no training blocks for seq={seq}: {length}")
+    return starts
+
+
+def eligible_sft_starts(mask, seq: int, min_supervised: int = 8) -> np.ndarray:
+    """Build non-overlapping SFT windows that contain useful assistant targets."""
+    stride = seq + 1
+    total = max(0, (len(mask) - 1) // stride)
+    if total <= 0:
+        raise RuntimeError("SFT mask too short")
+
+    accepted = []
+    chunk_blocks = 32768
+    for block0 in range(0, total, chunk_blocks):
+        n = min(chunk_blocks, total - block0)
+        start = block0 * stride
+        stop = start + n * stride
+        chunk = np.asarray(mask[start:stop], dtype=np.uint8).reshape(n, stride)
+        # y targets use positions s+1 .. s+seq.
+        counts = chunk[:, 1:seq + 1].sum(axis=1)
+        good = np.flatnonzero(counts >= min_supervised)
+        if good.size:
+            accepted.append((block0 + good).astype(np.int64) * stride)
+
+    if not accepted:
+        raise RuntimeError("no SFT blocks contain enough supervised targets")
+    return np.concatenate(accepted)
+
+
+def make_sft_batch_at_starts(data, mask, starts, seq, device):
+    xs, ys = [], []
+    supervised = 0
+    for s in np.asarray(starts, dtype=np.int64):
+        s = int(s)
+        target_mask = np.asarray(mask[s + 1:s + seq + 1], dtype=np.bool_)
+        x = np.asarray(data[s:s + seq], dtype=np.int64)
+        y = np.asarray(data[s + 1:s + seq + 1], dtype=np.int64).copy()
+        y[~target_mask] = -100
+        xs.append(x)
+        ys.append(y)
+        supervised += int(target_mask.sum())
+    return (
+        torch.from_numpy(np.stack(xs)).to(device),
+        torch.from_numpy(np.stack(ys)).to(device),
+        supervised,
+    )
+
+
 def make_xy(data, starts: np.ndarray, seq: int, device):
     x = np.stack([np.asarray(data[s:s + seq], dtype=np.int64) for s in starts])
     y = np.stack([np.asarray(data[s + 1:s + seq + 1], dtype=np.int64) for s in starts])
@@ -262,6 +347,18 @@ def train_text_pretrain(kind, data, out_root, runtime, vocab_size, steps, batch,
     scaler = torch.amp.GradScaler("cuda", enabled=runtime.kind == "gpu")
     rng = np.random.default_rng(707 if kind == "main" else 717)
     eval_rng = np.random.default_rng(1707 if kind == "main" else 1717)
+    train_starts = nonoverlap_starts(len(train_data), cfg.seq_len)
+    train_pool = ShuffledStartPool(
+        train_starts, 2707 if kind == "main" else 2717
+    )
+    windows_per_step = batch * accum
+    steps_per_epoch = math.ceil(len(train_starts) / max(1, windows_per_step))
+    print(
+        f"V07_{kind.upper()}_COVERAGE blocks={len(train_starts)} "
+        f"windows_per_step={windows_per_step} steps_per_epoch={steps_per_epoch} "
+        f"configured_steps={steps}",
+        flush=True,
+    )
     warmup = max(20, min(800, steps // 20))
     eval_interval = int(os.environ.get("FLM_V07_TEXT_EVAL_INTERVAL", str(max(250, min(2000, max(1, steps // 12))))))
     checkpoint_interval = int(os.environ.get("FLM_V07_TEXT_CHECKPOINT_INTERVAL", "5000"))
@@ -286,7 +383,7 @@ def train_text_pretrain(kind, data, out_root, runtime, vocab_size, steps, batch,
         opt.zero_grad(set_to_none=True)
         total = 0.0
         for _ in range(accum):
-            starts = sample_starts(rng, len(train_data), cfg.seq_len, batch)
+            starts = train_pool.take(batch)
             x, y = make_xy(train_data, starts, cfg.seq_len, runtime.device)
             with runtime.autocast():
                 _, loss = model(x, y)
@@ -364,6 +461,10 @@ def train_text_pretrain(kind, data, out_root, runtime, vocab_size, steps, batch,
         "tokens_seen": tokens_seen,
         "train_tokens": len(train_data),
         "heldout_tokens": len(eval_data),
+        "nonoverlap_blocks": len(train_starts),
+        "steps_per_epoch": steps_per_epoch,
+        "completed_epochs": tokens_seen / max(1, len(train_starts) * cfg.seq_len),
+        "sampler": "shuffled_nonoverlap_no_replacement",
         "train_loss": last,
         "eval_loss": final_eval,
         "best_eval_loss": best_eval,
@@ -399,6 +500,20 @@ def train_text_sft(kind, base, cfg, data, mask, out_root, runtime, steps, batch,
     scaler = torch.amp.GradScaler("cuda", enabled=runtime.kind == "gpu")
     rng = np.random.default_rng(727 if kind == "main" else 737)
     eval_rng = np.random.default_rng(1727 if kind == "main" else 1737)
+    sft_starts = eligible_sft_starts(train_mask, cfg.seq_len, min_supervised=8)
+    sft_pool = ShuffledStartPool(
+        sft_starts, 3727 if kind == "main" else 3737
+    )
+    sft_windows_per_step = batch * accum
+    sft_steps_per_epoch = math.ceil(
+        len(sft_starts) / max(1, sft_windows_per_step)
+    )
+    print(
+        f"V07_{kind.upper()}_SFT_COVERAGE blocks={len(sft_starts)} "
+        f"windows_per_step={sft_windows_per_step} "
+        f"steps_per_epoch={sft_steps_per_epoch} configured_steps={steps}",
+        flush=True,
+    )
     warmup = max(20, min(300, steps // 15))
     eval_interval = int(os.environ.get("FLM_V07_SFT_EVAL_INTERVAL", str(max(200, min(1000, max(1, steps // 10))))))
     checkpoint_interval = int(os.environ.get("FLM_V07_TEXT_CHECKPOINT_INTERVAL", "5000"))
@@ -422,8 +537,9 @@ def train_text_sft(kind, base, cfg, data, mask, out_root, runtime, steps, batch,
         opt.zero_grad(set_to_none=True)
         total = 0.0
         for _ in range(accum):
-            x, y, sup = make_sft_batch(
-                train_data, train_mask, rng, cfg.seq_len, batch, runtime.device
+            starts = sft_pool.take(batch)
+            x, y, sup = make_sft_batch_at_starts(
+                train_data, train_mask, starts, cfg.seq_len, runtime.device
             )
             with runtime.autocast():
                 _, loss = wrapped(x, y)
@@ -501,6 +617,9 @@ def train_text_sft(kind, base, cfg, data, mask, out_root, runtime, steps, batch,
         "supervised_tokens_seen": supervised_seen,
         "heldout_tokens": len(eval_data),
         "heldout_supervised_sampled": eval_supervised,
+        "eligible_nonoverlap_blocks": len(sft_starts),
+        "steps_per_epoch": sft_steps_per_epoch,
+        "sampler": "shuffled_supervised_nonoverlap_no_replacement",
         "train_loss": last,
         "eval_loss": final_eval,
         "best_eval_loss": best_eval,
