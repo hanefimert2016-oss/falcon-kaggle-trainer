@@ -29,11 +29,11 @@ jobs:
           set -euo pipefail
           STATUS="$(kaggle kernels status "$REF" 2>&1 || true)"
           echo "$STATUS"
-          if echo "$STATUS" | grep -q '(KernelWorkerStatus\.)?COMPLETE'; then
+          if echo "$STATUS" | grep -Eq '(KernelWorkerStatus\.)?COMPLETE'; then
             echo "state=complete" >> "$GITHUB_OUTPUT"
           elif echo "$STATUS" | grep -Eq '(KernelWorkerStatus\.)?(ERROR|FAILED|CANCELLED)'; then
             echo "state=failed" >> "$GITHUB_OUTPUT"
-          elif echo "$STATUS" | grep -q '(KernelWorkerStatus\.)?RUNNING'; then
+          elif echo "$STATUS" | grep -Eq '(KernelWorkerStatus\.)?RUNNING'; then
             echo "state=running" >> "$GITHUB_OUTPUT"
           else
             echo "state=queued" >> "$GITHUB_OUTPUT"
