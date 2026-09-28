@@ -7,6 +7,11 @@ from typing import Callable
 from .semantic_ir import Program, Query
 from .semantic_memory import SemanticMemory
 from .reasoning_vm import ReasoningVM, ReasoningResult
+from .planner import ActionSchema, StatePlanner, PlanResult
+from .solvers import ArithmeticSolver
+from .verifier import Verifier
+from .code_engine import CodeEngine
+from .ui_engine import UIPlanner
 
 
 @dataclass
@@ -25,6 +30,10 @@ class FLMCore:
 
     def __init__(self, memory: SemanticMemory | None = None):
         self.memory=memory or SemanticMemory()
+        self.arithmetic=ArithmeticSolver()
+        self.verifier=Verifier()
+        self.code=CodeEngine()
+        self.ui=UIPlanner()
 
     def ingest(self, program: Program) -> None:
         self.memory.ingest(program)
@@ -35,6 +44,12 @@ class FLMCore:
         results=[vm.prove(q.atom) for q in program.queries]
         stats=self.memory.stats()
         return CoreResponse(results,stats.facts,stats.rules)
+
+    def solve_arithmetic(self, expression: str):
+        return self.arithmetic.solve(expression)
+
+    def plan(self, start, goal, actions: list[ActionSchema]) -> PlanResult:
+        return StatePlanner(actions).plan(start, goal)
 
     def save(self, path: str | Path) -> None:
         self.memory.save(path)
