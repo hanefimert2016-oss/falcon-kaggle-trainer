@@ -37,7 +37,7 @@ class FLMCore:
         self.ui=UIPlanner()
         self.identity={
             "name":"FLM",
-            "kind":"AI assistant",
+            "entity_type":"AI assistant",
             "architecture":"training-free Semantic Core with one trainable InterfaceTransformer",
             "purpose":"understand requests, reason through the Core, use tools, and produce helpful answers",
         }
