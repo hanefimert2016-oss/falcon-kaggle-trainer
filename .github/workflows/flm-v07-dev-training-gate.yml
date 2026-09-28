@@ -48,10 +48,12 @@ jobs:
           rm -rf /tmp/v07-gate-data
           mkdir -p /tmp/v07-gate-data/text /tmp/v07-gate-data/computer
 
-          for F in sources.json tokenizer.json main_train.u16 coder_train.u16 main_sft_tokens.u16 main_sft_mask.u8 coder_sft_tokens.u16 coder_sft_mask.u8; do
-            kaggle datasets download -d "$TEXT_REF" -f "$F" -p /tmp/v07-gate-data/text -q --force
-            test -s "/tmp/v07-gate-data/text/$F"
+          kaggle datasets files "$TEXT_REF" --page-size 100 | tee /tmp/v07-text-files.txt
+          for F in tokenizer.json main_train.u16 coder_train.u16 main_sft_tokens.u16 main_sft_mask.u8 coder_sft_tokens.u16 coder_sft_mask.u8; do
+            grep -Fq "$F" /tmp/v07-text-files.txt
           done
+          kaggle datasets download -d "$TEXT_REF" -f sources.json -p /tmp/v07-gate-data/text -q --force
+          test -s /tmp/v07-gate-data/text/sources.json
 
           for F in sources.json cu07_manifest.jsonl; do
             kaggle datasets download -d "$COMPUTER_REF" -f "$F" -p /tmp/v07-gate-data/computer -q --force
