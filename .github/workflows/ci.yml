@@ -410,6 +410,19 @@ jobs:
               if mode==9:
                   ops=[a['op'] for item in result.operation_results for a in item.get('actions',[])]
                   assert 'TYPE' in ops,ops
+          # Same semantic request/Core program, different valid surface answer.
+          first=messages_for(13)
+          second=messages_for(13+SEMANTIC_MODES*2)
+          first_user=next(x['content'] for x in first if x['role']=='user')
+          second_user=next(x['content'] for x in second if x['role']=='user')
+          first_ir=next(x['content'] for x in first if x['role']=='assistant' and '<|semantic_ir|>' in x['content'])
+          second_ir=next(x['content'] for x in second if x['role']=='assistant' and '<|semantic_ir|>' in x['content'])
+          first_final=next(x['content'] for x in first if x['role']=='assistant' and '<|final|>' in x['content'])
+          second_final=next(x['content'] for x in second if x['role']=='assistant' and '<|final|>' in x['content'])
+          assert first_user==second_user,(first_user,second_user)
+          assert first_ir==second_ir,(first_ir,second_ir)
+          assert first_final!=second_final,(first_final,second_final)
+
           assert len(language_seen)==SEMANTIC_MODES*2,language_seen
           assert seen_ops=={
               'ARITHMETIC','ANALYZE_CODE','STATE_PLAN','UI_PLAN','VERIFY',
