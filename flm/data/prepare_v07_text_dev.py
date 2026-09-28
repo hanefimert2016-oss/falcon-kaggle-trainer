@@ -313,16 +313,22 @@ def main():
     stats["tokenizer"]=train_tokenizer(out,main_sample,out/"tokenizer_code_sample.txt",args.vocab_size)
     tok=Tokenizer.from_file(str(out/"tokenizer.json"))
 
-    stats["main"]=encode_main(tok,out/"main.raw.txt",out/"main_train.u16")
-    stats["coder"]=encode_coder_pretrain(tok,out/"coder_pretrain.jsonl",out/"coder_train.u16")
-    stats["main_sft"]=encode_chat_sft(tok,out/"main_sft.jsonl",out/"main_sft_tokens.u16",out/"main_sft_mask.u8")
-    stats["coder_sft"]=encode_chat_sft(tok,out/"coder_sft.jsonl",out/"coder_sft_tokens.u16",out/"coder_sft_mask.u8")
+    # Encode and delete large raw intermediates stage-by-stage so the GitHub
+    # runner does not need space for every raw + tokenized corpus at once.
+    (out/"tokenizer_main_sample.txt").unlink(missing_ok=True)
+    (out/"tokenizer_code_sample.txt").unlink(missing_ok=True)
 
-    for name in (
-        "main.raw.txt","coder_pretrain.jsonl","tokenizer_main_sample.txt",
-        "tokenizer_code_sample.txt","main_sft.jsonl","coder_sft.jsonl",
-    ):
-        (out/name).unlink(missing_ok=True)
+    stats["main"]=encode_main(tok,out/"main.raw.txt",out/"main_train.u16")
+    (out/"main.raw.txt").unlink(missing_ok=True)
+
+    stats["coder"]=encode_coder_pretrain(tok,out/"coder_pretrain.jsonl",out/"coder_train.u16")
+    (out/"coder_pretrain.jsonl").unlink(missing_ok=True)
+
+    stats["main_sft"]=encode_chat_sft(tok,out/"main_sft.jsonl",out/"main_sft_tokens.u16",out/"main_sft_mask.u8")
+    (out/"main_sft.jsonl").unlink(missing_ok=True)
+
+    stats["coder_sft"]=encode_chat_sft(tok,out/"coder_sft.jsonl",out/"coder_sft_tokens.u16",out/"coder_sft_mask.u8")
+    (out/"coder_sft.jsonl").unlink(missing_ok=True)
 
     manifest={
         "pipeline_version":"v0.7-dev-text",
