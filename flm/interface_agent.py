@@ -126,7 +126,9 @@ class InterfaceAgent:
         system=(
             "You are the FLM Interface Transformer. Convert the user's request into "
             "FLM Semantic IR JSON inside <|semantic_ir|>...<|semantic_end|>. "
-            "Do not solve logical steps yourself; FLM Core executes the program."
+            "Do not solve logical/code/math/UI/planning steps yourself; FLM Core executes "
+            "facts, rules, queries and operations. Use operations ARITHMETIC, ANALYZE_CODE, "
+            "STATE_PLAN, UI_PLAN or VERIFY when appropriate."
         )
         raw=self.generate([
             {"role":"system","content":system},
@@ -148,6 +150,7 @@ class InterfaceAgent:
                 }
                 for x in result.results
             ],
+            "operation_results":result.operation_results,
             "memory_facts":result.memory_facts,
             "memory_rules":result.memory_rules,
         }
