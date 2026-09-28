@@ -25,6 +25,7 @@ rows.append({
     "question":"Sen kimsin? (3 kez)",
     "answer":" || ".join(identity_answers),
     "ok":all("FLM" in x for x in identity_answers)
+        and all(any(k in x for k in ("Ben","Adım","FLM'im","Bana FLM")) for x in identity_answers)
         and identity_answers[0]!=identity_answers[1]
         and identity_answers[1]!=identity_answers[2],
 })
