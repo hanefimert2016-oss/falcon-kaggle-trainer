@@ -275,6 +275,11 @@ jobs:
           ):
               assert key in wrapper and value in wrapper,(key,value)
 
+          from flm.interface_agent import _copy_similarity,_verbatim_requested
+          assert _copy_similarity("aynı veri satırı","aynı veri satırı")>0.99
+          assert _copy_similarity("kaynak veri","özgün biçimde üretilmiş cevap")<0.86
+          assert _verbatim_requested("Bunu aynen kopyala") is True
+
           trainer=Path('flm/train_interface_v07.py').read_text()
           assert trainer.count('InterfaceTransformer(cfg)')==1
           assert 'general_refresh' in trainer
