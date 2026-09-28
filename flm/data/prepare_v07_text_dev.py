@@ -9,6 +9,7 @@ import shutil
 from datasets import load_dataset
 from tokenizers import Tokenizer
 
+from flm.data.semantic_curriculum import append_semantic_curriculum
 from flm.data.prepare_v07 import (
     SOURCES,
     clean_text,
@@ -307,6 +308,7 @@ def main():
     ap.add_argument("--xlam-tool-rows",type=int,default=60_000)
     ap.add_argument("--tool100k-rows",type=int,default=100_000)
     ap.add_argument("--coder-agent-rows",type=int,default=3_000)
+    ap.add_argument("--semantic-sft-rows",type=int,default=120_000)
     args=ap.parse_args()
 
     out=Path(args.out)
@@ -328,6 +330,9 @@ def main():
 
     stats["main_sft_base"]=prepare_main_sft(out,60_000,args.en_sft_rows)
     stats["main_sft_tr_knowledge"]=append_turkish_knowledge(out/"main_sft.jsonl",args.tr_knowledge_rows)
+    stats["semantic_interface_sft"]=append_semantic_curriculum(
+        out/"main_sft.jsonl",args.semantic_sft_rows
+    )
     stats["main_sft_raw"]={
         "file":"main_sft.jsonl",
         "rows":count_jsonl(out/"main_sft.jsonl"),
@@ -369,7 +374,7 @@ def main():
 
     manifest={
         "pipeline_version":"v0.7-dev-text",
-        "data_revision":2,
+        "data_revision":3,
         "training_pipeline":"v0.7",
         "owner":args.owner,
         "sources":{**SOURCES,**DEV_SOURCES},
@@ -377,8 +382,9 @@ def main():
         "format":{
             "main_train.u16":"uint16 BPE token IDs",
             "coder_train.u16":"uint16 BPE token IDs; code formatting preserved",
-            "main_sft_*":"packed bilingual chat SFT + assistant mask",
+            "main_sft_*":"packed bilingual chat + Semantic IR/Core protocol SFT + assistant mask",
             "coder_sft_*":"packed code/tool/agentic-plan SFT + assistant mask",
+            "semantic_tokens":["<|semantic_ir|>","<|semantic_end|>","<|core_result|>","<|core_end|>"],
             "planning_tokens":["<|plan|>","<|plan_end|>","<|final|>"],
         },
     }
