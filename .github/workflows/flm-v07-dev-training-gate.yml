@@ -3,7 +3,7 @@ name: FLM v0.7 Quality Training Gate
 on:
   workflow_run:
     workflows:
-      - "FLM v0.7 GitHub Computer Data"
+      - "FLM v0.7 DEV Text Repair"
     types:
       - completed
   push:
@@ -21,16 +21,14 @@ concurrency:
 
 jobs:
   launch-quality-training:
-    # Kaggle GPU launch intentionally disabled: v0.7 training moved to local GPU.
-    if: ${{ false }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 360
     env:
       KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
       KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
       TEXT_REF: ${{ vars.KAGGLE_OWNER }}/flm-v07-dev-text
-      COMPUTER_REF: ${{ vars.KAGGLE_OWNER }}/flm-v07-dev-computer
-      GPU_REF: ${{ vars.KAGGLE_OWNER }}/falcon-flm-v07-quality-v2-gpu
+      GPU_REF: ${{ vars.KAGGLE_OWNER }}/falcon-flm-v07-semantic-interface-gpu
     steps:
       - uses: actions/checkout@v4
         with:
@@ -42,55 +40,34 @@ jobs:
 
       - run: python -m pip install "kaggle>=2.2.1"
 
-      - name: Verify GitHub-prepared training datasets
+      - name: Verify Semantic FLM text r3 dataset
         shell: bash
         run: |
           set -euo pipefail
           rm -rf /tmp/v07-gate-data
-          mkdir -p /tmp/v07-gate-data/text /tmp/v07-gate-data/computer
+          mkdir -p /tmp/v07-gate-data/text
 
           kaggle datasets files "$TEXT_REF" --page-size 100 | tee /tmp/v07-text-files.txt
-          for F in tokenizer.json main_train.u16 coder_train.u16 main_sft_tokens.u16 main_sft_mask.u8 coder_sft_tokens.u16 coder_sft_mask.u8; do
+          for F in tokenizer.json main_train.u16 coder_train.u16 main_sft_tokens.u16 main_sft_mask.u8 coder_sft_tokens.u16 coder_sft_mask.u8 sources.json; do
             grep -Fq "$F" /tmp/v07-text-files.txt
           done
           kaggle datasets download -d "$TEXT_REF" -f sources.json -p /tmp/v07-gate-data/text -q --force
-          test -s /tmp/v07-gate-data/text/sources.json
-
-          for F in sources.json cu07_manifest.jsonl; do
-            kaggle datasets download -d "$COMPUTER_REF" -f "$F" -p /tmp/v07-gate-data/computer -q --force
-            test -s "/tmp/v07-gate-data/computer/$F"
-          done
 
           python - <<'PY'
           import json
           from pathlib import Path
-
-          tr=Path('/tmp/v07-gate-data/text')
-          cr=Path('/tmp/v07-gate-data/computer')
-          t=json.loads((tr/'sources.json').read_text(encoding='utf-8'))
-          c=json.loads((cr/'sources.json').read_text(encoding='utf-8'))
-
-          assert t.get('pipeline_version')=='v0.7-dev-text',t.get('pipeline_version')
-          assert int(t.get('data_revision',0)) >= 2
-          ts=t.get('stats') or {}
-          assert int((ts.get('main') or {}).get('tokens',0)) >= 1_000_000_000
-          assert int((ts.get('coder') or {}).get('tokens',0)) >= 175_000_000
-          assert int((ts.get('main_sft') or {}).get('supervised_tokens',0)) >= 300_000_000
-          assert int((ts.get('coder_sft') or {}).get('supervised_tokens',0)) >= 75_000_000
-          assert int((ts.get('tokenizer') or {}).get('vocab_size',0)) >= 30_000
-          assert int((ts.get('coder_sft_agentic') or {}).get('rows',0)) >= 2500
-          assert int((ts.get('coder_sft_agentic') or {}).get('plan_turns',0)) >= 5000
-
-          assert c.get('pipeline_version')=='v0.7-dev-computer',c.get('pipeline_version')
-          assert int(c.get('data_revision',0)) >= 2
-          cs=c.get('stats') or {}
-          assert int(cs.get('examples',0)) >= 40_000
-          ops=cs.get('ops') or {}
-          minimum={'CLICK':20000,'KEY':1000,'TYPE':1000,'SCROLL':750,'DRAG':300,'RIGHT_CLICK':200,'DOUBLE_CLICK':200,'DONE':500}
-          for op,n in minimum.items():
-              assert int(ops.get(op,0)) >= n,(op,ops)
-          assert (cr/'cu07_manifest.jsonl').stat().st_size > 1000
-          print('V07_QUALITY_DATASETS_READY',ts.get('main'),cs.get('examples'),ops)
+          p=Path('/tmp/v07-gate-data/text/sources.json')
+          t=json.loads(p.read_text(encoding='utf-8'))
+          assert t.get('pipeline_version')=='v0.7-dev-text'
+          assert int(t.get('data_revision',0))>=3,t.get('data_revision')
+          s=t.get('stats') or {}
+          assert int((s.get('main') or {}).get('tokens',0))>=1_000_000_000
+          assert int((s.get('coder') or {}).get('tokens',0))>=175_000_000
+          assert int((s.get('main_sft') or {}).get('supervised_tokens',0))>=300_000_000
+          assert int((s.get('coder_sft') or {}).get('supervised_tokens',0))>=75_000_000
+          assert int((s.get('semantic_interface_sft') or {}).get('rows',0))>=100_000
+          assert int((s.get('tokenizer') or {}).get('vocab_size',0))>=30_000
+          print('SEMANTIC_FLM_TEXT_R3_READY',s.get('main'),s.get('coder'),s.get('semantic_interface_sft'))
           PY
 
       - name: Build quality GPU bundle
@@ -98,45 +75,39 @@ jobs:
           set -euo pipefail
           python scripts/build_v07_dev_gpu_kernel.py \
             --owner "$KAGGLE_OWNER" \
-            --out kernel_v07_quality_gpu
-          python -m py_compile kernel_v07_quality_gpu/train_v07_dev.py
+            --out kernel_v07_semantic_interface
+          python -m py_compile kernel_v07_semantic_interface/train_v07_dev.py
 
           python - <<'PY'
           import json
           from pathlib import Path
-          m=json.loads(Path('kernel_v07_quality_gpu/kernel-metadata.json').read_text())
+          m=json.loads(Path('kernel_v07_semantic_interface/kernel-metadata.json').read_text())
           owner=m['id'].split('/')[0]
-          assert m['id']==f'{owner}/falcon-flm-v07-quality-v2-gpu',m
-          assert m['title']=='Falcon FLM v07 Quality V2 GPU',m
-          assert m['dataset_sources']==[
-              f'{owner}/flm-v07-dev-text',
-              f'{owner}/flm-v07-dev-computer',
-          ],m
+          assert m['id']==f'{owner}/falcon-flm-v07-semantic-interface-gpu',m
+          assert m['title']=='Falcon FLM v07 Semantic Interface Transformer',m
+          assert m['dataset_sources']==[f'{owner}/flm-v07-dev-text'],m
           assert m['kernel_sources']==[],m
           assert m['enable_gpu'] is True
           assert m['enable_internet'] is False
           assert m['machine_shape']=='NvidiaTeslaT4'
-          src=Path('kernel_v07_quality_gpu/train_v07_dev.py').read_text()
+          src=Path('kernel_v07_semantic_interface/train_interface_v07.py').read_text()
           for expected in (
-              'FLM_V07_MAIN_SEQ',
+              'flm.train_interface_v07',
+              'FLM_INTERFACE_SEQ',
               '4096',
-              'FLM_V07_CODER_SEQ',
+              'FLM_INTERFACE_LAYERS',
+              '16',
+              'FLM_INTERFACE_KV_HEADS',
+              '4',
+              'FLM_INTERFACE_GENERAL_SEQ',
+              '1024',
+              'FLM_INTERFACE_CODE_SEQ',
+              '2048',
+              'FLM_INTERFACE_SFT_SEQ',
               '4096',
-              'FLM_V07_CODER_LAYERS',
-              '14',
-              'FLM_V07_POSITION_ENCODING',
-              'rope',
-              'FLM_V07_MAIN_STEPS',
-              '0',
-              'FLM_V07_CODER_INIT_FROM_MAIN',
-              'FLM_V07_CU_INIT_FROM_MAIN',
-              'FLM_V07_CU_TASK_LEN',
-              '512',
-              'FLM_V07_TEXT_EVAL_INTERVAL',
-              'FLM_V07_TEXT_CHECKPOINT_INTERVAL',
           ):
               assert expected in src,expected
-          print('V07_QUALITY_GPU_BUNDLE_VERIFIED')
+          print('V07_SINGLE_INTERFACE_GPU_BUNDLE_VERIFIED')
           PY
 
       - name: Avoid duplicate running quality job
@@ -148,7 +119,7 @@ jobs:
           echo "$STATUS"
           if echo "$STATUS" | grep -Eq '(KernelWorkerStatus\.)?(QUEUED|RUNNING)'; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "V07_QUALITY_GPU_ALREADY_ACTIVE"
+            echo "V07_INTERFACE_GPU_ALREADY_ACTIVE"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
@@ -163,12 +134,12 @@ jobs:
             STATUS="$(kaggle kernels status "$GPU_REF" 2>&1 || true)"
             echo "$STATUS"
             if echo "$STATUS" | grep -Eq '(KernelWorkerStatus\.)?(QUEUED|RUNNING)'; then
-              echo "V07_QUALITY_GPU_STARTED_BY_ANOTHER_RUN"
+              echo "V07_INTERFACE_GPU_STARTED_BY_ANOTHER_RUN"
               exit 0
             fi
 
             OUTPUT="$(kaggle kernels push \
-              -p kernel_v07_quality_gpu \
+              -p kernel_v07_semantic_interface \
               --accelerator NvidiaTeslaT4 \
               --timeout 43200 2>&1 || true)"
             echo "$OUTPUT"
@@ -194,7 +165,7 @@ jobs:
             STATUS="$(kaggle kernels status "$GPU_REF" 2>&1 || true)"
             echo "$STATUS"
             if echo "$STATUS" | grep -Eq '(KernelWorkerStatus\.)?(QUEUED|RUNNING|COMPLETE)'; then
-              echo "V07_QUALITY_TRAINING_LIVE"
+              echo "V07_INTERFACE_TRAINING_LIVE"
               exit 0
             fi
             if echo "$STATUS" | grep -Eq '(KernelWorkerStatus\.)?(ERROR|FAILED|CANCELLED)'; then
