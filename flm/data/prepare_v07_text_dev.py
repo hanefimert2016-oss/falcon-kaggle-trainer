@@ -308,7 +308,7 @@ def main():
     ap.add_argument("--xlam-tool-rows",type=int,default=60_000)
     ap.add_argument("--tool100k-rows",type=int,default=100_000)
     ap.add_argument("--coder-agent-rows",type=int,default=3_000)
-    ap.add_argument("--semantic-sft-rows",type=int,default=120_000)
+    ap.add_argument("--semantic-sft-rows",type=int,default=240_000)
     args=ap.parse_args()
 
     out=Path(args.out)
@@ -374,7 +374,7 @@ def main():
 
     manifest={
         "pipeline_version":"v0.7-dev-text",
-        "data_revision":3,
+        "data_revision":4,
         "training_pipeline":"v0.7",
         "owner":args.owner,
         "sources":{**SOURCES,**DEV_SOURCES},
