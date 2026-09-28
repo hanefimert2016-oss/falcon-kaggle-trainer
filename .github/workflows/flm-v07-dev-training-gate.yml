@@ -27,7 +27,7 @@ jobs:
     env:
       KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
       KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
-      TEXT_REF: ${{ vars.KAGGLE_OWNER }}/flm-v07-dev-text
+      TEXT_REF: ${{ vars.KAGGLE_OWNER }}/flm-v07-semantic-text-r3
       GPU_REF: ${{ vars.KAGGLE_OWNER }}/falcon-flm-v07-semantic-interface-gpu
     steps:
       - uses: actions/checkout@v4
@@ -85,7 +85,7 @@ jobs:
           owner=m['id'].split('/')[0]
           assert m['id']==f'{owner}/falcon-flm-v07-semantic-interface-gpu',m
           assert m['title']=='Falcon FLM v07 Semantic Interface Transformer',m
-          assert m['dataset_sources']==[f'{owner}/flm-v07-dev-text'],m
+          assert m['dataset_sources']==[f'{owner}/flm-v07-semantic-text-r3'],m
           assert m['kernel_sources']==[],m
           assert m['enable_gpu'] is True
           assert m['enable_internet'] is False
