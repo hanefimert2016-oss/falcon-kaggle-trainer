@@ -76,7 +76,7 @@ jobs:
           python scripts/build_v07_dev_gpu_kernel.py \
             --owner "$KAGGLE_OWNER" \
             --out kernel_v07_semantic_interface
-          python -m py_compile kernel_v07_semantic_interface/train_v07_dev.py
+          python -m py_compile kernel_v07_semantic_interface/train_interface_v07.py
 
           python - <<'PY'
           import json
