@@ -5,7 +5,7 @@ import argparse,base64,io,json,shutil,zipfile
 from pathlib import Path
 
 
-def package_payload(root: Path) -> str:
+def package_payload(root:Path)->str:
     b=io.BytesIO()
     with zipfile.ZipFile(b,"w",zipfile.ZIP_DEFLATED) as z:
         for p in sorted((root/"flm").rglob("*.py")):
@@ -16,64 +16,78 @@ def package_payload(root: Path) -> str:
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("--owner",required=True)
-    ap.add_argument("--out",default="kernel_v07_dev_full")
+    ap.add_argument("--out",default="kernel_v07_semantic_interface")
     args=ap.parse_args()
     root=Path(__file__).resolve().parents[1]
     out=Path(args.out)
-    if not out.is_absolute(): out=root/out
-    if out.exists(): shutil.rmtree(out)
+    if not out.is_absolute():
+        out=root/out
+    if out.exists():
+        shutil.rmtree(out)
     out.mkdir(parents=True)
 
     env={
         "FLM_V07_TEXT_VERSION":"v0.7-dev-text",
-        "FLM_V07_COMPUTER_VERSION":"v0.7-dev-computer",
-        "FLM_V07_OUTPUT_ROOT":"/kaggle/working/flm-v0.7-quality",
-        "FLM_V07_MAIN_SEQ":"4096",
-        "FLM_V07_MAIN_LAYERS":"14","FLM_V07_MAIN_HEADS":"12","FLM_V07_MAIN_EMBD":"768",
-        "FLM_V07_CODER_SEQ":"4096",
-        "FLM_V07_CODER_LAYERS":"14","FLM_V07_CODER_HEADS":"12","FLM_V07_CODER_EMBD":"768",
-        "FLM_V07_TEXT_BATCH":"1","FLM_V07_TEXT_ACCUM":"16",
-        "FLM_V07_MAIN_STEPS":"0","FLM_V07_MAIN_SFT_STEPS":"0",
-        "FLM_V07_CODER_STEPS":"0","FLM_V07_CODER_SFT_STEPS":"0",
-        "FLM_V07_CU_IMAGE":"224","FLM_V07_CU_TASK_LEN":"512","FLM_V07_CU_PAYLOAD_LEN":"128",
-        "FLM_V07_CU_EMBD":"768","FLM_V07_CU_HEADS":"12",
-        "FLM_V07_CU_TEXT_LAYERS":"4","FLM_V07_CU_VISION_LAYERS":"8",
-        "FLM_V07_CU_BATCH":"1","FLM_V07_CU_STEPS":"30000",
-        "FLM_V07_EVAL_BATCHES":"24","FLM_V07_CU_EVAL_EXAMPLES":"512",
-        "FLM_V07_TEXT_EVAL_INTERVAL":"1000","FLM_V07_SFT_EVAL_INTERVAL":"500",
-        "FLM_V07_TEXT_CHECKPOINT_INTERVAL":"4000",
-        "FLM_V07_POSITION_ENCODING":"rope","FLM_V07_GRADIENT_CHECKPOINTING":"1",
-        "FLM_V07_CODER_INIT_FROM_MAIN":"1","FLM_V07_CU_INIT_FROM_MAIN":"1",
-        "FLM_V07_MAIN_PRETRAIN_EPOCHS":"1.0","FLM_V07_MAIN_SFT_EPOCHS":"1.0",
-        "FLM_V07_CODER_PRETRAIN_EPOCHS":"1.0","FLM_V07_CODER_SFT_EPOCHS":"1.25",
+        "FLM_INTERFACE_OUTPUT_ROOT":"/kaggle/working/flm-v0.7-semantic",
+        "FLM_ACCELERATOR":"gpu",
+        "FLM_INTERFACE_SEQ":"4096",
+        "FLM_INTERFACE_LAYERS":"16",
+        "FLM_INTERFACE_HEADS":"12",
+        "FLM_INTERFACE_KV_HEADS":"4",
+        "FLM_INTERFACE_EMBD":"768",
+        "FLM_INTERFACE_BATCH":"2",
+        "FLM_INTERFACE_ACCUM":"8",
+        "FLM_INTERFACE_GENERAL_SEQ":"1024",
+        "FLM_INTERFACE_CODE_SEQ":"2048",
+        "FLM_INTERFACE_SFT_SEQ":"4096",
+        "FLM_INTERFACE_GENERAL_EPOCHS":"1.0",
+        "FLM_INTERFACE_CODE_EPOCHS":"1.0",
+        "FLM_INTERFACE_SFT_EPOCHS":"1.0",
+        "FLM_INTERFACE_GRADIENT_CHECKPOINTING":"1",
+        "FLM_INTERFACE_CKPT_INTERVAL":"500",
+        "FLM_INTERFACE_EVAL_INTERVAL":"500",
+        "FLM_INTERFACE_SFT_EVAL_INTERVAL":"250",
+        "FLM_INTERFACE_EVAL_BATCHES":"16",
+        "PYTORCH_CUDA_ALLOC_CONF":"expandable_segments:True",
     }
-    p=package_payload(root)
-    chunks="\n".join(f'    "{p[i:i+100]}"' for i in range(0,len(p),100))
+    payload=package_payload(root)
+    chunks="\n".join(f'    "{payload[i:i+100]}"' for i in range(0,len(payload),100))
     env_lines="\n".join(f'os.environ[{json.dumps(k)}]={json.dumps(v)}' for k,v in env.items())
-    wrapper=f'''# Auto-generated FLM v0.7 DEV full GPU training.
+    wrapper=f'''# Auto-generated Semantic FLM v0.7 SINGLE Transformer training.
 import base64,os,sys
 from pathlib import Path
 {env_lines}
 _PAYLOAD=(\n{chunks}\n)
-z=Path("/kaggle/working/flm_v07_dev_train.zip")
+z=Path("/kaggle/working/flm_semantic_interface.zip")
 z.write_bytes(base64.b64decode(_PAYLOAD))
 sys.path.insert(0,str(z))
-from flm.train_v07 import main
+from flm.train_interface_v07 import main
 raise SystemExit(main())
 '''
-    (out/"train_v07_dev.py").write_text(wrapper,encoding="utf-8")
+    (out/"train_interface_v07.py").write_text(wrapper,encoding="utf-8")
     meta={
-        "id":f"{args.owner}/falcon-flm-v07-quality-v2-gpu",
-        "title":"Falcon FLM v07 Quality V2 GPU",
-        "code_file":"train_v07_dev.py",
-        "language":"python","kernel_type":"script","is_private":True,
-        "enable_gpu":True,"enable_internet":False,"machine_shape":"NvidiaTeslaT4",
-        "dataset_sources":[f"{args.owner}/flm-v07-dev-text",f"{args.owner}/flm-v07-dev-computer"],
+        "id":f"{args.owner}/falcon-flm-v07-semantic-interface-gpu",
+        "title":"Falcon FLM v07 Semantic Interface Transformer",
+        "code_file":"train_interface_v07.py",
+        "language":"python",
+        "kernel_type":"script",
+        "is_private":True,
+        "enable_gpu":True,
+        "enable_internet":False,
+        "machine_shape":"NvidiaTeslaT4",
+        "dataset_sources":[f"{args.owner}/flm-v07-dev-text"],
         "kernel_sources":[],
-        "competition_sources":[],"model_sources":[],
+        "competition_sources":[],
+        "model_sources":[],
     }
     (out/"kernel-metadata.json").write_text(json.dumps(meta,indent=2)+"\n")
-    print(json.dumps({"kernel":meta["id"],"payload_bytes":len(p),"steps":env}))
+    print(json.dumps({
+        "kernel":meta["id"],
+        "transformer_count":1,
+        "dataset_sources":meta["dataset_sources"],
+        "payload_bytes":len(payload),
+        "env":env,
+    }))
 
 
 if __name__=="__main__":
