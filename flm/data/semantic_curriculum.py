@@ -349,13 +349,13 @@ def _long_chain_case(i:int,tr:bool,names):
 
 def _identity_case(i:int,tr:bool):
     user=(
-        ("Sen kimsin?" if i%4==0 else "Kendini tanıt.")
+        ("Sen kimsin?" if (i//(SEMANTIC_MODES*2))%2==0 else "Kendini tanıt.")
         if tr else
-        ("Who are you?" if i%4==1 else "Introduce yourself.")
+        ("Who are you?" if (i//(SEMANTIC_MODES*2))%2==0 else "Introduce yourself.")
     )
     prog=semantic_ir(operations=[operation("IDENTITY")],source="synthetic-semantic-curriculum-v3")
     answers=TR_IDENTITY_ANSWERS if tr else EN_IDENTITY_ANSWERS
-    final=answers[(i//SEMANTIC_MODES)%len(answers)]
+    final=answers[(i//(SEMANTIC_MODES*2))%len(answers)]
     return user,prog,final
 
 
@@ -395,7 +395,7 @@ def _fact_synthesis_case(i:int,tr:bool,names):
         operations=[operation("SYNTHESIZE_FACTS",facts=facts)],
         source="synthetic-semantic-curriculum-v3",
     )
-    return user,prog,variants[(i//SEMANTIC_MODES)%len(variants)]
+    return user,prog,variants[(i//(SEMANTIC_MODES*2))%len(variants)]
 
 
 def _answer_style_case(i:int,tr:bool):
@@ -423,7 +423,7 @@ def _answer_style_case(i:int,tr:bool):
             f"This evaluates to {value}.",
             f"The result of the calculation is {value}.",
         )
-    return user,prog,variants[(i//SEMANTIC_MODES)%len(variants)]
+    return user,prog,variants[(i//(SEMANTIC_MODES*2))%len(variants)]
 
 
 def _code_explain_case(i:int,tr:bool):
@@ -451,7 +451,7 @@ def _code_explain_case(i:int,tr:bool):
             f"This defines {name}, a small function that multiplies the input by two.",
         )
     )
-    return user,prog,variants[(i//SEMANTIC_MODES)%len(variants)]
+    return user,prog,variants[(i//(SEMANTIC_MODES*2))%len(variants)]
 
 
 def messages_for(i:int):
@@ -490,7 +490,7 @@ def messages_for(i:int):
     elif mode==11:
         user,prog,final=(
             _negative_query_case(i,tr,names)
-            if (i//SEMANTIC_MODES)%2==0
+            if (i//(SEMANTIC_MODES*2))%2==0
             else _long_chain_case(i,tr,names)
         )
     elif mode==12:
