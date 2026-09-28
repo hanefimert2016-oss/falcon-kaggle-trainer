@@ -1,4 +1,4 @@
-from .semantic_ir import Atom, Rule, Query, Program
+from .semantic_ir import Atom, Rule, Query, Operation, Program
 from .semantic_memory import SemanticMemory
 from .reasoning_vm import ReasoningVM, ReasoningResult
 from .runtime import FLMCore, CoreResponse
@@ -9,7 +9,7 @@ from .code_engine import CodeEngine, CodeGraph, CodeSymbol
 from .ui_engine import UIPlanner, UIGraph, UIElement, UIAction
 
 __all__ = [
-    "Atom","Rule","Query","Program",
+    "Atom","Rule","Query","Operation","Program",
     "SemanticMemory","ReasoningVM","ReasoningResult",
     "FLMCore","CoreResponse",
     "ActionSchema","StatePlanner","PlanResult","ArithmeticSolver",
