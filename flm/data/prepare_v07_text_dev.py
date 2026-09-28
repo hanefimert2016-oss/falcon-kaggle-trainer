@@ -9,7 +9,12 @@ import shutil
 from datasets import load_dataset
 from tokenizers import Tokenizer
 
-from flm.data.semantic_curriculum import append_semantic_curriculum, messages_for
+from flm.data.semantic_curriculum import (
+    SEMANTIC_MODES,
+    append_semantic_curriculum,
+    copy_similarity,
+    messages_for,
+)
 from flm.data.prepare_v07 import (
     SOURCES,
     clean_text,
@@ -302,13 +307,13 @@ def main():
     ap.add_argument("--wiki-en-bytes",type=int,default=768_000_000)
     ap.add_argument("--coder-bytes",type=int,default=768_000_000)
     ap.add_argument("--vocab-size",type=int,default=32_768)
-    ap.add_argument("--en-sft-rows",type=int,default=200_000)
-    ap.add_argument("--tr-knowledge-rows",type=int,default=180_000)
-    ap.add_argument("--coder-code-rows",type=int,default=150_000)
-    ap.add_argument("--xlam-tool-rows",type=int,default=60_000)
+    ap.add_argument("--en-sft-rows",type=int,default=260_000)
+    ap.add_argument("--tr-knowledge-rows",type=int,default=260_000)
+    ap.add_argument("--coder-code-rows",type=int,default=200_000)
+    ap.add_argument("--xlam-tool-rows",type=int,default=80_000)
     ap.add_argument("--tool100k-rows",type=int,default=100_000)
-    ap.add_argument("--coder-agent-rows",type=int,default=3_000)
-    ap.add_argument("--semantic-sft-rows",type=int,default=240_000)
+    ap.add_argument("--coder-agent-rows",type=int,default=5_000)
+    ap.add_argument("--semantic-sft-rows",type=int,default=600_000)
     args=ap.parse_args()
 
     out=Path(args.out)
@@ -321,17 +326,32 @@ def main():
     # Fail fast before downloading/processing gigabytes if the executable
     # Semantic IR/Core curriculum is inconsistent.
     semantic_preflight=[]
-    for mode in range(12):
+    for mode in range(SEMANTIC_MODES):
         messages=messages_for(mode)
+        user=next(m["content"] for m in messages if m.get("role")=="user")
+        final=next(
+            m["content"].split("<|final|>",1)[-1].strip()
+            for m in messages
+            if m.get("role")=="assistant" and "<|final|>" in m.get("content","")
+        )
         semantic_preflight.append({
             "mode":mode,
             "messages":len(messages),
             "has_ir":any("<|semantic_ir|>" in m.get("content","") for m in messages),
             "has_core":any("<|core_result|>" in m.get("content","") for m in messages),
+            "copy_similarity":copy_similarity(user,final),
         })
-    if not all(x["messages"]>=5 and x["has_ir"] and x["has_core"] for x in semantic_preflight):
+    if not all(
+        x["messages"]>=5 and x["has_ir"] and x["has_core"]
+        and x["copy_similarity"]<0.88
+        for x in semantic_preflight
+    ):
         raise RuntimeError(f"semantic curriculum preflight failed: {semantic_preflight}")
-    stats["semantic_preflight"]={"modes":12,"ok":True}
+    stats["semantic_preflight"]={
+        "modes":SEMANTIC_MODES,
+        "ok":True,
+        "anti_copy_max":max(x["copy_similarity"] for x in semantic_preflight),
+    }
     print("V07_DEV_TEXT semantic_preflight_ok",flush=True)
 
     print("V07_DEV_TEXT main_raw_start",flush=True)
@@ -391,7 +411,7 @@ def main():
 
     manifest={
         "pipeline_version":"v0.7-dev-text",
-        "data_revision":4,
+        "data_revision":5,
         "training_pipeline":"v0.7",
         "owner":args.owner,
         "sources":{**SOURCES,**DEV_SOURCES},
@@ -407,8 +427,8 @@ def main():
     }
     (out/"sources.json").write_text(json.dumps(manifest,indent=2,ensure_ascii=False),encoding="utf-8")
     meta={
-        "title":"FLM v0.7 Semantic Interface Text r4",
-        "id":f"{args.owner}/flm-v07-semantic-text-r4",
+        "title":"FLM v0.7 Semantic Interface Text r5",
+        "id":f"{args.owner}/flm-v07-semantic-text-r5",
         "licenses":[{"name":"other"}],
     }
     (out/"dataset-metadata.json").write_text(json.dumps(meta,indent=2),encoding="utf-8")
