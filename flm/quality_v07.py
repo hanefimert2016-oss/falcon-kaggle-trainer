@@ -173,6 +173,12 @@ def validate_suite(suite: dict) -> list[str]:
     if cu:
         if not cu.get("task_embedding_initialized_from_main"):
             errors.append("ComputerUse task embedding was not initialized from Main")
+        cfg = cu.get("config") or {}
+        if int(cu.get("text_layers_initialized_from_main", 0)) < int(cfg.get("text_layers", 0)):
+            errors.append(
+                "ComputerUse text tower did not fully inherit Main-compatible layers: "
+                f"{cu.get('text_layers_initialized_from_main')}/{cfg.get('text_layers')}"
+            )
         action_counts = cu.get("action_counts") or {}
         minimum_actions = {
             "CLICK": 20_000, "KEY": 1_000, "TYPE": 1_000, "SCROLL": 750,
