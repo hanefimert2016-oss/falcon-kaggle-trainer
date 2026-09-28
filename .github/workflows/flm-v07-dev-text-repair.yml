@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: flm-v07-semantic-text-r4
+  group: flm-v07-semantic-text-r5
   cancel-in-progress: true
 
 jobs:
@@ -70,13 +70,13 @@ jobs:
             --wiki-en-bytes 768000000 \
             --coder-bytes 768000000 \
             --vocab-size 32768 \
-            --en-sft-rows 200000 \
-            --tr-knowledge-rows 180000 \
-            --coder-code-rows 150000 \
-            --xlam-tool-rows 60000 \
+            --en-sft-rows 260000 \
+            --tr-knowledge-rows 260000 \
+            --coder-code-rows 200000 \
+            --xlam-tool-rows 80000 \
             --tool100k-rows 100000 \
-            --coder-agent-rows 3000 \
-            --semantic-sft-rows 240000
+            --coder-agent-rows 5000 \
+            --semantic-sft-rows 600000
 
       - name: Verify massive text scale
         run: |
@@ -87,7 +87,7 @@ jobs:
           p=Path('prepared_v07_dev_text/sources.json')
           x=json.loads(p.read_text())
           assert x['pipeline_version']=='v0.7-dev-text'
-          assert int(x.get('data_revision',0)) >= 4, x.get('data_revision')
+          assert int(x.get('data_revision',0)) >= 5, x.get('data_revision')
           s=x['stats']
           assert s['main_raw']['bytes'] >= 3_000_000_000, s['main_raw']
           assert s['main_raw']['bytes_total_with_knowledge'] >= 4_400_000_000, s['main_raw']
@@ -97,13 +97,13 @@ jobs:
           assert s['main']['tokens'] >= 1_000_000_000, s['main']
           assert s['coder']['tokens'] >= 190_000_000, s['coder']
           assert s['main_sft_raw']['rows'] >= 550_000, s['main_sft_raw']
-          assert s['semantic_interface_sft']['rows'] >= 200_000, s['semantic_interface_sft']
-          assert s['main_sft']['supervised_tokens'] >= 300_000_000, s['main_sft']
+          assert s['semantic_interface_sft']['rows'] >= 550_000, s['semantic_interface_sft']
+          assert s['main_sft']['supervised_tokens'] >= 450_000_000, s['main_sft']
           assert s['coder_sft_raw']['rows'] >= 280_000, s['coder_sft_raw']
           assert s['coder_sft_tool100k']['rows'] >= 85000, s['coder_sft_tool100k']
-          assert s['coder_sft_agentic']['rows'] >= 2500, s['coder_sft_agentic']
-          assert s['coder_sft_agentic']['plan_turns'] >= 5000, s['coder_sft_agentic']
-          assert s['coder_sft']['supervised_tokens'] >= 70_000_000, s['coder_sft']
+          assert s['coder_sft_agentic']['rows'] >= 4200, s['coder_sft_agentic']
+          assert s['coder_sft_agentic']['plan_turns'] >= 8000, s['coder_sft_agentic']
+          assert s['coder_sft']['supervised_tokens'] >= 75_000_000, s['coder_sft']
           assert s['tokenizer']['vocab_size'] >= 30000
           special=s['tokenizer']['special_ids']
           for token in ('<|semantic_ir|>','<|semantic_end|>','<|core_result|>','<|core_end|>'):
@@ -116,9 +116,9 @@ jobs:
       - name: Upload private DEV text dataset
         run: |
           set -euo pipefail
-          REF="$KAGGLE_OWNER/flm-v07-semantic-text-r4"
-          if kaggle datasets list --mine -s flm-v07-semantic-text-r4 -v | grep -Fq "$REF"; then
-            kaggle datasets version -p prepared_v07_dev_text -m "FLM v0.7 r4 single-interface executable Semantic Core data" -q -t -r skip
+          REF="$KAGGLE_OWNER/flm-v07-semantic-text-r5"
+          if kaggle datasets list --mine -s flm-v07-semantic-text-r5 -v | grep -Fq "$REF"; then
+            kaggle datasets version -p prepared_v07_dev_text -m "FLM v0.7 r5 anti-copy diverse Semantic Core data" -q -t -r skip
           else
             kaggle datasets create -p prepared_v07_dev_text -q -t -r skip
           fi
@@ -133,7 +133,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: flm-v07-semantic-text-r4-manifest-repaired
+          name: flm-v07-semantic-text-r5-manifest-repaired
           path: |
             prepared_v07_dev_text/sources.json
             prepared_v07_dev_text/tokenizer_meta.json
