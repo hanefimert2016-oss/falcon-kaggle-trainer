@@ -487,6 +487,17 @@ def main()->int:
         floor_lr=float(os.environ.get("FLM_INTERFACE_CODE_MIN_LR","1.2e-5")),
         seed=7002,
     )
+    # Replay a small slice of general text after code continued-pretraining.
+    # This reduces catastrophic forgetting while keeping one single Transformer.
+    summary["stages"]["general_refresh"]=train_pretrain_stage(
+        model,name="general_refresh",data=main,cfg=cfg,runtime=runtime,out=out,
+        train_seq=int(os.environ.get("FLM_INTERFACE_REFRESH_SEQ","2048")),
+        batch=batch,accum=accum,
+        epochs=float(os.environ.get("FLM_INTERFACE_REFRESH_EPOCHS","0.12")),
+        peak_lr=float(os.environ.get("FLM_INTERFACE_REFRESH_LR","6e-5")),
+        floor_lr=float(os.environ.get("FLM_INTERFACE_REFRESH_MIN_LR","6e-6")),
+        seed=7003,
+    )
     summary["stages"]["mixed_sft"]=train_mixed_sft(
         model,
         main_data=main_sft,main_mask=main_mask,
