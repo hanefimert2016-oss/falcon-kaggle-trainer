@@ -9,6 +9,8 @@ import shutil
 import time
 
 from datasets import load_dataset
+from huggingface_hub import hf_hub_download, snapshot_download
+from PIL import Image
 
 from flm.data.prepare_v07 import ImageShardWriter, prepare_rexx
 from flm.data.prepare_v05 import (
@@ -299,6 +301,190 @@ def add_click100k(out: Path, manifest: Path, limit: int):
     return {"examples": added}
 
 
+UNIGUI_REPO = "UI-MOPD/Uni-GUI-Desktop-1"
+UNIGUI_CAPS = {
+    "CLICK": 2000,
+    "DOUBLE_CLICK": 900,
+    "RIGHT_CLICK": 900,
+    "DRAG": 1600,
+    "SCROLL": 2400,
+    "TYPE": 2400,
+    "KEY": 2400,
+    "MOVE": 900,
+    "WAIT": 900,
+    "DONE": 2200,
+}
+
+
+def _unigui_op(step: dict) -> str | None:
+    plan=step.get("plan") or {}
+    args=plan.get("arguments") if isinstance(plan,dict) else {}
+    if not isinstance(args,dict):
+        return None
+    name=str(args.get("action") or "").lower()
+    return {
+        "left_click":"CLICK",
+        "double_click":"DOUBLE_CLICK",
+        "right_click":"RIGHT_CLICK",
+        "left_click_drag":"DRAG",
+        "scroll":"SCROLL",
+        "type":"TYPE",
+        "key":"KEY",
+        "mouse_move":"MOVE",
+        "wait":"WAIT",
+        "terminate":"DONE",
+    }.get(name)
+
+
+def _unigui_plan_fallback(step: dict, op: str) -> dict | None:
+    plan=step.get("plan") or {}
+    args=plan.get("arguments") if isinstance(plan,dict) else {}
+    if not isinstance(args,dict):
+        return None
+
+    def norm(v):
+        if not isinstance(v,(list,tuple)) or len(v)<2:
+            return None
+        try:
+            x,y=float(v[0]),float(v[1])
+        except Exception:
+            return None
+        if abs(x)>1.5 or abs(y)>1.5:
+            x/=999.0
+            y/=999.0
+        return [min(1.0,max(0.0,x)),min(1.0,max(0.0,y))]
+
+    if op in {"CLICK","DOUBLE_CLICK","RIGHT_CLICK","MOVE"}:
+        xy=norm(args.get("coordinate"))
+        return {"op":op,"coord":xy,"coord2":None,"payload":""} if xy else None
+    if op=="DRAG":
+        a=norm(args.get("start_coordinate"))
+        b=norm(args.get("coordinate"))
+        return {"op":op,"coord":a,"coord2":b,"payload":""} if a and b else None
+    if op=="TYPE":
+        text=args.get("text",args.get("content",args.get("value","")))
+        return {"op":op,"coord":None,"coord2":None,"payload":str(text)} if str(text) else None
+    if op=="KEY":
+        keys=args.get("keys",args.get("key",args.get("hotkey","")))
+        if isinstance(keys,(list,tuple)):
+            keys="+".join(map(str,keys))
+        return {"op":op,"coord":None,"coord2":None,"payload":str(keys)} if str(keys) else None
+    if op=="SCROLL":
+        dx=args.get("scroll_x",0)
+        dy=args.get("scroll_y",args.get("amount",args.get("delta",0)))
+        direction=str(args.get("direction") or args.get("scroll_direction") or "").lower()
+        try:
+            dx=int(dx or 0); dy=int(dy or 0)
+        except Exception:
+            dx=0; dy=0
+        if direction in {"up","north"} and dy==0: dy=3
+        if direction in {"down","south"} and dy==0: dy=-3
+        if direction in {"left","west"} and dx==0: dx=-3
+        if direction in {"right","east"} and dx==0: dx=3
+        return {"op":op,"coord":None,"coord2":None,"payload":f"{dx},{dy}"}
+    if op=="WAIT":
+        seconds=args.get("seconds",args.get("duration",1))
+        return {"op":op,"coord":None,"coord2":None,"payload":str(seconds)}
+    if op=="DONE":
+        status=str(args.get("status") or "success")
+        return {"op":op,"coord":None,"coord2":None,"payload":status}
+    return None
+
+
+def add_unigui_balanced(out: Path, manifest: Path, caps: dict[str,int] | None = None):
+    caps=dict(caps or UNIGUI_CAPS)
+    meta_dir=out/"_unigui_meta"
+    if meta_dir.exists():
+        shutil.rmtree(meta_dir)
+    snapshot_download(
+        repo_id=UNIGUI_REPO,
+        repo_type="dataset",
+        allow_patterns=["*/task.json"],
+        local_dir=meta_dir,
+    )
+    task_files=sorted(meta_dir.glob("*/task.json"))
+    writer=ImageShardWriter(out,prefix="unigui_images",max_images=500)
+    counts={k:0 for k in caps}
+    trajectories=0
+    accepted=0
+    try:
+        with manifest.open("a",encoding="utf-8") as fh:
+            for task_file in task_files:
+                try:
+                    task=json.loads(task_file.read_text(encoding="utf-8"))
+                except Exception:
+                    continue
+                if task.get("is_delete") or task.get("is_mock") or not task.get("task_completed",True):
+                    continue
+                episode=str(task.get("episode_id") or task_file.parent.name)
+                query=str(task.get("query") or "").strip()
+                app=str(task.get("app") or "desktop")
+                if not query:
+                    continue
+                used=False
+                for step in task.get("data") or []:
+                    if not isinstance(step,dict) or step.get("is_delete") or step.get("is_use") is False:
+                        continue
+                    op=_unigui_op(step)
+                    if op not in caps or counts[op]>=caps[op]:
+                        continue
+                    screenshot=str(step.get("screenshot") or "")
+                    if not screenshot:
+                        continue
+                    remote=f"{task_file.parent.name}/{screenshot}"
+                    try:
+                        image_path=hf_hub_download(
+                            repo_id=UNIGUI_REPO,
+                            repo_type="dataset",
+                            filename=remote,
+                        )
+                        with Image.open(image_path) as image:
+                            width,height=image.size
+                            parsed=parse_pyautogui_action(step.get("code") or "",width,height)
+                            if parsed is None or parsed.get("op")!=op:
+                                parsed=_unigui_plan_fallback(step,op)
+                            if parsed is None:
+                                continue
+                            archive,member,_,_=writer.add(
+                                image,
+                                f"unigui_{episode}_{int(step.get('step') or accepted):04d}.jpg".replace("/","_"),
+                            )
+                    except Exception as exc:
+                        print(f"V07_DEV_CU unigui_step_error {episode} {op} {type(exc).__name__}: {exc}",flush=True)
+                        continue
+                    rec={
+                        "archive":archive,
+                        "image":member,
+                        "task":query,
+                        "operation":op,
+                        "coord":parsed.get("coord"),
+                        "coord2":parsed.get("coord2"),
+                        "payload":parsed.get("payload",""),
+                        "domain":"unigui:"+app,
+                        "source":UNIGUI_REPO,
+                        "episode_id":"unigui:"+episode,
+                        "step":int(step.get("step") or 0),
+                    }
+                    fh.write(json.dumps(rec,ensure_ascii=False)+"\n")
+                    counts[op]+=1
+                    accepted+=1
+                    used=True
+                if used:
+                    trajectories+=1
+                if all(counts[k]>=v for k,v in caps.items()):
+                    break
+    finally:
+        writer.close()
+        shutil.rmtree(meta_dir,ignore_errors=True)
+    return {
+        "examples":accepted,
+        "trajectories":trajectories,
+        "ops":counts,
+        "caps":caps,
+        "source":UNIGUI_REPO,
+    }
+
+
 def _validate_archives(out: Path, manifest_stats: dict) -> dict:
     missing = []
     empty = []
@@ -328,7 +514,8 @@ def main():
     ap.add_argument("--salesforce", type=int, default=18000)
     ap.add_argument("--showui", type=int, default=7496)
     ap.add_argument("--click100k-max", type=int, default=6000)
-    ap.add_argument("--min-rows", type=int, default=30000)
+    ap.add_argument("--unigui", action=argparse.BooleanOptionalAction, default=True)
+    ap.add_argument("--min-rows", type=int, default=40000)
     args = ap.parse_args()
 
     out = Path(args.out)
@@ -346,6 +533,17 @@ def main():
         out,
         required=True,
     )
+
+    if args.unigui:
+        _safe_stage(
+            "unigui_balanced",
+            lambda: add_unigui_balanced(out, manifest),
+            stats,
+            out,
+            required=True,
+        )
+    else:
+        stats["unigui_balanced"]={"status":"disabled"}
 
     _safe_stage(
         "legacy_grounding",
@@ -391,17 +589,27 @@ def main():
             f"v0.7 dev computer dataset too small: {rows}/{args.min_rows}; "
             f"parts={json.dumps(stats, ensure_ascii=False)}"
         )
-    if ops.get("CLICK", 0) < 20_000:
-        raise RuntimeError(f"insufficient CLICK coverage: {ops}")
-    if ops.get("KEY", 0) < 100 or ops.get("TYPE", 0) < 10:
+    minimum_ops = {
+        "CLICK": 20_000,
+        "KEY": 1_000,
+        "TYPE": 1_000,
+        "SCROLL": 750,
+        "DRAG": 300,
+        "RIGHT_CLICK": 200,
+        "DOUBLE_CLICK": 200,
+        "DONE": 500,
+    }
+    short={op:(ops.get(op,0),minimum) for op,minimum in minimum_ops.items() if ops.get(op,0)<minimum}
+    if short:
         raise RuntimeError(
-            "insufficient native keyboard/type diversity from REXX; "
-            f"refusing to synthesize fake ComputerUse actions: {ops}"
+            "insufficient real multi-action ComputerUse coverage; "
+            f"short={short} all_ops={ops}"
         )
 
     archive_check = _validate_archives(out, final)
     summary = {
         "pipeline_version": "v0.7-dev-computer",
+        "data_revision": 2,
         "training_pipeline": "v0.7",
         "stats": {
             "examples": rows,
@@ -419,7 +627,7 @@ def main():
         "title": "FLM v07 DEV Computer Data",
         "id": f"{args.owner}/flm-v07-dev-computer",
         "licenses": [{"name": "other"}],
-        "description": "GitHub-CPU prepared FLM v0.7 ComputerUse screenshot/action data.",
+        "description": "FLM v0.7 r2 ComputerUse data with real balanced multi-action desktop trajectories.",
     }
     (out / "dataset-metadata.json").write_text(
         json.dumps(dataset_meta, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
