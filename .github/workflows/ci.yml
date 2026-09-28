@@ -399,7 +399,6 @@ jobs:
           sleep 1
           WIN="$(xdotool search --name FLMInputTest | head -n1)"
           test -n "$WIN"
-          xdotool windowfocus "$WIN"
           python - <<'PY'
           import time
           from pathlib import Path
@@ -418,6 +417,10 @@ jobs:
           ex.execute(Action(ActionType.MOVE,x=.5,y=.5).validate())
           px,py=backend.position()
           assert abs(px-512)<8 and abs(py-384)<8,(px,py)
+          # Xvfb has no window manager; focus the xterm by an actual click
+          # instead of relying on xdotool windowfocus, which can return BadMatch.
+          ex.execute(Action(ActionType.CLICK,x=.5,y=.5).validate())
+          time.sleep(.15)
 
           # Real X11 keyboard events, including Turkish Unicode through xclip.
           ex.execute(Action(ActionType.TYPE,text='merhaba dünya çığöşü').validate())
