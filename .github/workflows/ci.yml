@@ -27,7 +27,7 @@ jobs:
 
       - name: Python compile
         run: |
-          python -m py_compile             falconctl.py             kaggle/train_flm.py             scripts/colab_setup.py             colab/train_v07_r2.py             scripts/build_kernel_bundle.py             flm/runtime.py             flm/models/text_lm.py             flm/models/computer_use.py             flm/models/computer_use_v2.py             flm/models/computer_use_v3.py             flm/computer_use/action_protocol.py             flm/computer_use/context.py             flm/computer_use/executor.py             flm/tooling/protocol.py             flm/tooling/runtime.py             flm/inference_v07.py             flm/data/prepare_hf.py             flm/data/prepare_v05.py             flm/data/prepare_v06.py             flm/data/prepare_v07.py             flm/data/prepare_v07_text_dev.py             flm/data/prepare_v07_computer_dev.py             scripts/build_v07_dev_computer_cpu_kernel.py             scripts/build_v07_dev_gpu_kernel.py             flm/data/preflight_v05.py             flm/train_v05.py             flm/train_v06.py             flm/train_v07.py             flm/computer_use/agent.py             flm/train_text.py             flm/train_computer_use.py             flm/train_suite.py             run_flm_v06.py             scripts/validate_v06_quality.py             scripts/build_kernel_bundle_v07.py             scripts/validate_v07_quality.py             scripts/run_computer_use_v07.py             scripts/run_flm_v07.py
+          python -m py_compile             falconctl.py             kaggle/train_flm.py             scripts/colab_setup.py             colab/train_v07_r2.py             scripts/build_kernel_bundle.py             flm/runtime.py             flm/models/text_lm.py             flm/models/core_memory.py             scripts/build_core_memory.py             flm/models/computer_use.py             flm/models/computer_use_v2.py             flm/models/computer_use_v3.py             flm/computer_use/action_protocol.py             flm/computer_use/context.py             flm/computer_use/executor.py             flm/tooling/protocol.py             flm/tooling/runtime.py             flm/inference_v07.py             flm/data/prepare_hf.py             flm/data/prepare_v05.py             flm/data/prepare_v06.py             flm/data/prepare_v07.py             flm/data/prepare_v07_text_dev.py             flm/data/prepare_v07_computer_dev.py             scripts/build_v07_dev_computer_cpu_kernel.py             scripts/build_v07_dev_gpu_kernel.py             flm/data/preflight_v05.py             flm/train_v05.py             flm/train_v06.py             flm/train_v07.py             flm/computer_use/agent.py             flm/train_text.py             flm/train_computer_use.py             flm/train_suite.py             run_flm_v06.py             scripts/validate_v06_quality.py             scripts/build_kernel_bundle_v07.py             scripts/validate_v07_quality.py             scripts/run_computer_use_v07.py             scripts/run_flm_v07.py
 
       - name: Unit tests
         run: pytest -q
@@ -89,6 +89,33 @@ jobs:
           _,loss=tiny(idx,idx)
           loss.backward()
           assert torch.isfinite(loss)
+
+          import tempfile
+          from pathlib import Path
+          from flm.models.core_memory import CoreMemoryBuilder, CoreMemoryBank
+          builder=CoreMemoryBuilder(vocab_size=64,order=4,slots=2048,top_k=2)
+          for _ in range(64):
+              builder.ingest([1,2,3,4,5])
+          bank,meta=builder.build()
+          assert meta.accepted_contexts >= 1
+          mem_path=Path(tempfile.mkdtemp())/"core_memory.pt"
+          bank.save(mem_path,meta=meta.__dict__)
+          loaded=CoreMemoryBank.load(mem_path)
+          cfg_mem=TextConfig(
+              vocab_size=64,seq_len=16,n_layer=1,n_head=2,n_embd=32,
+              position_encoding="rope",core_memory=True,
+              core_memory_order=4,core_memory_logit_scale=4.0,
+              core_memory_residual_scale=0.0,
+          )
+          mm=ByteCausalLM(cfg_mem).eval()
+          q=torch.tensor([[1,2,3,4]],dtype=torch.long)
+          with torch.no_grad():
+              plain,_=mm(q)
+              mm.attach_core_memory(loaded)
+              remembered,_=mm(q)
+          assert remembered[0,-1,5] > plain[0,-1,5] + 1.0
+          assert not any(k.startswith("core_memory.") for k in mm.state_dict())
+          print("V07_CORE_MEMORY_ZERO_TRAIN_OK",meta)
           print("V07_LOCAL_RESUME_HELPERS_OK",float(loss))
           PY
 
@@ -248,6 +275,8 @@ jobs:
           coder_cfg=text_config('coder',32768)
           assert main_cfg==coder_cfg,(main_cfg,coder_cfg)
           assert main_cfg.seq_len==4096 and main_cfg.position_encoding=='rope'
+          assert main_cfg.core_memory is True
+          assert main_cfg.core_memory_order==4
 
           import torch
           from flm.models.text_lm import ByteCausalLM,TextConfig
