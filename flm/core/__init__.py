@@ -7,6 +7,7 @@ from .solvers import ArithmeticSolver
 from .verifier import Verifier, Verification
 from .code_engine import CodeEngine, CodeGraph, CodeSymbol
 from .ui_engine import UIPlanner, UIGraph, UIElement, UIAction
+from .renderer import DeterministicRenderer
 
 __all__ = [
     "Atom","Rule","Query","Operation","Program",
@@ -14,5 +15,5 @@ __all__ = [
     "FLMCore","CoreResponse",
     "ActionSchema","StatePlanner","PlanResult","ArithmeticSolver",
     "Verifier","Verification","CodeEngine","CodeGraph","CodeSymbol",
-    "UIPlanner","UIGraph","UIElement","UIAction",
+    "UIPlanner","UIGraph","UIElement","UIAction","DeterministicRenderer",
 ]
