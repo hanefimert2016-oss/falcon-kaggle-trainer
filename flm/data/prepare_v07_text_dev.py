@@ -326,8 +326,10 @@ def main():
     # Fail fast before downloading/processing gigabytes if the executable
     # Semantic IR/Core curriculum is inconsistent.
     semantic_preflight=[]
-    for mode in range(SEMANTIC_MODES):
-        messages=messages_for(mode)
+    for sample in range(SEMANTIC_MODES*2):
+        mode=sample%SEMANTIC_MODES
+        language="tr" if sample<SEMANTIC_MODES else "en"
+        messages=messages_for(sample)
         user=next(m["content"] for m in messages if m.get("role")=="user")
         final=next(
             m["content"].split("<|final|>",1)[-1].strip()
@@ -336,6 +338,7 @@ def main():
         )
         semantic_preflight.append({
             "mode":mode,
+            "language":language,
             "messages":len(messages),
             "has_ir":any("<|semantic_ir|>" in m.get("content","") for m in messages),
             "has_core":any("<|core_result|>" in m.get("content","") for m in messages),
@@ -349,6 +352,7 @@ def main():
         raise RuntimeError(f"semantic curriculum preflight failed: {semantic_preflight}")
     stats["semantic_preflight"]={
         "modes":SEMANTIC_MODES,
+        "languages":["tr","en"],
         "ok":True,
         "anti_copy_max":max(x["copy_similarity"] for x in semantic_preflight),
     }
