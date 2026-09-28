@@ -45,17 +45,45 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          kaggle datasets files "$TEXT_REF" --page-size 100 | tee /tmp/text-files.txt
-          grep -q 'sources.json' /tmp/text-files.txt
-          grep -q 'tokenizer.json' /tmp/text-files.txt
-          grep -q 'main_train.u16' /tmp/text-files.txt
-          grep -q 'coder_train.u16' /tmp/text-files.txt
+          rm -rf /tmp/v07-gate-data
+          mkdir -p /tmp/v07-gate-data/text /tmp/v07-gate-data/computer
 
-          kaggle datasets files "$COMPUTER_REF" --page-size 100 | tee /tmp/computer-files.txt
-          grep -q 'sources.json' /tmp/computer-files.txt
-          grep -q 'cu07_manifest.jsonl' /tmp/computer-files.txt
+          for F in sources.json tokenizer.json main_train.u16 coder_train.u16 main_sft_tokens.u16 main_sft_mask.u8 coder_sft_tokens.u16 coder_sft_mask.u8; do
+            kaggle datasets download -d "$TEXT_REF" -f "$F" -p /tmp/v07-gate-data/text -q --force
+            test -s "/tmp/v07-gate-data/text/$F"
+          done
 
-          echo "V07_QUALITY_DATASETS_READY"
+          for F in sources.json cu07_manifest.jsonl; do
+            kaggle datasets download -d "$COMPUTER_REF" -f "$F" -p /tmp/v07-gate-data/computer -q --force
+            test -s "/tmp/v07-gate-data/computer/$F"
+          done
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          tr=Path('/tmp/v07-gate-data/text')
+          cr=Path('/tmp/v07-gate-data/computer')
+          t=json.loads((tr/'sources.json').read_text(encoding='utf-8'))
+          c=json.loads((cr/'sources.json').read_text(encoding='utf-8'))
+
+          assert t.get('pipeline_version')=='v0.7-dev-text',t.get('pipeline_version')
+          ts=t.get('stats') or {}
+          assert int((ts.get('main') or {}).get('tokens',0)) >= 800_000_000
+          assert int((ts.get('coder') or {}).get('tokens',0)) >= 145_000_000
+          assert int((ts.get('main_sft') or {}).get('supervised_tokens',0)) >= 300_000_000
+          assert int((ts.get('coder_sft') or {}).get('supervised_tokens',0)) >= 60_000_000
+
+          assert c.get('pipeline_version')=='v0.7-dev-computer',c.get('pipeline_version')
+          cs=c.get('stats') or {}
+          assert int(cs.get('examples',0)) >= 30_000
+          ops=cs.get('ops') or {}
+          assert int(ops.get('CLICK',0)) >= 20_000
+          assert int(ops.get('KEY',0)) >= 100
+          assert int(ops.get('TYPE',0)) >= 10
+          assert (cr/'cu07_manifest.jsonl').stat().st_size > 1000
+          print('V07_QUALITY_DATASETS_READY',ts.get('main'),cs.get('examples'),ops)
+          PY
 
       - name: Build quality GPU bundle
         run: |
