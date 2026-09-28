@@ -53,7 +53,7 @@ class RotaryEmbedding(nn.Module):
         inv=1.0/(theta ** (torch.arange(0,dim,2).float()/dim))
         self.register_buffer("inv_freq",inv,persistent=False)
 
-    def apply(self, q, k):
+    def apply_rotary(self, q, k):
         t=q.size(-2)
         pos=torch.arange(t,device=q.device,dtype=self.inv_freq.dtype)
         freq=torch.outer(pos,self.inv_freq)
@@ -95,7 +95,7 @@ class GQAAttention(nn.Module):
         if self.group>1:
             k=k.repeat_interleave(self.group,dim=1)
             v=v.repeat_interleave(self.group,dim=1)
-        q,k=self.rope.apply(q,k)
+        q,k=self.rope.apply_rotary(q,k)
         y=F.scaled_dot_product_attention(
             q,k,v,is_causal=True,
             dropout_p=self.dropout if self.training else 0.0,
