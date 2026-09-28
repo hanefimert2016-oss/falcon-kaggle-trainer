@@ -78,7 +78,8 @@ class V07TextAgent:
 
         for token in (
             "<bos>", "<eos>", "<|system|>", "<|user|>", "<|assistant|>",
-            "<|tool_call|>", "<|tool_result|>", "<|tool_end|>", "<|end|>",
+            "<|tool_call|>", "<|tool_result|>", "<|tool_end|>",
+            "<|plan|>", "<|plan_end|>", "<|final|>", "<|end|>",
         ):
             if self.tokenizer.token_to_id(token) is None:
                 raise RuntimeError(f"tokenizer missing required token {token}")
