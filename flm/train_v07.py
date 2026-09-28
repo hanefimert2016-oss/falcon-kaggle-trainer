@@ -1141,20 +1141,24 @@ def train_computer_use(v07_root, out_root, runtime, tok, vocab_size, steps):
     main_embedding_inherited = False
     if os.environ.get("FLM_V07_CU_INIT_FROM_MAIN", "1").strip().lower() not in {"0", "false", "no", "off"}:
         main_path = out_root / "main" / "checkpoint.pt"
-        if main_path.is_file():
-            main_ck = torch.load(main_path, map_location="cpu", weights_only=False)
-            main_token = (main_ck.get("model") or {}).get("token.weight")
-            if main_token is not None and tuple(main_token.shape) == tuple(base.task_emb.weight.shape):
-                with torch.no_grad():
-                    base.task_emb.weight.copy_(main_token.to(base.task_emb.weight.device, base.task_emb.weight.dtype))
-                main_embedding_inherited = True
-                print(f"V07_CU_TASK_EMBEDDING_FROM_MAIN={main_path}", flush=True)
-            else:
-                raise RuntimeError(
-                    f"ComputerUse/Main embedding mismatch: "
-                    f"main={None if main_token is None else tuple(main_token.shape)} "
-                    f"cu={tuple(base.task_emb.weight.shape)}"
-                )
+        if not main_path.is_file():
+            raise RuntimeError(
+                "ComputerUse is configured to inherit Main embeddings, but Main checkpoint.pt is missing. "
+                "Train Main first or set FLM_V07_CU_INIT_FROM_MAIN=0 explicitly."
+            )
+        main_ck = torch.load(main_path, map_location="cpu", weights_only=False)
+        main_token = (main_ck.get("model") or {}).get("token.weight")
+        if main_token is not None and tuple(main_token.shape) == tuple(base.task_emb.weight.shape):
+            with torch.no_grad():
+                base.task_emb.weight.copy_(main_token.to(base.task_emb.weight.device, base.task_emb.weight.dtype))
+            main_embedding_inherited = True
+            print(f"V07_CU_TASK_EMBEDDING_FROM_MAIN={main_path}", flush=True)
+        else:
+            raise RuntimeError(
+                f"ComputerUse/Main embedding mismatch: "
+                f"main={None if main_token is None else tuple(main_token.shape)} "
+                f"cu={tuple(base.task_emb.weight.shape)}"
+            )
     wrapped = base
     if runtime.kind == "gpu" and torch.cuda.device_count() > 1 and batch >= 2:
         wrapped = torch.nn.DataParallel(base)
@@ -1339,8 +1343,11 @@ def main() -> int:
             candidate = out / "main" / "checkpoint.pt"
             if candidate.is_file():
                 main_seed = candidate
-            elif args.only == "all":
-                raise RuntimeError("Coder is configured to inherit Main, but Main checkpoint.pt is missing")
+            else:
+                raise RuntimeError(
+                    "Coder is configured to inherit Main, but Main checkpoint.pt is missing. "
+                    "Train Main first or set FLM_V07_CODER_INIT_FROM_MAIN=0 explicitly."
+                )
         coder_model, coder_cfg, pre = train_text_pretrain(
             "coder", coder_data, out, runtime, vocab_size, coder_steps, batch, accum,
             init_checkpoint=main_seed,
