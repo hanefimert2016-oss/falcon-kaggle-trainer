@@ -75,7 +75,7 @@ raise SystemExit(main())
         "enable_gpu":True,
         "enable_internet":False,
         "machine_shape":"NvidiaTeslaT4",
-        "dataset_sources":[f"{args.owner}/flm-v07-semantic-text-r3"],
+        "dataset_sources":[f"{args.owner}/flm-v07-semantic-text-r4"],
         "kernel_sources":[],
         "competition_sources":[],
         "model_sources":[],
