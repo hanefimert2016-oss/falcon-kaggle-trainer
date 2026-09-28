@@ -35,6 +35,12 @@ class FLMCore:
         self.verifier=Verifier()
         self.code=CodeEngine()
         self.ui=UIPlanner()
+        self.identity={
+            "name":"FLM",
+            "kind":"AI assistant",
+            "architecture":"training-free Semantic Core with one trainable InterfaceTransformer",
+            "purpose":"understand requests, reason through the Core, use tools, and produce helpful answers",
+        }
 
     def ingest(self, program: Program) -> None:
         self.memory.ingest(program)
@@ -42,6 +48,9 @@ class FLMCore:
     def _execute_operation(self, op) -> dict:
         kind=op.kind
         args=dict(op.args)
+        if kind=="IDENTITY":
+            return {"kind":kind,"ok":True,**self.identity}
+
         if kind=="ARITHMETIC":
             expression=str(args["expression"])
             return {"kind":kind,"ok":True,"value":self.solve_arithmetic(expression)}
