@@ -344,8 +344,11 @@ def text_config(kind: str, vocab_size: int) -> TextConfig:
     )
 
 
-def attach_configured_core_memory(model: ByteCausalLM, runtime) -> str | None:
-    configured=os.environ.get("FLM_V07_CORE_MEMORY_PATH","").strip()
+def attach_configured_core_memory(model: ByteCausalLM, runtime, kind: str) -> str | None:
+    configured=os.environ.get(
+        f"FLM_V07_{kind.upper()}_CORE_MEMORY_PATH",
+        os.environ.get("FLM_V07_CORE_MEMORY_PATH",""),
+    ).strip()
     if not configured:
         return None
     path=Path(configured)
@@ -413,7 +416,7 @@ def train_text_pretrain(kind, data, out_root, runtime, vocab_size, steps, batch,
     train_seq = training_seq_len(kind, cfg)
     train_data, eval_data = split_train_eval_stream(data, train_seq, eval_fraction=0.01)
     base = ByteCausalLM(cfg).to(runtime.device)
-    core_memory_path = attach_configured_core_memory(base, runtime)
+    core_memory_path = attach_configured_core_memory(base, runtime, kind)
     if init_checkpoint is not None:
         init_checkpoint = Path(init_checkpoint)
         if not init_checkpoint.is_file():
