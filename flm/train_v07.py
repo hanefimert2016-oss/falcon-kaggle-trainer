@@ -1111,6 +1111,67 @@ def eval_cu(model, rows, stores, tok, cfg, pad_id, domains, device, batches=64):
     }
 
 
+def initialize_computer_text_from_main(base: ComputerUseV3, main_state: dict) -> int:
+    """Transfer Main token semantics + compatible early Transformer weights."""
+    token = main_state.get("token.weight")
+    if token is None or tuple(token.shape) != tuple(base.task_emb.weight.shape):
+        raise RuntimeError(
+            f"ComputerUse/Main embedding mismatch: "
+            f"main={None if token is None else tuple(token.shape)} "
+            f"cu={tuple(base.task_emb.weight.shape)}"
+        )
+    with torch.no_grad():
+        base.task_emb.weight.copy_(token.to(base.task_emb.weight.device, base.task_emb.weight.dtype))
+
+        copied = 0
+        for i, layer in enumerate(base.text_encoder.layers):
+            prefix = f"blocks.{i}."
+            required = [
+                prefix + "attn.qkv.weight",
+                prefix + "attn.proj.weight",
+                prefix + "ln1.weight", prefix + "ln1.bias",
+                prefix + "ln2.weight", prefix + "ln2.bias",
+                prefix + "mlp.0.weight", prefix + "mlp.2.weight",
+            ]
+            if not all(k in main_state for k in required):
+                break
+            if tuple(main_state[prefix + "attn.qkv.weight"].shape) != tuple(layer.self_attn.in_proj_weight.shape):
+                break
+            layer.self_attn.in_proj_weight.copy_(
+                main_state[prefix + "attn.qkv.weight"].to(
+                    layer.self_attn.in_proj_weight.device,
+                    layer.self_attn.in_proj_weight.dtype,
+                )
+            )
+            layer.self_attn.out_proj.weight.copy_(
+                main_state[prefix + "attn.proj.weight"].to(
+                    layer.self_attn.out_proj.weight.device,
+                    layer.self_attn.out_proj.weight.dtype,
+                )
+            )
+            if layer.self_attn.in_proj_bias is not None:
+                layer.self_attn.in_proj_bias.zero_()
+            if layer.self_attn.out_proj.bias is not None:
+                layer.self_attn.out_proj.bias.zero_()
+
+            layer.norm1.weight.copy_(main_state[prefix + "ln1.weight"].to(layer.norm1.weight.device))
+            layer.norm1.bias.copy_(main_state[prefix + "ln1.bias"].to(layer.norm1.bias.device))
+            layer.norm2.weight.copy_(main_state[prefix + "ln2.weight"].to(layer.norm2.weight.device))
+            layer.norm2.bias.copy_(main_state[prefix + "ln2.bias"].to(layer.norm2.bias.device))
+            layer.linear1.weight.copy_(
+                main_state[prefix + "mlp.0.weight"].to(layer.linear1.weight.device, layer.linear1.weight.dtype)
+            )
+            layer.linear2.weight.copy_(
+                main_state[prefix + "mlp.2.weight"].to(layer.linear2.weight.device, layer.linear2.weight.dtype)
+            )
+            if layer.linear1.bias is not None:
+                layer.linear1.bias.zero_()
+            if layer.linear2.bias is not None:
+                layer.linear2.bias.zero_()
+            copied += 1
+    return copied
+
+
 def train_computer_use(v07_root, out_root, runtime, tok, vocab_size, steps):
     train_rows, eval_rows = merge_cu_rows(v07_root)
     domain_names = sorted({str(r.get("domain") or "") for r in train_rows + eval_rows})
@@ -1141,26 +1202,27 @@ def train_computer_use(v07_root, out_root, runtime, tok, vocab_size, steps):
     # this ~100M multimodal policy in FP32 and lowers the learning rate.
     base = ComputerUseV3(cfg).to(runtime.device)
     main_embedding_inherited = False
+    main_text_layers_inherited = 0
     if os.environ.get("FLM_V07_CU_INIT_FROM_MAIN", "1").strip().lower() not in {"0", "false", "no", "off"}:
         main_path = out_root / "main" / "checkpoint.pt"
         if not main_path.is_file():
             raise RuntimeError(
-                "ComputerUse is configured to inherit Main embeddings, but Main checkpoint.pt is missing. "
+                "ComputerUse is configured to inherit Main text weights, but Main checkpoint.pt is missing. "
                 "Train Main first or set FLM_V07_CU_INIT_FROM_MAIN=0 explicitly."
             )
         main_ck = torch.load(main_path, map_location="cpu", weights_only=False)
-        main_token = (main_ck.get("model") or {}).get("token.weight")
-        if main_token is not None and tuple(main_token.shape) == tuple(base.task_emb.weight.shape):
-            with torch.no_grad():
-                base.task_emb.weight.copy_(main_token.to(base.task_emb.weight.device, base.task_emb.weight.dtype))
-            main_embedding_inherited = True
-            print(f"V07_CU_TASK_EMBEDDING_FROM_MAIN={main_path}", flush=True)
-        else:
+        main_text_layers_inherited = initialize_computer_text_from_main(
+            base, main_ck.get("model") or {}
+        )
+        main_embedding_inherited = True
+        if main_text_layers_inherited < cfg.text_layers:
             raise RuntimeError(
-                f"ComputerUse/Main embedding mismatch: "
-                f"main={None if main_token is None else tuple(main_token.shape)} "
-                f"cu={tuple(base.task_emb.weight.shape)}"
+                f"ComputerUse inherited only {main_text_layers_inherited}/{cfg.text_layers} Main text layers"
             )
+        print(
+            f"V07_CU_TEXT_FROM_MAIN={main_path} layers={main_text_layers_inherited}",
+            flush=True,
+        )
     wrapped = base
     if runtime.kind == "gpu" and torch.cuda.device_count() > 1 and batch >= 2:
         wrapped = torch.nn.DataParallel(base)
@@ -1253,6 +1315,7 @@ def train_computer_use(v07_root, out_root, runtime, tok, vocab_size, steps):
         "domains": len(domain_names),
         "action_counts": action_counts,
         "task_embedding_initialized_from_main": main_embedding_inherited,
+        "text_layers_initialized_from_main": main_text_layers_inherited,
         **ev,
         "elapsed_s": time.time() - start,
         "config": cfg.__dict__,
