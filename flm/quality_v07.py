@@ -74,8 +74,8 @@ def validate_suite(suite: dict) -> list[str]:
     coder = quality.get("coder") or []
     tool = (quality.get("tool_call") or {}).get("output", "")
 
-    if len(main) < 4:
-        errors.append("missing main quality samples")
+    if len(main) < 6:
+        errors.append("missing main knowledge quality samples")
     else:
         for i, item in enumerate(main):
             if not natural_text(item.get("output", "")):
@@ -102,6 +102,20 @@ def validate_suite(suite: dict) -> list[str]:
             for k in ("system", "computer", "software", "hardware", "resource", "program")
         ):
             errors.append(f"English OS answer looks off-topic: {english!r}")
+
+        photo = next(
+            (x.get("output", "") for x in main if "Fotosentez" in x.get("prompt", "")),
+            "",
+        )
+        if sum(k in photo.lower() for k in ("ışık", "enerji", "glikoz", "oksijen", "karbondioksit")) < 2:
+            errors.append(f"photosynthesis knowledge probe failed: {photo!r}")
+
+        ram = next(
+            (x.get("output", "") for x in main if x.get("prompt", "").startswith("What is the practical difference between RAM")),
+            "",
+        )
+        if sum(k in ram.lower() for k in ("memory", "temporary", "volatile", "storage", "persistent")) < 2:
+            errors.append(f"RAM/storage knowledge probe failed: {ram!r}")
 
     if len(coder) < 2:
         errors.append("missing coder quality samples")
@@ -131,8 +145,15 @@ def validate_suite(suite: dict) -> list[str]:
     plan_words = re.findall(r"[A-Za-zÇĞİÖŞÜçğıöşü]{2,}", plan_body)
     if len(plan_words) < 30:
         errors.append(f"Coder plan is too shallow: {planning[:240]!r}")
-    planning_topics = ("log", "config", "test", "repro", "rollback")
-    if sum(k in plan_body.lower() for k in planning_topics) < 3:
+    planning_topics = (
+        ("log", "kayıt"),
+        ("config", "yapılandır"),
+        ("test",),
+        ("repro", "yeniden üret", "tekrar üret"),
+        ("rollback", "geri al"),
+    )
+    lower_plan = plan_body.lower()
+    if sum(any(k in lower_plan for k in group) for group in planning_topics) < 3:
         errors.append(f"Coder plan misses debugging stages: {planning[:240]!r}")
 
     try:
