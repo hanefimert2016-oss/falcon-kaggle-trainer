@@ -51,6 +51,22 @@ class FLMCore:
         if kind=="IDENTITY":
             return {"kind":kind,"ok":True,**self.identity}
 
+        if kind=="SYNTHESIZE_FACTS":
+            facts=[]
+            for raw in (args.get("facts") or []):
+                subject=str(raw.get("subject") or "").strip()
+                predicate=str(raw.get("predicate") or "").strip()
+                obj=str(raw.get("object") or "").strip()
+                if subject and predicate and obj:
+                    facts.append({
+                        "subject":subject,
+                        "predicate":predicate,
+                        "object":obj,
+                    })
+            if not facts:
+                raise ValueError("SYNTHESIZE_FACTS requires at least one structured fact")
+            return {"kind":kind,"ok":True,"facts":facts}
+
         if kind=="ARITHMETIC":
             expression=str(args["expression"])
             return {"kind":kind,"ok":True,"value":self.solve_arithmetic(expression)}
