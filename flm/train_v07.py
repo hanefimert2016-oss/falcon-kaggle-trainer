@@ -417,9 +417,16 @@ def train_text_pretrain(kind, data, out_root, runtime, vocab_size, steps, batch,
     )
     windows_per_step = batch * accum
     steps_per_epoch = math.ceil(len(train_starts) / max(1, windows_per_step))
+    requested_steps = steps
+    target_epochs = float(os.environ.get(
+        f"FLM_V07_{kind.upper()}_PRETRAIN_EPOCHS", "1.0"
+    ))
+    if steps <= 0:
+        steps = max(1, math.ceil(steps_per_epoch * target_epochs))
     print(
         f"V07_{kind.upper()}_COVERAGE blocks={len(train_starts)} "
         f"windows_per_step={windows_per_step} steps_per_epoch={steps_per_epoch} "
+        f"requested_steps={requested_steps} target_epochs={target_epochs:.3f} "
         f"configured_steps={steps}",
         flush=True,
     )
@@ -612,10 +619,18 @@ def train_text_sft(kind, base, cfg, data, mask, out_root, runtime, steps, batch,
     sft_steps_per_epoch = math.ceil(
         len(sft_starts) / max(1, sft_windows_per_step)
     )
+    requested_steps = steps
+    default_epochs = "1.25" if kind == "coder" else "1.0"
+    target_epochs = float(os.environ.get(
+        f"FLM_V07_{kind.upper()}_SFT_EPOCHS", default_epochs
+    ))
+    if steps <= 0:
+        steps = max(1, math.ceil(sft_steps_per_epoch * target_epochs))
     print(
         f"V07_{kind.upper()}_SFT_COVERAGE blocks={len(sft_starts)} "
         f"windows_per_step={sft_windows_per_step} "
-        f"steps_per_epoch={sft_steps_per_epoch} configured_steps={steps}",
+        f"steps_per_epoch={sft_steps_per_epoch} requested_steps={requested_steps} "
+        f"target_epochs={target_epochs:.3f} configured_steps={steps}",
         flush=True,
     )
     warmup = max(20, min(300, steps // 15))
@@ -1218,10 +1233,10 @@ def main() -> int:
 
     batch = int(os.environ.get("FLM_V07_TEXT_BATCH", "8"))
     accum = int(os.environ.get("FLM_V07_TEXT_ACCUM", "2"))
-    main_steps = int(os.environ.get("FLM_V07_MAIN_STEPS", "25000"))
-    main_sft_steps = int(os.environ.get("FLM_V07_MAIN_SFT_STEPS", "3500"))
-    coder_steps = int(os.environ.get("FLM_V07_CODER_STEPS", "15000"))
-    coder_sft_steps = int(os.environ.get("FLM_V07_CODER_SFT_STEPS", "3500"))
+    main_steps = int(os.environ.get("FLM_V07_MAIN_STEPS", "0"))
+    main_sft_steps = int(os.environ.get("FLM_V07_MAIN_SFT_STEPS", "0"))
+    coder_steps = int(os.environ.get("FLM_V07_CODER_STEPS", "0"))
+    coder_sft_steps = int(os.environ.get("FLM_V07_CODER_SFT_STEPS", "0"))
     cu_steps = int(os.environ.get("FLM_V07_CU_STEPS", "8000"))
 
     summary = {
