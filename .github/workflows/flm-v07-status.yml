@@ -16,7 +16,7 @@ jobs:
     env:
       KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
       KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
-      REF: ${{ vars.KAGGLE_OWNER }}/falcon-flm-v07-quality-gpu
+      REF: ${{ vars.KAGGLE_OWNER }}/falcon-flm-v07-quality-v2-gpu
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
