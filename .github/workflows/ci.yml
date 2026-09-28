@@ -133,26 +133,61 @@ jobs:
           print('mounted image dir regression OK')
           PY
 
-      - name: FLM v0.7 DEV parallel bundle regression
+      - name: FLM v0.7 GitHub-data quality bundle regression
         run: |
           set -euo pipefail
-          python scripts/build_v07_dev_computer_cpu_kernel.py --owner test-owner --out /tmp/v07-dev-cpu
-          python -m py_compile /tmp/v07-dev-cpu/prepare_computer.py
-          python scripts/build_v07_dev_gpu_kernel.py --owner test-owner --out /tmp/v07-dev-gpu
-          python -m py_compile /tmp/v07-dev-gpu/train_v07_dev.py
+          python -m py_compile \
+            flm/train_v07.py \
+            flm/data/prepare_v07_computer_dev.py \
+            scripts/build_v07_dev_gpu_kernel.py
+          python scripts/build_v07_dev_gpu_kernel.py \
+            --owner test-owner \
+            --out /tmp/v07-quality-gpu
+          python -m py_compile /tmp/v07-quality-gpu/train_v07_dev.py
           python - <<'PY'
           import json
           from pathlib import Path
-          cpu=json.loads(Path('/tmp/v07-dev-cpu/kernel-metadata.json').read_text())
-          gpu=json.loads(Path('/tmp/v07-dev-gpu/kernel-metadata.json').read_text())
-          assert cpu['enable_gpu'] is False and cpu['enable_internet'] is True
+
+          gpu=json.loads(Path('/tmp/v07-quality-gpu/kernel-metadata.json').read_text())
+          assert gpu['id']=='test-owner/falcon-flm-v07-quality-gpu',gpu
+          assert gpu['title']=='Falcon FLM v07 Quality GPU',gpu
           assert gpu['enable_gpu'] is True and gpu['machine_shape']=='NvidiaTeslaT4'
-          assert gpu['dataset_sources']==['test-owner/flm-v07-dev-text']
-          assert gpu['kernel_sources']==['test-owner/falcon-flm-v07-dev-computer-cpu']
-          src=Path('/tmp/v07-dev-gpu/train_v07_dev.py').read_text()
-          assert 'FLM_V07_MAIN_STEPS' in src and '60000' in src
-          assert 'FLM_V07_CU_STEPS' in src and '20000' in src
-          print('v0.7 DEV parallel bundles OK')
+          assert gpu['dataset_sources']==[
+              'test-owner/flm-v07-dev-text',
+              'test-owner/flm-v07-dev-computer',
+          ],gpu
+          assert gpu['kernel_sources']==[],gpu
+
+          src=Path('/tmp/v07-quality-gpu/train_v07_dev.py').read_text()
+          for key,value in (
+              ('FLM_V07_MAIN_SEQ','768'),
+              ('FLM_V07_CODER_SEQ','768'),
+              ('FLM_V07_MAIN_STEPS','65000'),
+              ('FLM_V07_MAIN_SFT_STEPS','12000'),
+              ('FLM_V07_CODER_STEPS','25000'),
+              ('FLM_V07_CODER_SFT_STEPS','10000'),
+              ('FLM_V07_TEXT_EVAL_INTERVAL','1000'),
+              ('FLM_V07_SFT_EVAL_INTERVAL','500'),
+          ):
+              assert key in src and value in src,(key,value)
+
+          train=Path('flm/train_v07.py').read_text()
+          assert 'validate_pipeline_inputs' in train
+          assert 'split_train_eval_stream' in train
+          assert 'checkpoint_best_pretrain.pt' in train
+          assert 'checkpoint_best_sft.pt' in train
+
+          data_workflow=Path('.github/workflows/flm-v07-dev-parallel.yml').read_text()
+          assert 'name: FLM v0.7 GitHub Computer Data' in data_workflow
+          assert 'kaggle kernels push' not in data_workflow
+          assert 'build_v07_dev_computer_cpu_kernel.py' not in data_workflow
+          assert 'python -m flm.data.prepare_v07_computer_dev' in data_workflow
+
+          gate=Path('.github/workflows/flm-v07-dev-training-gate.yml').read_text()
+          assert 'falcon-flm-v07-quality-gpu' in gate
+          assert 'flm-v07-dev-computer' in gate
+          assert 'falcon-flm-v07-dev-computer-cpu' not in gate
+          print('v0.7 GitHub-data quality pipeline OK')
           PY
 
       - name: FLM v0.7 real input executor regression
