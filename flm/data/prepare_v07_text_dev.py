@@ -9,7 +9,7 @@ import shutil
 from datasets import load_dataset
 from tokenizers import Tokenizer
 
-from flm.data.semantic_curriculum import append_semantic_curriculum
+from flm.data.semantic_curriculum import append_semantic_curriculum, messages_for
 from flm.data.prepare_v07 import (
     SOURCES,
     clean_text,
@@ -317,6 +317,23 @@ def main():
     out.mkdir(parents=True)
 
     stats={}
+
+    # Fail fast before downloading/processing gigabytes if the executable
+    # Semantic IR/Core curriculum is inconsistent.
+    semantic_preflight=[]
+    for mode in range(12):
+        messages=messages_for(mode)
+        semantic_preflight.append({
+            "mode":mode,
+            "messages":len(messages),
+            "has_ir":any("<|semantic_ir|>" in m.get("content","") for m in messages),
+            "has_core":any("<|core_result|>" in m.get("content","") for m in messages),
+        })
+    if not all(x["messages"]>=5 and x["has_ir"] and x["has_core"] for x in semantic_preflight):
+        raise RuntimeError(f"semantic curriculum preflight failed: {semantic_preflight}")
+    stats["semantic_preflight"]={"modes":12,"ok":True}
+    print("V07_DEV_TEXT semantic_preflight_ok",flush=True)
+
     print("V07_DEV_TEXT main_raw_start",flush=True)
     stats["main_raw"]=prepare_main_raw(out,args.main_bytes)
     stats["main_wiki_tr"]=append_wikipedia_knowledge(out/"main.raw.txt","main_wiki_tr",args.wiki_tr_bytes)
