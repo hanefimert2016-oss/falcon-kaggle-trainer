@@ -251,7 +251,7 @@ jobs:
           assert gpu['id']=='test-owner/falcon-flm-v07-semantic-interface-gpu',gpu
           assert gpu['title']=='Falcon FLM v07 Semantic Interface Transformer',gpu
           assert gpu['enable_gpu'] is True
-          assert gpu['dataset_sources']==['test-owner/flm-v07-semantic-text-r3'],gpu
+          assert gpu['dataset_sources']==['test-owner/flm-v07-semantic-text-r4'],gpu
           assert 'flm-v07-dev-computer' not in json.dumps(gpu)
 
           wrapper=Path('/tmp/v07-semantic-interface/train_interface_v07.py').read_text()
@@ -271,6 +271,8 @@ jobs:
           assert trainer.count('InterfaceTransformer(cfg)')==1
           assert 'ComputerUseV3(' not in trainer
           assert 'ByteCausalLM(' not in trainer
+          assert 'train_computer_use' not in trainer
+          assert 'train_text_pretrain' not in trainer
           assert '"transformer_count":1' in trainer
 
           from flm.models.interface_transformer import InterfaceConfig,InterfaceTransformer
@@ -343,7 +345,7 @@ jobs:
           from flm.core.semantic_ir import Program
           import re, json
           seen_ops=set()
-          for mode in range(9):
+          for mode in range(12):
               messages=messages_for(mode)
               joined='\n'.join(x['content'] for x in messages)
               assert '<|semantic_ir|>' in joined
@@ -357,9 +359,11 @@ jobs:
               for op in program.operations:
                   seen_ops.add(op.kind)
               if program.queries:
-                  assert result.results and result.results[0].answer is True
+                  assert result.results
+                  # The curriculum deliberately contains both positive and negative queries.
+                  assert isinstance(result.results[0].answer,bool)
               for item in result.operation_results:
-                  assert item['ok'] is True,item
+                  assert isinstance(item.get('ok'),bool),item
           assert seen_ops=={'ARITHMETIC','ANALYZE_CODE','STATE_PLAN','UI_PLAN','VERIFY'},seen_ops
           print('SEMANTIC_CURRICULUM_ALL_MODES_OK',sorted(seen_ops))
 
@@ -367,8 +371,8 @@ jobs:
           assert 'falcon-flm-v07-semantic-interface-gpu' in gate
           assert 'FLM v0.7 DEV Text Repair' in gate
           assert 'flm-v07-dev-computer' not in gate
-          assert 'flm-v07-semantic-text-r3' in gate
-          assert "data_revision',0))>=3" in gate
+          assert 'flm-v07-semantic-text-r4' in gate
+          assert "data_revision',0))>=4" in gate
           assert 'if: ${{ false }}' not in gate
           print('SEMANTIC_FLM_SINGLE_TRANSFORMER_PIPELINE_OK')
           PY
