@@ -177,6 +177,23 @@ jobs:
           assert 'checkpoint_best_pretrain.pt' in train
           assert 'checkpoint_best_sft.pt' in train
 
+          import numpy as np
+          from flm.train_v07 import ShuffledStartPool, nonoverlap_starts, eligible_sft_starts
+          starts=nonoverlap_starts(10000,64)
+          pool=ShuffledStartPool(starts,123)
+          first=pool.take(len(starts))
+          assert len(first)==len(starts)
+          assert len(set(map(int,first)))==len(starts)
+          assert pool.epoch==0
+          nxt=pool.take(3)
+          assert pool.epoch==1 and len(set(map(int,nxt)))==3
+          mask=np.zeros(10000,dtype=np.uint8)
+          mask[1:65]=1
+          mask[66:130]=1
+          eligible=eligible_sft_starts(mask,64,min_supervised=8)
+          assert 0 in set(map(int,eligible))
+          print('v0.7 no-replacement sampler OK',len(starts),len(eligible))
+
           data_workflow=Path('.github/workflows/flm-v07-dev-parallel.yml').read_text()
           assert 'name: FLM v0.7 GitHub Computer Data' in data_workflow
           assert 'kaggle kernels push' not in data_workflow
