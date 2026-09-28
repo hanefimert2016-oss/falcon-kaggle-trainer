@@ -60,6 +60,10 @@ class InterfaceAgent:
         temperature:float=0.2,
         top_k:int=20,
         max_new:int=768,
+        render_temperature:float=0.75,
+        render_top_k:int=50,
+        render_top_p:float=0.92,
+        repetition_penalty:float=1.08,
     ):
         checkpoint=Path(checkpoint)
         ck=torch.load(checkpoint,map_location="cpu",weights_only=False)
@@ -80,6 +84,10 @@ class InterfaceAgent:
         self.temperature=float(temperature)
         self.top_k=int(top_k)
         self.max_new=int(max_new)
+        self.render_temperature=float(render_temperature)
+        self.render_top_k=int(render_top_k)
+        self.render_top_p=float(render_top_p)
+        self.repetition_penalty=float(repetition_penalty)
         self.semantic_compiler=SemanticCompiler()
         self.deterministic_renderer=DeterministicRenderer()
 
@@ -88,7 +96,16 @@ class InterfaceAgent:
             self.model.attach_core_memory(CoreMemoryBank.load(memory_path).to(self.device))
 
     @torch.inference_mode()
-    def generate(self,messages:list[dict],*,max_new:int|None=None)->str:
+    def generate(
+        self,
+        messages:list[dict],
+        *,
+        max_new:int|None=None,
+        temperature:float|None=None,
+        top_k:int|None=None,
+        top_p:float=1.0,
+        repetition_penalty:float=1.0,
+    )->str:
         ids=encode_history(self.tokenizer,messages)
         eos_ids={
             self.tokenizer.token_to_id("<|end|>"),
@@ -101,13 +118,26 @@ class InterfaceAgent:
             x=torch.tensor([context],dtype=torch.long,device=self.device)
             logits,_=self.model(x)
             z=logits[0,-1].float()
-            if self.temperature<=0:
+            temp=self.temperature if temperature is None else float(temperature)
+            k_cfg=self.top_k if top_k is None else int(top_k)
+            if repetition_penalty>1.0 and generated:
+                seen=torch.tensor(sorted(set(generated)),device=z.device,dtype=torch.long)
+                z[seen]=torch.where(z[seen]>=0,z[seen]/repetition_penalty,z[seen]*repetition_penalty)
+            if temp<=0:
                 nxt=int(z.argmax())
             else:
-                z=z/max(self.temperature,1e-5)
-                k=min(max(1,self.top_k),z.numel())
+                z=z/max(temp,1e-5)
+                k=min(max(1,k_cfg),z.numel())
                 values,indices=torch.topk(z,k)
                 probs=torch.softmax(values,-1)
+                if top_p<1.0:
+                    sorted_probs,order=torch.sort(probs,descending=True)
+                    cumulative=torch.cumsum(sorted_probs,dim=-1)
+                    keep=cumulative<=max(1e-4,float(top_p))
+                    keep[0]=True
+                    filtered=torch.zeros_like(probs)
+                    filtered[order[keep]]=probs[order[keep]]
+                    probs=filtered/filtered.sum()
                 nxt=int(indices[torch.multinomial(probs,1)])
             if nxt in eos_ids:
                 break
@@ -144,7 +174,7 @@ class InterfaceAgent:
         raw=self.generate([
             {"role":"system","content":system},
             {"role":"user","content":prompt},
-        ])
+        ],temperature=0.0,top_k=1)
         return Program.from_json(self._extract_ir(raw))
 
     def answer(self,prompt:str,core:FLMCore)->str:
@@ -182,9 +212,22 @@ class InterfaceAgent:
         return self.generate([
             {
                 "role":"system",
-                "content":"Render the verified FLM Core result naturally. Never contradict the core result.",
+                "content":(
+                    "Render the verified FLM Core result naturally. Treat the Core payload as "
+                    "meaning, not as wording to copy. Do not quote or mirror the user's source "
+                    "text unless an exact quote is explicitly requested. Synthesize a fresh, "
+                    "concise answer in the user's language, preserve every verified fact, and "
+                    "never contradict the Core result. Vary phrasing naturally across runs "
+                    "while keeping the same meaning."
+                ),
             },
             {"role":"user","content":prompt},
             {"role":"assistant","content":ir},
             {"role":"tool","content":core_result},
-        ],max_new=384)
+        ],
+            max_new=384,
+            temperature=self.render_temperature,
+            top_k=self.render_top_k,
+            top_p=self.render_top_p,
+            repetition_penalty=self.repetition_penalty,
+        )
