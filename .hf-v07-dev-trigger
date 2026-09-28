@@ -1,3 +1,3 @@
-start GitHub-CPU data pipeline and FLM v0.7 quality model training
-mode=no-kaggle-cpu-generation
-quality-gpu=falcon-flm-v07-quality-gpu
+resume GitHub-CPU data pipeline after direct dataset verification fix
+no-kaggle-cpu-generation=true
+launch-quality-model=true
