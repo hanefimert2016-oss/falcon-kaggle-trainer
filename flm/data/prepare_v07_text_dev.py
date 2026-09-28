@@ -390,8 +390,8 @@ def main():
     }
     (out/"sources.json").write_text(json.dumps(manifest,indent=2,ensure_ascii=False),encoding="utf-8")
     meta={
-        "title":"FLM v0.7 DEV Massive Text and Tool Data",
-        "id":f"{args.owner}/flm-v07-dev-text",
+        "title":"FLM v0.7 Semantic Interface Text r3",
+        "id":f"{args.owner}/flm-v07-semantic-text-r3",
         "licenses":[{"name":"other"}],
     }
     (out/"dataset-metadata.json").write_text(json.dumps(meta,indent=2),encoding="utf-8")
