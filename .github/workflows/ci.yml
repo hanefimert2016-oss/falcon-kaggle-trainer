@@ -371,6 +371,9 @@ jobs:
                   assert isinstance(result.results[0].answer,bool)
               for item in result.operation_results:
                   assert isinstance(item.get('ok'),bool),item
+              if mode==9:
+                  ops=[a['op'] for item in result.operation_results for a in item.get('actions',[])]
+                  assert 'TYPE' in ops,ops
           assert seen_ops=={'ARITHMETIC','ANALYZE_CODE','STATE_PLAN','UI_PLAN','VERIFY'},seen_ops
           print('SEMANTIC_CURRICULUM_ALL_MODES_OK',sorted(seen_ops))
 
