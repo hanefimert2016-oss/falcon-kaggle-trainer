@@ -176,6 +176,28 @@ class ShuffledStartPool:
             need -= n
         return np.concatenate(parts)
 
+    def state_dict(self) -> dict:
+        return {
+            "order": self.order.copy(),
+            "pos": int(self.pos),
+            "epoch": int(self.epoch),
+            "rng_state": self.rng.bit_generator.state,
+            "starts_len": int(len(self.starts)),
+        }
+
+    def load_state_dict(self, state: dict) -> None:
+        if int(state.get("starts_len", -1)) != len(self.starts):
+            raise RuntimeError(
+                f"sampler dataset changed: checkpoint={state.get('starts_len')} current={len(self.starts)}"
+            )
+        order = np.asarray(state["order"], dtype=np.int64)
+        if len(order) != len(self.starts):
+            raise RuntimeError("invalid sampler order length")
+        self.order = order
+        self.pos = int(state["pos"])
+        self.epoch = int(state["epoch"])
+        self.rng.bit_generator.state = state["rng_state"]
+
 
 def nonoverlap_starts(length: int, seq: int) -> np.ndarray:
     high = length - seq - 1
@@ -276,6 +298,17 @@ def atomic_torch_save(obj, path: Path):
     tmp = path.with_suffix(path.suffix + ".tmp")
     torch.save(obj, tmp)
     tmp.replace(path)
+
+
+def optimizer_to_device(optimizer, device):
+    for state in optimizer.state.values():
+        for key, value in list(state.items()):
+            if torch.is_tensor(value):
+                state[key] = value.to(device)
+
+
+def resume_enabled() -> bool:
+    return os.environ.get("FLM_V07_RESUME", "1").strip().lower() not in {"0", "false", "no", "off"}
 
 
 def text_config(kind: str, vocab_size: int) -> TextConfig:
@@ -796,6 +829,14 @@ class BalancedSampler:
             op = self.rng.choice(self.ops)
             out.append(self.rng.choice(self.by_op[op]))
         return out
+
+    def state_dict(self) -> dict:
+        return {"rng_state": self.rng.getstate(), "ops": list(self.ops)}
+
+    def load_state_dict(self, state: dict) -> None:
+        if list(state.get("ops") or []) != self.ops:
+            raise RuntimeError("ComputerUse action classes changed since checkpoint")
+        self.rng.setstate(state["rng_state"])
 
 
 def payload_pair(text: str, cfg):
