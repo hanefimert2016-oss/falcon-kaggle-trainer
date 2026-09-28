@@ -124,15 +124,12 @@ class InterfaceAgent:
 
     def compile(self,prompt:str)->Program:
         # Explicit canonical TR/EN forms do not need the neural interface at all.
-        # This keeps a genuine training-free path for facts and queries.
-        for compiler in (
-            self.semantic_compiler.query_canonical,
-            self.semantic_compiler.compile_canonical,
-        ):
-            try:
-                return compiler(prompt)
-            except ValueError:
-                pass
+        # This keeps a genuine training-free path for facts, rules, queries and
+        # strict arithmetic requests.
+        try:
+            return self.semantic_compiler.compile_any(prompt)
+        except ValueError:
+            pass
 
         system=(
             "You are the only trainable FLM Interface Transformer. Translate the "
