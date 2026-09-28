@@ -71,13 +71,13 @@ jobs:
 
           import torch
           import os
+          from flm.models.text_lm import ByteCausalLM, TextConfig
           from flm.train_v07 import training_seq_len
           cfg4k=TextConfig(vocab_size=64,seq_len=4096,n_layer=2,n_head=2,n_embd=32,position_encoding="rope")
           os.environ["FLM_V07_MAIN_TRAIN_SEQ"]="2048"
           assert training_seq_len("main",cfg4k)==2048
           del os.environ["FLM_V07_MAIN_TRAIN_SEQ"]
 
-          from flm.models.text_lm import ByteCausalLM, TextConfig
           tiny=ByteCausalLM(TextConfig(
               vocab_size=64,seq_len=128,n_layer=2,n_head=2,n_embd=32,
               position_encoding="rope",
