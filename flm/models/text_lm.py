@@ -2,6 +2,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import torch
 import torch.nn as nn
+import torch.utils.checkpoint
 from torch.nn import functional as F
 
 @dataclass
@@ -53,6 +54,7 @@ class ByteCausalLM(nn.Module):
         self.ln=nn.LayerNorm(cfg.n_embd)
         self.head=nn.Linear(cfg.n_embd,cfg.vocab_size,bias=False)
         self.head.weight=self.token.weight
+        self.gradient_checkpointing=False
         self.apply(self._init)
     @staticmethod
     def _init(m):
@@ -63,7 +65,11 @@ class ByteCausalLM(nn.Module):
         if t>self.cfg.seq_len: raise ValueError("sequence too long")
         p=torch.arange(t,device=idx.device)
         x=self.token(idx)+self.pos(p)[None]
-        for block in self.blocks: x=block(x)
+        for block in self.blocks:
+            if self.gradient_checkpointing and self.training and torch.is_grad_enabled():
+                x=torch.utils.checkpoint.checkpoint(block,x,use_reentrant=False)
+            else:
+                x=block(x)
         logits=self.head(self.ln(x))
         loss=None
         if targets is not None:
