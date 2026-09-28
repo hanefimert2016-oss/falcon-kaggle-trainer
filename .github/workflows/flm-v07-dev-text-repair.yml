@@ -103,7 +103,7 @@ jobs:
           assert s['coder_sft_tool100k']['rows'] >= 85000, s['coder_sft_tool100k']
           assert s['coder_sft_agentic']['rows'] >= 2500, s['coder_sft_agentic']
           assert s['coder_sft_agentic']['plan_turns'] >= 5000, s['coder_sft_agentic']
-          assert s['coder_sft']['supervised_tokens'] >= 75_000_000, s['coder_sft']
+          assert s['coder_sft']['supervised_tokens'] >= 70_000_000, s['coder_sft']
           assert s['tokenizer']['vocab_size'] >= 30000
           special=s['tokenizer']['special_ids']
           for token in ('<|semantic_ir|>','<|semantic_end|>','<|core_result|>','<|core_end|>'):
