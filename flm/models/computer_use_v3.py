@@ -49,7 +49,7 @@ class ComputerUseV3(nn.Module):
         self.task_pos = nn.Embedding(cfg.task_len, cfg.embd)
         text_layer = nn.TransformerEncoderLayer(
             cfg.embd, cfg.n_head, 4 * cfg.embd, cfg.dropout,
-            activation="gelu", batch_first=True, norm_first=True,
+            activation=F.silu, batch_first=True, norm_first=True,
         )
         self.text_encoder = nn.TransformerEncoder(text_layer, cfg.text_layers)
 
