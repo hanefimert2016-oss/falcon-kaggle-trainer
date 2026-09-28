@@ -377,8 +377,12 @@ jobs:
           from flm.core.semantic_ir import Program
           import re, json
           seen_ops=set()
-          for mode in range(SEMANTIC_MODES):
-              messages=messages_for(mode)
+          language_seen=set()
+          for sample in range(SEMANTIC_MODES*2):
+              mode=sample%SEMANTIC_MODES
+              language='tr' if sample<SEMANTIC_MODES else 'en'
+              language_seen.add((mode,language))
+              messages=messages_for(sample)
               joined='\n'.join(x['content'] for x in messages)
               user_text=next(x['content'] for x in messages if x['role']=='user')
               final_text=next(x['content'].split('<|final|>',1)[-1].strip() for x in messages if x['role']=='assistant' and '<|final|>' in x['content'])
@@ -406,6 +410,7 @@ jobs:
               if mode==9:
                   ops=[a['op'] for item in result.operation_results for a in item.get('actions',[])]
                   assert 'TYPE' in ops,ops
+          assert len(language_seen)==SEMANTIC_MODES*2,language_seen
           assert seen_ops=={
               'ARITHMETIC','ANALYZE_CODE','STATE_PLAN','UI_PLAN','VERIFY',
               'IDENTITY','SYNTHESIZE_FACTS'
