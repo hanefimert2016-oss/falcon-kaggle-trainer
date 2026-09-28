@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import random
+
 from .runtime import CoreResponse
 
 
@@ -12,7 +14,11 @@ def _is_turkish(text: str) -> bool:
 
 
 class DeterministicRenderer:
-    """Training-free renderer for simple verified FLM Core results."""
+    """Training-free renderer for verified FLM Core results.
+
+    Semantic content stays fixed while selected conversational outputs may vary
+    in wording. Variation never changes the verified Core facts.
+    """
 
     def render(self, prompt: str, response: CoreResponse) -> str:
         tr=_is_turkish(prompt)
@@ -27,6 +33,23 @@ class DeterministicRenderer:
             if not item.get("ok",False):
                 msg=item.get("message") or item.get("error") or "unknown error"
                 return (f"İşlem başarısız: {msg}" if tr else f"Operation failed: {msg}")
+
+            if kind=="IDENTITY":
+                if tr:
+                    variants=(
+                        "Ben FLM'im. İstekleri anlayıp Semantic Core üzerinden akıl yürüten bir yapay zekâ asistanıyım.",
+                        "Adım FLM. Tek bir dil arayüzü modeliyle çalışan, asıl muhakemeyi Semantic Core'da yapan bir yapay zekâ asistanıyım.",
+                        "Ben FLM adlı yapay zekâ asistanıyım; dili arayüz modeli işler, planlama ve doğrulama gibi işleri ise çekirdeğim yürütür.",
+                        "FLM'im. Amacım soruları anlamak, çekirdek araçlarla sonuç üretmek ve bunu sana doğal biçimde aktarmak.",
+                    )
+                else:
+                    variants=(
+                        "I'm FLM, an AI assistant that uses a Semantic Core for reasoning and a single trainable interface model for language.",
+                        "My name is FLM. I'm an AI assistant whose reasoning is handled by a Semantic Core while one interface model handles language.",
+                        "I'm FLM: an AI assistant designed to understand requests, reason through a Semantic Core, and return useful answers.",
+                        "I'm FLM. I use one language interface model, while planning, verification, and other reasoning live in my Core.",
+                    )
+                return random.SystemRandom().choice(variants)
 
             if kind=="ARITHMETIC":
                 return (f"Sonuç: {item.get('value')}." if tr else f"Result: {item.get('value')}.")
