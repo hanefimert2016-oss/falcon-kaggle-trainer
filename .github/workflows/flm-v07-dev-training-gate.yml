@@ -23,13 +23,13 @@ jobs:
   launch-quality-training:
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 360
     env:
       KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
       KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
       TEXT_REF: ${{ vars.KAGGLE_OWNER }}/flm-v07-dev-text
       COMPUTER_REF: ${{ vars.KAGGLE_OWNER }}/flm-v07-dev-computer
-      GPU_REF: ${{ vars.KAGGLE_OWNER }}/falcon-flm-v07-quality-gpu
+      GPU_REF: ${{ vars.KAGGLE_OWNER }}/falcon-flm-v07-quality-v2-gpu
     steps:
       - uses: actions/checkout@v4
         with:
@@ -100,8 +100,8 @@ jobs:
           from pathlib import Path
           m=json.loads(Path('kernel_v07_quality_gpu/kernel-metadata.json').read_text())
           owner=m['id'].split('/')[0]
-          assert m['id']==f'{owner}/falcon-flm-v07-quality-gpu',m
-          assert m['title']=='Falcon FLM v07 Quality GPU',m
+          assert m['id']==f'{owner}/falcon-flm-v07-quality-v2-gpu',m
+          assert m['title']=='Falcon FLM v07 Quality V2 GPU',m
           assert m['dataset_sources']==[
               f'{owner}/flm-v07-dev-text',
               f'{owner}/flm-v07-dev-computer',
@@ -149,7 +149,7 @@ jobs:
         run: |
           set -euo pipefail
           ok=0
-          for attempt in $(seq 1 120); do
+          for attempt in $(seq 1 300); do
             STATUS="$(kaggle kernels status "$GPU_REF" 2>&1 || true)"
             echo "$STATUS"
             if echo "$STATUS" | grep -Eq '(KernelWorkerStatus\.)?(QUEUED|RUNNING)'; then
