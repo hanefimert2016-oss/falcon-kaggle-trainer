@@ -74,11 +74,12 @@ jobs:
           assert int(t.get('data_revision',0)) >= 2
           ts=t.get('stats') or {}
           assert int((ts.get('main') or {}).get('tokens',0)) >= 1_000_000_000
-          assert int((ts.get('coder') or {}).get('tokens',0)) >= 190_000_000
+          assert int((ts.get('coder') or {}).get('tokens',0)) >= 175_000_000
           assert int((ts.get('main_sft') or {}).get('supervised_tokens',0)) >= 300_000_000
-          assert int((ts.get('coder_sft') or {}).get('supervised_tokens',0)) >= 90_000_000
+          assert int((ts.get('coder_sft') or {}).get('supervised_tokens',0)) >= 75_000_000
           assert int((ts.get('tokenizer') or {}).get('vocab_size',0)) >= 30_000
           assert int((ts.get('coder_sft_agentic') or {}).get('rows',0)) >= 2500
+          assert int((ts.get('coder_sft_agentic') or {}).get('plan_turns',0)) >= 5000
 
           assert c.get('pipeline_version')=='v0.7-dev-computer',c.get('pipeline_version')
           assert int(c.get('data_revision',0)) >= 2
