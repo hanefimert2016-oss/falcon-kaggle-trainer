@@ -52,6 +52,10 @@ def _check_text_metrics(kind: str, model: dict, errors: list[str]) -> None:
         errors.append(f"{kind} context is below 4096 tokens: {cfg.get('seq_len')}")
     if cfg.get("position_encoding") != "rope":
         errors.append(f"{kind} is not using RoPE: {cfg.get('position_encoding')!r}")
+    if cfg.get("core_memory") is not True:
+        errors.append(f"{kind} CoreMemory architecture is disabled")
+    if int(cfg.get("core_memory_order",0)) < 2:
+        errors.append(f"{kind} CoreMemory order is invalid: {cfg.get('core_memory_order')}")
 
 
 def validate_suite(suite: dict) -> list[str]:
