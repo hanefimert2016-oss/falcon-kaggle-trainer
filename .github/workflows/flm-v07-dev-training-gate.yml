@@ -71,19 +71,23 @@ jobs:
           c=json.loads((cr/'sources.json').read_text(encoding='utf-8'))
 
           assert t.get('pipeline_version')=='v0.7-dev-text',t.get('pipeline_version')
+          assert int(t.get('data_revision',0)) >= 2
           ts=t.get('stats') or {}
-          assert int((ts.get('main') or {}).get('tokens',0)) >= 800_000_000
-          assert int((ts.get('coder') or {}).get('tokens',0)) >= 145_000_000
+          assert int((ts.get('main') or {}).get('tokens',0)) >= 1_000_000_000
+          assert int((ts.get('coder') or {}).get('tokens',0)) >= 190_000_000
           assert int((ts.get('main_sft') or {}).get('supervised_tokens',0)) >= 300_000_000
-          assert int((ts.get('coder_sft') or {}).get('supervised_tokens',0)) >= 60_000_000
+          assert int((ts.get('coder_sft') or {}).get('supervised_tokens',0)) >= 90_000_000
+          assert int((ts.get('tokenizer') or {}).get('vocab_size',0)) >= 30_000
+          assert int((ts.get('coder_sft_agentic') or {}).get('rows',0)) >= 2500
 
           assert c.get('pipeline_version')=='v0.7-dev-computer',c.get('pipeline_version')
+          assert int(c.get('data_revision',0)) >= 2
           cs=c.get('stats') or {}
-          assert int(cs.get('examples',0)) >= 30_000
+          assert int(cs.get('examples',0)) >= 40_000
           ops=cs.get('ops') or {}
-          assert int(ops.get('CLICK',0)) >= 20_000
-          assert int(ops.get('KEY',0)) >= 100
-          assert int(ops.get('TYPE',0)) >= 10
+          minimum={'CLICK':20000,'KEY':1000,'TYPE':1000,'SCROLL':750,'DRAG':300,'RIGHT_CLICK':200,'DOUBLE_CLICK':200,'DONE':500}
+          for op,n in minimum.items():
+              assert int(ops.get(op,0)) >= n,(op,ops)
           assert (cr/'cu07_manifest.jsonl').stat().st_size > 1000
           print('V07_QUALITY_DATASETS_READY',ts.get('main'),cs.get('examples'),ops)
           PY
@@ -114,15 +118,19 @@ jobs:
           src=Path('kernel_v07_quality_gpu/train_v07_dev.py').read_text()
           for expected in (
               'FLM_V07_MAIN_SEQ',
-              '768',
+              '4096',
+              'FLM_V07_CODER_SEQ',
+              '4096',
+              'FLM_V07_CODER_LAYERS',
+              '14',
+              'FLM_V07_POSITION_ENCODING',
+              'rope',
               'FLM_V07_MAIN_STEPS',
-              '70000',
-              'FLM_V07_MAIN_SFT_STEPS',
-              '12000',
-              'FLM_V07_CODER_STEPS',
-              '25000',
-              'FLM_V07_CODER_SFT_STEPS',
-              '10000',
+              '0',
+              'FLM_V07_CODER_INIT_FROM_MAIN',
+              'FLM_V07_CU_INIT_FROM_MAIN',
+              'FLM_V07_CU_TASK_LEN',
+              '512',
               'FLM_V07_TEXT_EVAL_INTERVAL',
               'FLM_V07_TEXT_CHECKPOINT_INTERVAL',
           ):
