@@ -59,6 +59,16 @@ SOURCES = {
         "license": "apache-2.0",
         "role": "Python code with docstrings; formatting preserved",
     },
+    "coder_java": {
+        "repo": "Nan-Do/code-search-net-java",
+        "license": "apache-2.0",
+        "role": "Java CodeSearchNet code and summaries; formatting preserved",
+    },
+    "coder_go": {
+        "repo": "Nan-Do/code-search-net-go",
+        "license": "apache-2.0",
+        "role": "Go CodeSearchNet code and summaries; formatting preserved",
+    },
     "coder_unreal": {
         "repo": "AdamCodd/unreal-engine-5-code",
         "license": "apache-2.0",
@@ -181,7 +191,7 @@ def prepare_coder_raw(out: Path, target_bytes: int, sample_bytes: int = 96_000_0
     sample.unlink(missing_ok=True)
     total = 0
     sample_written = 0
-    counts = {"unreal": 0, "python": 0}
+    counts = {"unreal": 0, "python": 0, "java": 0, "go": 0}
     seen: set[str] = set()
 
     def accept(fh, sfh, instruction, code, source):
@@ -222,13 +232,24 @@ def prepare_coder_raw(out: Path, target_bytes: int, sample_bytes: int = 96_000_0
         except Exception as exc:
             print(f"v07_data optional Unreal failed: {type(exc).__name__}: {exc}", flush=True)
 
-        for row in stream(SOURCES["coder_python"]["repo"]):
+        for source_key, label in (
+            ("coder_python", "python"),
+            ("coder_java", "java"),
+            ("coder_go", "go"),
+        ):
             if total >= target_bytes:
                 break
-            code = row.get("code") or row.get("whole_func_string") or row.get("func_code_string") or ""
-            desc = row.get("summary") or row.get("docstring") or row.get("func_documentation_string") or ""
-            if accept(fh, sfh, desc, code, "codesearchnet-python"):
-                counts["python"] += 1
+            for row in stream(SOURCES[source_key]["repo"]):
+                if total >= target_bytes:
+                    break
+                code = row.get("code") or row.get("whole_func_string") or row.get("func_code_string") or ""
+                desc = row.get("summary") or row.get("docstring") or row.get("func_documentation_string") or ""
+                if accept(fh, sfh, desc, code, f"codesearchnet-{label}"):
+                    counts[label] += 1
+            print(
+                f"v07_data coder_pretrain {label} records={counts[label]} bytes={total}/{target_bytes}",
+                flush=True,
+            )
 
     if total < int(target_bytes * .95):
         raise RuntimeError(f"coder pretrain underfilled: {total}/{target_bytes}")
