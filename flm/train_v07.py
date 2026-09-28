@@ -403,8 +403,42 @@ def train_text_pretrain(kind, data, out_root, runtime, vocab_size, steps, batch,
     best_step = -1
     stage = out_root / kind
     best_path = stage / "checkpoint_best_pretrain.pt"
+    resume_path = stage / "checkpoint_resume_pretrain.pt"
+    final_path = stage / "checkpoint_pretrain.pt"
+    start_step = 0
 
-    for step in range(steps):
+    if resume_enabled() and final_path.is_file():
+        done = torch.load(final_path, map_location=runtime.device, weights_only=False)
+        done_result = done.get("result") or {}
+        if int(done_result.get("steps", 0)) >= steps and done.get("config") == cfg.__dict__:
+            base.load_state_dict(done["model"])
+            print(f"V07_{kind.upper()}_PRETRAIN_ALREADY_COMPLETE steps={done_result.get('steps')}", flush=True)
+            return base, cfg, done_result
+
+    if resume_enabled() and resume_path.is_file():
+        ck = torch.load(resume_path, map_location=runtime.device, weights_only=False)
+        required = {"model", "optimizer", "sampler", "next_step"}
+        if required.issubset(ck):
+            if ck.get("config") != cfg.__dict__:
+                raise RuntimeError(f"{kind} pretrain resume config mismatch")
+            base.load_state_dict(ck["model"])
+            opt.load_state_dict(ck["optimizer"])
+            optimizer_to_device(opt, runtime.device)
+            if scaler.is_enabled() and ck.get("scaler"):
+                scaler.load_state_dict(ck["scaler"])
+            train_pool.load_state_dict(ck["sampler"])
+            start_step = int(ck["next_step"])
+            tokens_seen = int(ck.get("tokens_seen", 0))
+            last = float(ck.get("train_loss", float("nan")))
+            best_eval = float(ck.get("best_eval_loss", float("inf")))
+            best_step = int(ck.get("best_step", -1))
+            print(
+                f"V07_{kind.upper()}_PRETRAIN_RESUME step={start_step}/{steps} "
+                f"tokens_seen={tokens_seen} sampler_epoch={train_pool.epoch}",
+                flush=True,
+            )
+
+    for step in range(start_step, steps):
         if step < warmup:
             lr = lr_max * (step + 1) / warmup
         else:
@@ -465,12 +499,18 @@ def train_text_pretrain(kind, data, out_root, runtime, vocab_size, steps, batch,
             atomic_torch_save(
                 {
                     "model": base.state_dict(),
+                    "optimizer": opt.state_dict(),
+                    "scaler": scaler.state_dict() if scaler.is_enabled() else None,
+                    "sampler": train_pool.state_dict(),
                     "config": cfg.__dict__,
                     "step": step + 1,
+                    "next_step": step + 1,
                     "tokens_seen": tokens_seen,
                     "train_loss": last,
+                    "best_eval_loss": best_eval,
+                    "best_step": best_step,
                 },
-                stage / "checkpoint_resume_pretrain.pt",
+                resume_path,
             )
 
         if step % 100 == 0 or step == steps - 1:
@@ -558,8 +598,42 @@ def train_text_sft(kind, base, cfg, data, mask, out_root, runtime, steps, batch,
     best_step = -1
     stage = out_root / kind
     best_path = stage / "checkpoint_best_sft.pt"
+    resume_path = stage / "checkpoint_resume_sft.pt"
+    final_path = stage / "checkpoint.pt"
+    start_step = 0
 
-    for step in range(steps):
+    if resume_enabled() and final_path.is_file():
+        done = torch.load(final_path, map_location=runtime.device, weights_only=False)
+        done_result = done.get("result") or {}
+        if int(done_result.get("steps", 0)) >= steps and done.get("config") == cfg.__dict__:
+            model.load_state_dict(done["model"])
+            print(f"V07_{kind.upper()}_SFT_ALREADY_COMPLETE steps={done_result.get('steps')}", flush=True)
+            return model, done_result
+
+    if resume_enabled() and resume_path.is_file():
+        ck = torch.load(resume_path, map_location=runtime.device, weights_only=False)
+        required = {"model", "optimizer", "sampler", "next_step"}
+        if required.issubset(ck):
+            if ck.get("config") != cfg.__dict__:
+                raise RuntimeError(f"{kind} SFT resume config mismatch")
+            model.load_state_dict(ck["model"])
+            opt.load_state_dict(ck["optimizer"])
+            optimizer_to_device(opt, runtime.device)
+            if scaler.is_enabled() and ck.get("scaler"):
+                scaler.load_state_dict(ck["scaler"])
+            sft_pool.load_state_dict(ck["sampler"])
+            start_step = int(ck["next_step"])
+            supervised_seen = int(ck.get("supervised_seen", 0))
+            last = float(ck.get("train_loss", float("nan")))
+            best_eval = float(ck.get("best_eval_loss", float("inf")))
+            best_step = int(ck.get("best_step", -1))
+            print(
+                f"V07_{kind.upper()}_SFT_RESUME step={start_step}/{steps} "
+                f"supervised_seen={supervised_seen} sampler_epoch={sft_pool.epoch}",
+                flush=True,
+            )
+
+    for step in range(start_step, steps):
         if step < warmup:
             lr = lr_max * (step + 1) / warmup
         else:
@@ -623,12 +697,18 @@ def train_text_sft(kind, base, cfg, data, mask, out_root, runtime, steps, batch,
             atomic_torch_save(
                 {
                     "model": model.state_dict(),
+                    "optimizer": opt.state_dict(),
+                    "scaler": scaler.state_dict() if scaler.is_enabled() else None,
+                    "sampler": sft_pool.state_dict(),
                     "config": cfg.__dict__,
                     "step": step + 1,
+                    "next_step": step + 1,
                     "supervised_seen": supervised_seen,
                     "train_loss": last,
+                    "best_eval_loss": best_eval,
+                    "best_step": best_step,
                 },
-                stage / "checkpoint_resume_sft.pt",
+                resume_path,
             )
 
         if step % 100 == 0 or step == steps - 1:
@@ -979,8 +1059,34 @@ def train_computer_use(v07_root, out_root, runtime, tok, vocab_size, steps):
     start = time.time()
     last = float("nan")
     action_counts = {op: len(rows) for op, rows in sampler.by_op.items()}
+    stage = out_root / "computer_use"
+    final_path = stage / "checkpoint.pt"
+    resume_path = stage / "checkpoint_resume.pt"
+    start_step = 0
 
-    for step in range(steps):
+    if resume_enabled() and final_path.is_file():
+        done = torch.load(final_path, map_location=runtime.device, weights_only=False)
+        done_result = done.get("result") or {}
+        if int(done_result.get("steps", 0)) >= steps and done.get("config") == cfg.__dict__:
+            base.load_state_dict(done["model"])
+            print(f"V07_CU_ALREADY_COMPLETE steps={done_result.get('steps')}", flush=True)
+            return done_result
+
+    if resume_enabled() and resume_path.is_file():
+        ck = torch.load(resume_path, map_location=runtime.device, weights_only=False)
+        required = {"model", "optimizer", "sampler", "next_step"}
+        if required.issubset(ck):
+            if ck.get("config") != cfg.__dict__ or ck.get("domains") != domains:
+                raise RuntimeError("ComputerUse resume config/domain mismatch")
+            base.load_state_dict(ck["model"])
+            opt.load_state_dict(ck["optimizer"])
+            optimizer_to_device(opt, runtime.device)
+            sampler.load_state_dict(ck["sampler"])
+            start_step = int(ck["next_step"])
+            last = float(ck.get("train_loss", float("nan")))
+            print(f"V07_CU_RESUME step={start_step}/{steps}", flush=True)
+
+    for step in range(start_step, steps):
         picked = sampler.sample(batch)
         image, task, pin, kw = cu_batch(picked, stores, tok, cfg, pad_id, domains, runtime.device)
         if not torch.isfinite(image).all():
@@ -1006,10 +1112,19 @@ def train_computer_use(v07_root, out_root, runtime, tok, vocab_size, steps):
         if step % 100 == 0 or step == steps - 1:
             pv = {k: float(v.detach().float().mean()) for k, v in parts.items()}
             print(f"v07 computer_use step={step}/{steps} loss={last:.4f} parts={pv}", flush=True)
-        if step > 0 and step % 2000 == 0:
+        if (step + 1) % 2000 == 0:
             atomic_torch_save(
-                {"model": base.state_dict(), "config": cfg.__dict__, "domains": domains, "step": step},
-                out_root / "computer_use" / "checkpoint_resume.pt",
+                {
+                    "model": base.state_dict(),
+                    "optimizer": opt.state_dict(),
+                    "sampler": sampler.state_dict(),
+                    "config": cfg.__dict__,
+                    "domains": domains,
+                    "step": step + 1,
+                    "next_step": step + 1,
+                    "train_loss": last,
+                },
+                resume_path,
             )
 
     ev = eval_cu(
@@ -1032,10 +1147,10 @@ def train_computer_use(v07_root, out_root, runtime, tok, vocab_size, steps):
         "elapsed_s": time.time() - start,
         "config": cfg.__dict__,
     }
-    out = out_root / "computer_use"
+    out = stage
     atomic_torch_save(
         {"model": base.state_dict(), "config": cfg.__dict__, "domains": domains, "result": result},
-        out / "checkpoint.pt",
+        final_path,
     )
     (out / "metrics.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
     print("V07_CU_RESULT=" + json.dumps(result), flush=True)
