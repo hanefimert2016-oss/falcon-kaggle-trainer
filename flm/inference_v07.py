@@ -7,6 +7,7 @@ import torch
 from tokenizers import Tokenizer
 
 from flm.models.text_lm import ByteCausalLM, TextConfig
+from flm.models.core_memory import CoreMemoryBank
 from flm.tooling.runtime import ToolRegistry, run_tool_loop
 
 
@@ -57,8 +58,10 @@ class V07TextAgent:
         temperature: float = 0.25,
         top_k: int = 20,
         max_new: int = 256,
+        core_memory: str | Path | None = None,
     ):
-        ck = torch.load(Path(checkpoint), map_location="cpu", weights_only=False)
+        checkpoint = Path(checkpoint)
+        ck = torch.load(checkpoint, map_location="cpu", weights_only=False)
         cfg = TextConfig(**ck["config"])
         model = ByteCausalLM(cfg)
         missing, unexpected = model.load_state_dict(ck["model"], strict=False)
@@ -70,6 +73,16 @@ class V07TextAgent:
             device = "cuda" if torch.cuda.is_available() else "cpu"
         self.device = torch.device(device)
         self.model = model.to(self.device).eval()
+        if cfg.core_memory:
+            memory_path = Path(core_memory) if core_memory is not None else checkpoint.parent / "core_memory.pt"
+            if memory_path.is_file():
+                bank = CoreMemoryBank.load(memory_path, map_location="cpu").to(self.device)
+                self.model.attach_core_memory(bank)
+                self.core_memory_path = memory_path
+            else:
+                self.core_memory_path = None
+        else:
+            self.core_memory_path = None
         self.cfg = cfg
         self.tokenizer = Tokenizer.from_file(str(tokenizer))
         self.temperature = float(temperature)
