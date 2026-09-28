@@ -35,6 +35,7 @@ jobs:
       - name: FLM v0.7 local GPU launcher and resume regression
         run: |
           set -euo pipefail
+          bash -n train-v07-local.sh
           bash -n scripts/train_v07_local_gpu.sh
           bash -n scripts/monitor_v07_local.sh
           python - <<'PY'
@@ -67,7 +68,17 @@ jobs:
           y.load_state_dict(s)
           actual=[r["id"] for r in y.sample(12)]
           assert expected==actual
-          print("V07_LOCAL_RESUME_HELPERS_OK")
+
+          import torch
+          from flm.models.text_lm import ByteCausalLM, TextConfig
+          tiny=ByteCausalLM(TextConfig(vocab_size=64,seq_len=16,n_layer=2,n_head=2,n_embd=32))
+          tiny.gradient_checkpointing=True
+          tiny.train()
+          idx=torch.randint(0,64,(2,16))
+          _,loss=tiny(idx,idx)
+          loss.backward()
+          assert torch.isfinite(loss)
+          print("V07_LOCAL_RESUME_HELPERS_OK",float(loss))
           PY
 
       - name: Parse workflow YAML
