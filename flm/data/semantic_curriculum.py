@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import difflib
 import json
 import random
+import re
 from pathlib import Path
 
 from flm.core import FLMCore, Program
@@ -24,6 +26,50 @@ RELATIONS=(
     ("daha hızlıdır","is faster than","FasterThan"),
     ("içindedir","is in","LocatedIn"),
 )
+
+SEMANTIC_MODES=16
+
+TR_IDENTITY_ANSWERS=(
+    "Ben FLM'im. Dili tek bir arayüz modeliyle işler, asıl muhakemeyi Semantic Core üzerinden yürütürüm.",
+    "Adım FLM. İstekleri anlayan bir arayüz Transformer'ım var; planlama, doğrulama ve mantık ise çekirdekte çalışır.",
+    "Ben FLM adlı bir yapay zekâ asistanıyım. Dil üretimini arayüz modeli, doğrulanabilir muhakemeyi ise Semantic Core üstlenir.",
+    "FLM'im. Amacım isteğini anlamak, çekirdekte gerekli işlemleri yürütmek ve sonucu doğal bir dille sana aktarmak.",
+    "Bana FLM diyebilirsin. Tek bir eğitilebilir dil arayüzü ile eğitim gerektirmeyen Semantic Core'u birlikte kullanırım.",
+    "Ben FLM; dil arayüzü, semantik hafıza, planlayıcı ve doğrulayıcı çekirdeği birlikte kullanan bir yapay zekâ asistanıyım.",
+)
+EN_IDENTITY_ANSWERS=(
+    "I'm FLM. One trainable interface model handles language while the Semantic Core performs the structured reasoning.",
+    "My name is FLM. I use a single language interface Transformer, with planning and verification handled by my Semantic Core.",
+    "I'm an AI assistant called FLM. Language is handled by one interface model and structured reasoning lives in the Core.",
+    "I'm FLM. I interpret requests through one language model, then use a Semantic Core for reasoning, tools, and verification.",
+    "You can call me FLM. I combine one trainable language interface with a training-free Semantic Core.",
+    "I'm FLM, an AI assistant built around a language interface, semantic memory, planning, and verification.",
+)
+
+
+def _normalized_words(text:str)->str:
+    text=re.sub(r"[^0-9A-Za-zÇĞİÖŞÜçğıöşü]+"," ",str(text or "").casefold())
+    return " ".join(text.split())
+
+
+def copy_similarity(source:str,answer:str)->float:
+    a=_normalized_words(source)
+    b=_normalized_words(answer)
+    if not a or not b:
+        return 0.0
+    return difflib.SequenceMatcher(None,a,b).ratio()
+
+
+def _assert_not_copy(user:str,final:str)->None:
+    # Tiny answers such as "Evet." are semantic labels rather than copied prose.
+    if len(_normalized_words(final))<18:
+        return
+    score=copy_similarity(user,final)
+    if score>=0.88:
+        raise RuntimeError(
+            f"semantic curriculum answer copies input too closely score={score:.3f} "
+            f"user={user!r} final={final!r}"
+        )
 
 
 def compact(obj):
@@ -301,10 +347,117 @@ def _long_chain_case(i:int,tr:bool,names):
     return user,prog,("Evet; ilişki üç adımda çıkarılabilir." if tr else "Yes; it follows through three relation steps.")
 
 
+def _identity_case(i:int,tr:bool):
+    user=(
+        ("Sen kimsin?" if i%4==0 else "Kendini tanıt.")
+        if tr else
+        ("Who are you?" if i%4==1 else "Introduce yourself.")
+    )
+    prog=semantic_ir(operations=[operation("IDENTITY")],source="synthetic-semantic-curriculum-v3")
+    answers=TR_IDENTITY_ANSWERS if tr else EN_IDENTITY_ANSWERS
+    final=answers[(i//SEMANTIC_MODES)%len(answers)]
+    return user,prog,final
+
+
+def _fact_synthesis_case(i:int,tr:bool,names):
+    a=names[i%len(names)]
+    if tr:
+        user=(
+            f"Kaynak bilgi: {a} bir kedidir. {a} bir memelidir. "
+            f"Bu bilgileri aynen kopyalamadan {a} hakkında doğal bir cevap üret."
+        )
+        facts=[
+            {"subject":a,"predicate":"type","object":"kedi"},
+            {"subject":a,"predicate":"class","object":"memeli"},
+        ]
+        variants=(
+            f"{a}, kedi türünde bir memelidir.",
+            f"{a} hem bir kedidir hem de memeliler sınıfına aittir.",
+            f"{a}'yı bir kedi ve dolayısıyla bir memeli olarak tanımlayabiliriz.",
+            f"{a}, memeliler grubundaki bir kedidir.",
+        )
+    else:
+        user=(
+            f"Source facts: {a} is a cat. {a} is a mammal. "
+            f"Answer naturally about {a} without copying those sentences."
+        )
+        facts=[
+            {"subject":a,"predicate":"type","object":"cat"},
+            {"subject":a,"predicate":"class","object":"mammal"},
+        ]
+        variants=(
+            f"{a} is a cat that belongs to the mammal class.",
+            f"{a} can be described as both a cat and a mammal.",
+            f"{a} belongs to the mammals and is specifically a cat.",
+            f"In short, {a} is a mammalian cat.",
+        )
+    prog=semantic_ir(
+        operations=[operation("SYNTHESIZE_FACTS",facts=facts)],
+        source="synthetic-semantic-curriculum-v3",
+    )
+    return user,prog,variants[(i//SEMANTIC_MODES)%len(variants)]
+
+
+def _answer_style_case(i:int,tr:bool):
+    value=40+(i%53)
+    user=(
+        f"Çekirdek sonucu {value}. Cevabı veri satırını tekrar etmeden doğal Türkçe ile söyle."
+        if tr else
+        f"The Core result is {value}. Answer naturally without repeating the data row verbatim."
+    )
+    prog=semantic_ir(
+        operations=[operation("ARITHMETIC",expression=str(value))],
+        source="synthetic-semantic-curriculum-v3",
+    )
+    if tr:
+        variants=(
+            f"Hesabın sonucu {value}.",
+            f"Sonuç olarak {value} elde ediliyor.",
+            f"Bu işlem {value} değerini veriyor.",
+            f"Doğrulanan sonuç {value}.",
+        )
+    else:
+        variants=(
+            f"The calculation comes out to {value}.",
+            f"The verified result is {value}.",
+            f"This evaluates to {value}.",
+            f"The result of the calculation is {value}.",
+        )
+    return user,prog,variants[(i//SEMANTIC_MODES)%len(variants)]
+
+
+def _code_explain_case(i:int,tr:bool):
+    name=f"double_{i%71}"
+    source=f"def {name}(x):\n    return x * 2\n"
+    user=(
+        f"Bu kodun ne yaptığını kodu aynen tekrar etmeden açıkla:\n\n```python\n{source}```"
+        if tr else
+        f"Explain what this code does without repeating it verbatim:\n\n```python\n{source}```"
+    )
+    prog=semantic_ir(
+        operations=[operation("ANALYZE_CODE",language="python",source=source)],
+        source="synthetic-semantic-curriculum-v3",
+    )
+    variants=(
+        (
+            f"{name} adlı fonksiyon, aldığı sayının iki katını döndürüyor.",
+            f"Bu fonksiyon girdiyi 2 ile çarpıp sonucu geri veriyor; adı {name}.",
+            f"{name}, tek bir değer alıp onu iki katına çıkaran basit bir fonksiyon.",
+        )
+        if tr else
+        (
+            f"The function {name} takes one value and returns twice that value.",
+            f"{name} simply doubles its input and returns the result.",
+            f"This defines {name}, a small function that multiplies the input by two.",
+        )
+    )
+    return user,prog,variants[(i//SEMANTIC_MODES)%len(variants)]
+
+
 def messages_for(i:int):
     tr=(i%2==0)
     names=TR_NAMES if tr else EN_NAMES
-    mode=i%12
+    mode=i%SEMANTIC_MODES
     if mode==0:
         a=names[i%len(names)]
         tr_type,en_type,sym=TYPES[(i//4)%len(TYPES)]
@@ -331,16 +484,32 @@ def messages_for(i:int):
         user,prog,final=_ui_type_case(i,tr)
     elif mode==10:
         user,prog,final=_verify_case(i,tr)
+    elif mode==11:
+        user,prog,final=(
+            _negative_query_case(i,tr,names)
+            if (i//SEMANTIC_MODES)%2==0
+            else _long_chain_case(i,tr,names)
+        )
+    elif mode==12:
+        user,prog,final=_identity_case(i,tr)
+    elif mode==13:
+        user,prog,final=_fact_synthesis_case(i,tr,names)
+    elif mode==14:
+        user,prog,final=_answer_style_case(i,tr)
     else:
-        user,prog,final=(_negative_query_case(i,tr,names) if (i//12)%2==0 else _long_chain_case(i,tr,names))
+        user,prog,final=_code_explain_case(i,tr)
 
+    _assert_not_copy(user,final)
     payload=_core_payload(prog)
     ir="<|semantic_ir|>"+compact(prog)+"<|semantic_end|>"
     core="<|core_result|>"+compact(payload)+"<|core_end|>"
     system=(
         "You are the single FLM Interface Transformer. Convert language/code/UI requests "
         "into FLM Semantic IR. Never perform hidden reasoning that FLM Core can execute. "
-        "After receiving a verified core result, render it naturally without contradicting it."
+        "After receiving a verified core result, use it as semantic meaning rather than text "
+        "to copy. Produce a fresh natural answer in the user's language, preserve the Core "
+        "facts exactly, avoid mirroring the source wording, and vary phrasing across equivalent "
+        "examples without changing the conclusion."
     )
     return [
         {"role":"system","content":system},
@@ -351,23 +520,26 @@ def messages_for(i:int):
     ]
 
 
-def append_semantic_curriculum(path:Path,rows:int=240_000,seed:int=7071)->dict:
+def append_semantic_curriculum(path:Path,rows:int=600_000,seed:int=7071)->dict:
     rng=random.Random(seed)
     indices=list(range(rows))
     rng.shuffle(indices)
-    mode_counts={str(i):0 for i in range(12)}
+    mode_counts={str(i):0 for i in range(SEMANTIC_MODES)}
     with path.open("a",encoding="utf-8") as fh:
         for i in indices:
             messages=messages_for(i)
             fh.write(json.dumps({
                 "messages":messages,
-                "source":"synthetic:flm-semantic-curriculum-v2",
+                "source":"synthetic:flm-semantic-curriculum-v3",
             },ensure_ascii=False)+"\n")
-            mode_counts[str(i%12)]+=1
+            mode_counts[str(i%SEMANTIC_MODES)]+=1
     return {
         "rows":rows,
-        "modes":12,
+        "modes":SEMANTIC_MODES,
         "mode_counts":mode_counts,
-        "source":"synthetic:flm-semantic-curriculum-v2",
+        "source":"synthetic:flm-semantic-curriculum-v3",
         "core_executed":True,
+        "anti_copy_verified":True,
+        "identity_variants_tr":len(TR_IDENTITY_ANSWERS),
+        "identity_variants_en":len(EN_IDENTITY_ANSWERS),
     }
