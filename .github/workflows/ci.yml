@@ -232,7 +232,7 @@ jobs:
           train=Path('flm/train_v07.py').read_text()
           assert 'validate_pipeline_inputs' in train
           assert 'init_checkpoint=main_seed' in train
-          assert 'V07_CU_TASK_EMBEDDING_FROM_MAIN' in train
+          assert 'V07_CU_TEXT_FROM_MAIN' in train
           assert 'PRETRAIN_EPOCHS' in train
           assert 'SFT_EPOCHS' in train
 
@@ -241,6 +241,27 @@ jobs:
           coder_cfg=text_config('coder',32768)
           assert main_cfg==coder_cfg,(main_cfg,coder_cfg)
           assert main_cfg.seq_len==4096 and main_cfg.position_encoding=='rope'
+
+          import torch
+          from flm.models.text_lm import ByteCausalLM,TextConfig
+          from flm.models.computer_use_v3 import ComputerUseV3,ComputerUseV3Config
+          from flm.train_v07 import initialize_computer_text_from_main
+          tm=ByteCausalLM(TextConfig(
+              vocab_size=128,seq_len=64,n_layer=2,n_head=4,n_embd=32,
+              position_encoding='rope',
+          ))
+          cu=ComputerUseV3(ComputerUseV3Config(
+              text_vocab=128,task_len=32,image_size=32,patch=16,
+              embd=32,text_layers=2,vision_layers=1,n_head=4,
+          ))
+          copied=initialize_computer_text_from_main(cu,tm.state_dict())
+          assert copied==2
+          assert torch.equal(cu.task_emb.weight,tm.token.weight)
+          assert torch.equal(
+              cu.text_encoder.layers[0].self_attn.in_proj_weight,
+              tm.blocks[0].attn.qkv.weight,
+          )
+
           assert 'split_train_eval_stream' in train
           assert 'checkpoint_best_pretrain.pt' in train
           assert 'checkpoint_best_sft.pt' in train
