@@ -13,6 +13,7 @@ class TextConfig:
     n_head: int = 8
     n_embd: int = 512
     dropout: float = 0.0
+    position_encoding: str = "learned"
 
 class CausalSelfAttention(nn.Module):
     def __init__(self, cfg: TextConfig):
@@ -24,12 +25,37 @@ class CausalSelfAttention(nn.Module):
         self.qkv = nn.Linear(cfg.n_embd, 3 * cfg.n_embd, bias=False)
         self.proj = nn.Linear(cfg.n_embd, cfg.n_embd, bias=False)
         self.dropout = cfg.dropout
+        self.position_encoding = cfg.position_encoding
+        if self.position_encoding == "rope":
+            if self.head_dim % 2:
+                raise ValueError("RoPE requires an even attention head dimension")
+            inv = 1.0 / (10000 ** (torch.arange(0, self.head_dim, 2).float() / self.head_dim))
+            self.register_buffer("rope_inv_freq", inv, persistent=False)
+        elif self.position_encoding != "learned":
+            raise ValueError(f"unknown position encoding: {self.position_encoding}")
+
+    def _rope(self, q, k):
+        t = q.size(-2)
+        pos = torch.arange(t, device=q.device, dtype=self.rope_inv_freq.dtype)
+        freqs = torch.outer(pos, self.rope_inv_freq)
+        cos = freqs.cos().to(dtype=q.dtype)[None, None, :, :]
+        sin = freqs.sin().to(dtype=q.dtype)[None, None, :, :]
+
+        def rotate(x):
+            xe = x[..., 0::2]
+            xo = x[..., 1::2]
+            return torch.stack((xe * cos - xo * sin, xe * sin + xo * cos), dim=-1).flatten(-2)
+
+        return rotate(q), rotate(k)
+
     def forward(self, x):
         b,t,c=x.shape
         q,k,v=self.qkv(x).split(c,dim=-1)
         q=q.view(b,t,self.n_head,self.head_dim).transpose(1,2)
         k=k.view(b,t,self.n_head,self.head_dim).transpose(1,2)
         v=v.view(b,t,self.n_head,self.head_dim).transpose(1,2)
+        if self.position_encoding == "rope":
+            q, k = self._rope(q, k)
         y=F.scaled_dot_product_attention(q,k,v,is_causal=True,dropout_p=self.dropout if self.training else 0.0)
         return self.proj(y.transpose(1,2).contiguous().view(b,t,c))
 
@@ -49,7 +75,7 @@ class ByteCausalLM(nn.Module):
         super().__init__()
         self.cfg=cfg
         self.token=nn.Embedding(cfg.vocab_size,cfg.n_embd)
-        self.pos=nn.Embedding(cfg.seq_len,cfg.n_embd)
+        self.pos=nn.Embedding(cfg.seq_len,cfg.n_embd) if cfg.position_encoding == "learned" else None
         self.blocks=nn.ModuleList([Block(cfg) for _ in range(cfg.n_layer)])
         self.ln=nn.LayerNorm(cfg.n_embd)
         self.head=nn.Linear(cfg.n_embd,cfg.vocab_size,bias=False)
@@ -63,8 +89,10 @@ class ByteCausalLM(nn.Module):
     def forward(self,idx,targets=None):
         _,t=idx.shape
         if t>self.cfg.seq_len: raise ValueError("sequence too long")
-        p=torch.arange(t,device=idx.device)
-        x=self.token(idx)+self.pos(p)[None]
+        x=self.token(idx)
+        if self.pos is not None:
+            p=torch.arange(t,device=idx.device)
+            x=x+self.pos(p)[None]
         for block in self.blocks:
             if self.gradient_checkpointing and self.training and torch.is_grad_enabled():
                 x=torch.utils.checkpoint.checkpoint(block,x,use_reentrant=False)
