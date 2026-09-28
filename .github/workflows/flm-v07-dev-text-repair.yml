@@ -97,7 +97,14 @@ jobs:
           assert s['main']['tokens'] >= 1_000_000_000, s['main']
           assert s['coder']['tokens'] >= 190_000_000, s['coder']
           assert s['main_sft_raw']['rows'] >= 550_000, s['main_sft_raw']
-          assert s['semantic_interface_sft']['rows'] >= 550_000, s['semantic_interface_sft']
+          sem=s['semantic_interface_sft']
+          assert sem['rows'] >= 550_000, sem
+          assert sem.get('anti_copy_verified') is True, sem
+          langs=sem.get('language_counts') or {}
+          assert int(langs.get('tr',0)) >= 290_000, langs
+          assert int(langs.get('en',0)) >= 290_000, langs
+          modes=sem.get('mode_counts') or {}
+          assert len(modes) >= 16 and min(map(int,modes.values())) >= 35_000, modes
           assert s['main_sft']['supervised_tokens'] >= 450_000_000, s['main_sft']
           assert s['coder_sft_raw']['rows'] >= 280_000, s['coder_sft_raw']
           assert s['coder_sft_tool100k']['rows'] >= 85000, s['coder_sft_tool100k']
