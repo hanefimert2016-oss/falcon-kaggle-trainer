@@ -110,21 +110,38 @@ class SemanticCompiler:
         raise ValueError("sentence is outside deterministic rule grammar")
 
     def operation_canonical(self,text:str)->Program:
-        text=_norm(text)
-        # Keep this intentionally strict: only arithmetic syntax supported by
-        # ArithmeticSolver is accepted without the neural interface.
+        raw=unicodedata.normalize("NFKC",str(text or "")).strip()
+        normalized=_norm(raw)
+
+        # Arithmetic can bypass the neural interface completely.
         patterns=(
             re.compile(r"^(?P<expr>[0-9+\-*/%(). ^]+) işlemini hesapla[.]?$",re.I),
             re.compile(r"^hesapla[: ]+(?P<expr>[0-9+\-*/%(). ^]+)[.]?$",re.I),
             re.compile(r"^calculate[: ]+(?P<expr>[0-9+\-*/%(). ^]+)[.]?$",re.I),
         )
         for pat in patterns:
-            m=pat.match(text)
+            m=pat.match(normalized)
             if m:
                 expr=m.group("expr").strip().replace("^","**")
                 if not expr:
                     break
                 return Program(operations=[Operation("ARITHMETIC",{"expression":expr})])
+
+        # Canonical code-analysis requests keep source formatting intact.
+        fenced=re.search(r"```(?P<lang>python|py)?\s*\n(?P<src>.*?)```",raw,re.I|re.S)
+        wants_code=bool(re.search(
+            r"(python|kod|code).*(analiz|incele|ne yapıyor|ne yapiyor|analyze|inspect|what does)",
+            normalized,re.I,
+        ))
+        if fenced and wants_code:
+            lang=(fenced.group("lang") or "python").lower()
+            if lang=="py":
+                lang="python"
+            source=fenced.group("src").rstrip()+"\n"
+            return Program(operations=[Operation(
+                "ANALYZE_CODE",{"language":lang,"source":source}
+            )])
+
         raise ValueError("sentence is outside deterministic operation grammar")
 
     def compile_any(self,text:str)->Program:
@@ -149,11 +166,19 @@ class SemanticCompiler:
     def query_canonical(self,text:str)->Program:
         text=_norm(text).rstrip("?.!")
         patterns=(
-            (re.compile(r"^(?P<a>.+?) bir (?P<b>.+?) mi(?:dir)?$",re.I),"IsA"),
+            (re.compile(r"^(?P<a>.+?) bir (?P<b>.+?) m[ıiuü](?:dır|dir|dur|dür)?$",re.I),"IsA"),
             (re.compile(r"^is (?P<a>.+?) an? (?P<b>.+?)$",re.I),"IsA"),
             (re.compile(r"^(?P<a>.+?) (?P<b>.+?)['’]den daha uzun mu$",re.I),"TallerThan"),
             (re.compile(r"^is (?P<a>.+?) taller than (?P<b>.+?)$",re.I),"TallerThan"),
         )
+        unary_patterns=(
+            (re.compile(r"^(?P<a>.+?) sıcakkanlı m[ıiuü](?:dır|dir)?$",re.I),"WarmBlooded"),
+            (re.compile(r"^is (?P<a>.+?) warm-blooded$",re.I),"WarmBlooded"),
+        )
+        for pat,pred in unary_patterns:
+            m=pat.match(text)
+            if m:
+                return Program(queries=[Query(Atom(pred,(self.symbol(m.group("a")),)))])
         for pat,pred in patterns:
             m=pat.match(text)
             if m:
