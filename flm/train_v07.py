@@ -835,7 +835,9 @@ def sample_quality(main, main_cfg, coder, coder_cfg, tok, device):
         "Merhaba! Bana iki cümleyle kendini tanıtır mısın?",
         "Türkiye'nin başkenti neresidir? Kısa cevap ver.",
         "Bir dosyanın SHA-256 özetinin ne işe yaradığını Türkçe açıkla.",
+        "Fotosentez sırasında bitkiler ışık enerjisini nasıl kullanır? Kısa ve bilimsel açıkla.",
         "Hello! Explain what an operating system does in two sentences.",
+        "What is the practical difference between RAM and persistent storage? Answer briefly.",
     ]
     main_samples = [{"prompt": p, "output": generate(main, main_cfg, tok, p, device)} for p in main_prompts]
 
