@@ -79,7 +79,8 @@ SOURCES = {
 SPECIAL = [
     "<pad>", "<unk>", "<bos>", "<eos>", "<doc>",
     "<|system|>", "<|user|>", "<|assistant|>",
-    "<|tool_call|>", "<|tool_result|>", "<|tool_end|>", "<|end|>",
+    "<|tool_call|>", "<|tool_result|>", "<|tool_end|>",
+    "<|plan|>", "<|plan_end|>", "<|final|>", "<|end|>",
 ]
 
 
