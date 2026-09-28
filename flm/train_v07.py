@@ -1098,6 +1098,23 @@ def train_computer_use(v07_root, out_root, runtime, tok, vocab_size, steps):
     # v0.6 fp16 eventually produced a non-finite loss. v0.7 deliberately keeps
     # this ~100M multimodal policy in FP32 and lowers the learning rate.
     base = ComputerUseV3(cfg).to(runtime.device)
+    main_embedding_inherited = False
+    if os.environ.get("FLM_V07_CU_INIT_FROM_MAIN", "1").strip().lower() not in {"0", "false", "no", "off"}:
+        main_path = out_root / "main" / "checkpoint.pt"
+        if main_path.is_file():
+            main_ck = torch.load(main_path, map_location="cpu", weights_only=False)
+            main_token = (main_ck.get("model") or {}).get("token.weight")
+            if main_token is not None and tuple(main_token.shape) == tuple(base.task_emb.weight.shape):
+                with torch.no_grad():
+                    base.task_emb.weight.copy_(main_token.to(base.task_emb.weight.device, base.task_emb.weight.dtype))
+                main_embedding_inherited = True
+                print(f"V07_CU_TASK_EMBEDDING_FROM_MAIN={main_path}", flush=True)
+            else:
+                raise RuntimeError(
+                    f"ComputerUse/Main embedding mismatch: "
+                    f"main={None if main_token is None else tuple(main_token.shape)} "
+                    f"cu={tuple(base.task_emb.weight.shape)}"
+                )
     wrapped = base
     if runtime.kind == "gpu" and torch.cuda.device_count() > 1 and batch >= 2:
         wrapped = torch.nn.DataParallel(base)
@@ -1189,6 +1206,7 @@ def train_computer_use(v07_root, out_root, runtime, tok, vocab_size, steps):
         "eval_examples": len(eval_rows),
         "domains": len(domain_names),
         "action_counts": action_counts,
+        "task_embedding_initialized_from_main": main_embedding_inherited,
         **ev,
         "elapsed_s": time.time() - start,
         "config": cfg.__dict__,
