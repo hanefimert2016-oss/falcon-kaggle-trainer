@@ -27,7 +27,7 @@ jobs:
 
       - name: Python compile
         run: |
-          python -m py_compile             falconctl.py             kaggle/train_flm.py             scripts/colab_setup.py             scripts/build_kernel_bundle.py             flm/runtime.py             flm/models/text_lm.py             flm/models/computer_use.py             flm/models/computer_use_v2.py             flm/models/computer_use_v3.py             flm/computer_use/action_protocol.py             flm/computer_use/context.py             flm/computer_use/executor.py             flm/tooling/protocol.py             flm/tooling/runtime.py             flm/inference_v07.py             flm/data/prepare_hf.py             flm/data/prepare_v05.py             flm/data/prepare_v06.py             flm/data/prepare_v07.py             flm/data/prepare_v07_text_dev.py             flm/data/prepare_v07_computer_dev.py             scripts/build_v07_dev_computer_cpu_kernel.py             scripts/build_v07_dev_gpu_kernel.py             flm/data/preflight_v05.py             flm/train_v05.py             flm/train_v06.py             flm/train_v07.py             flm/computer_use/agent.py             flm/train_text.py             flm/train_computer_use.py             flm/train_suite.py             run_flm_v06.py             scripts/validate_v06_quality.py             scripts/build_kernel_bundle_v07.py             scripts/validate_v07_quality.py             scripts/run_computer_use_v07.py             scripts/run_flm_v07.py
+          python -m py_compile             falconctl.py             kaggle/train_flm.py             scripts/colab_setup.py             colab/train_v07_r2.py             scripts/build_kernel_bundle.py             flm/runtime.py             flm/models/text_lm.py             flm/models/computer_use.py             flm/models/computer_use_v2.py             flm/models/computer_use_v3.py             flm/computer_use/action_protocol.py             flm/computer_use/context.py             flm/computer_use/executor.py             flm/tooling/protocol.py             flm/tooling/runtime.py             flm/inference_v07.py             flm/data/prepare_hf.py             flm/data/prepare_v05.py             flm/data/prepare_v06.py             flm/data/prepare_v07.py             flm/data/prepare_v07_text_dev.py             flm/data/prepare_v07_computer_dev.py             scripts/build_v07_dev_computer_cpu_kernel.py             scripts/build_v07_dev_gpu_kernel.py             flm/data/preflight_v05.py             flm/train_v05.py             flm/train_v06.py             flm/train_v07.py             flm/computer_use/agent.py             flm/train_text.py             flm/train_computer_use.py             flm/train_suite.py             run_flm_v06.py             scripts/validate_v06_quality.py             scripts/build_kernel_bundle_v07.py             scripts/validate_v07_quality.py             scripts/run_computer_use_v07.py             scripts/run_flm_v07.py
 
       - name: Unit tests
         run: pytest -q
@@ -70,6 +70,13 @@ jobs:
           assert expected==actual
 
           import torch
+          import os
+          from flm.train_v07 import training_seq_len
+          cfg4k=TextConfig(vocab_size=64,seq_len=4096,n_layer=2,n_head=2,n_embd=32,position_encoding="rope")
+          os.environ["FLM_V07_MAIN_TRAIN_SEQ"]="2048"
+          assert training_seq_len("main",cfg4k)==2048
+          del os.environ["FLM_V07_MAIN_TRAIN_SEQ"]
+
           from flm.models.text_lm import ByteCausalLM, TextConfig
           tiny=ByteCausalLM(TextConfig(
               vocab_size=64,seq_len=128,n_layer=2,n_head=2,n_embd=32,
