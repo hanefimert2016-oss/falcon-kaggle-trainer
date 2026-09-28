@@ -28,6 +28,12 @@ COMPUTER_REF="${FLM_V07_COMPUTER_DATASET:-mertsigma/flm-v07-dev-computer}"
 
 mkdir -p "$DATA_ROOT" "$OUT_ROOT" "$LOG_DIR"
 
+FREE_KB="$(df -Pk "$ROOT" | awk 'NR==2 {print $4}')"
+FREE_GB=$((FREE_KB / 1024 / 1024))
+if (( FREE_GB < 30 )); then
+  echo "UYARI: Bu eğitim veri + checkpointler için rahatça 30+ GB boş alan ister; mevcut yaklaşık ${FREE_GB} GB."
+fi
+
 gpu_profile() {
   command -v nvidia-smi >/dev/null 2>&1 || {
     echo "HATA: nvidia-smi bulunamadi. NVIDIA surucusunu kurup tekrar calistir." >&2
@@ -153,6 +159,20 @@ PY
 }
 
 if [[ "${FLM_LOCAL_SKIP_DOWNLOAD:-0}" != "1" ]]; then
+  NEED_DOWNLOAD=0
+  [[ -s "$TEXT_DIR/sources.json" ]] || NEED_DOWNLOAD=1
+  [[ -s "$COMPUTER_DIR/sources.json" ]] || NEED_DOWNLOAD=1
+  if (( NEED_DOWNLOAD )); then
+    if ! kaggle datasets files "$TEXT_REF" --page-size 1 >/dev/null 2>&1; then
+      cat >&2 <<'EOF'
+HATA: Kaggle dataset kimlik dogrulamasi yok.
+Bu Kaggle'da eğitim YAPMAZ; yalnızca hazırlanmış v0.7 verisini PC'ye bir kez indirir.
+Kaggle API tokenini ~/.kaggle/kaggle.json ile veya KAGGLE_API_TOKEN ortam değişkeniyle tanımla.
+Elinde dataset zaten varsa FLM_LOCAL_DATA_ROOT=... FLM_LOCAL_SKIP_DOWNLOAD=1 kullanabilirsin.
+EOF
+      exit 3
+    fi
+  fi
   download_dataset "$TEXT_REF" "$TEXT_DIR" "v0.7-dev-text"
   download_dataset "$COMPUTER_REF" "$COMPUTER_DIR" "v0.7-dev-computer"
 fi
