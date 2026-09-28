@@ -343,13 +343,22 @@ def text_config(kind: str, vocab_size: int) -> TextConfig:
     )
 
 
+def training_seq_len(kind: str, cfg: TextConfig) -> int:
+    key=f"FLM_V07_{kind.upper()}_TRAIN_SEQ"
+    seq=int(os.environ.get(key, str(cfg.seq_len)))
+    if seq < 256 or seq > cfg.seq_len:
+        raise RuntimeError(f"{key} must be between 256 and model context {cfg.seq_len}, got {seq}")
+    return seq
+
+
 @torch.no_grad()
-def eval_text(model, data, cfg, runtime, rng, batches=8):
+def eval_text(model, data, cfg, runtime, rng, batches=8, seq_len=None):
     model.eval()
     vals = []
     for _ in range(max(1, batches)):
-        starts = sample_starts(rng, len(data), cfg.seq_len, 1)
-        x, y = make_xy(data, starts, cfg.seq_len, runtime.device)
+        use_seq = int(seq_len or cfg.seq_len)
+        starts = sample_starts(rng, len(data), use_seq, 1)
+        x, y = make_xy(data, starts, use_seq, runtime.device)
         with runtime.autocast():
             _, loss = model(x, y)
             if loss.ndim:
@@ -360,13 +369,14 @@ def eval_text(model, data, cfg, runtime, rng, batches=8):
 
 
 @torch.no_grad()
-def eval_sft(model, data, mask, cfg, runtime, rng, batches=8):
+def eval_sft(model, data, mask, cfg, runtime, rng, batches=8, seq_len=None):
     model.eval()
     vals = []
     supervised = 0
     for _ in range(max(1, batches)):
+        use_seq = int(seq_len or cfg.seq_len)
         x, y, sup = make_sft_batch(
-            data, mask, rng, cfg.seq_len, 1, runtime.device, min_supervised=4
+            data, mask, rng, use_seq, 1, runtime.device, min_supervised=4
         )
         with runtime.autocast():
             _, loss = model(x, y)
@@ -382,7 +392,8 @@ def eval_sft(model, data, mask, cfg, runtime, rng, batches=8):
 
 def train_text_pretrain(kind, data, out_root, runtime, vocab_size, steps, batch, accum, init_checkpoint=None):
     cfg = text_config(kind, vocab_size)
-    train_data, eval_data = split_train_eval_stream(data, cfg.seq_len, eval_fraction=0.01)
+    train_seq = training_seq_len(kind, cfg)
+    train_data, eval_data = split_train_eval_stream(data, train_seq, eval_fraction=0.01)
     base = ByteCausalLM(cfg).to(runtime.device)
     if init_checkpoint is not None:
         init_checkpoint = Path(init_checkpoint)
@@ -415,7 +426,7 @@ def train_text_pretrain(kind, data, out_root, runtime, vocab_size, steps, batch,
     scaler = torch.amp.GradScaler("cuda", enabled=runtime.kind == "gpu")
     rng = np.random.default_rng(707 if kind == "main" else 717)
     eval_rng = np.random.default_rng(1707 if kind == "main" else 1717)
-    train_starts = nonoverlap_starts(len(train_data), cfg.seq_len)
+    train_starts = nonoverlap_starts(len(train_data), train_seq)
     train_pool = ShuffledStartPool(
         train_starts, 2707 if kind == "main" else 2717
     )
@@ -493,7 +504,7 @@ def train_text_pretrain(kind, data, out_root, runtime, vocab_size, steps, batch,
         total = 0.0
         for _ in range(accum):
             starts = train_pool.take(batch)
-            x, y = make_xy(train_data, starts, cfg.seq_len, runtime.device)
+            x, y = make_xy(train_data, starts, train_seq, runtime.device)
             with runtime.autocast():
                 _, loss = model(x, y)
                 if loss.ndim:
@@ -506,7 +517,7 @@ def train_text_pretrain(kind, data, out_root, runtime, vocab_size, steps, batch,
             else:
                 loss.backward()
             total += float(loss.detach())
-            tokens_seen += batch * cfg.seq_len
+            tokens_seen += batch * train_seq
         if scaler.is_enabled():
             scaler.unscale_(opt)
         grad = torch.nn.utils.clip_grad_norm_(base.parameters(), 1.0)
@@ -517,7 +528,7 @@ def train_text_pretrain(kind, data, out_root, runtime, vocab_size, steps, batch,
 
         should_eval = (step + 1) % eval_interval == 0 or step == steps - 1
         if should_eval:
-            ev_now = eval_text(model, eval_data, cfg, runtime, eval_rng, eval_batches)
+            ev_now = eval_text(model, eval_data, cfg, runtime, eval_rng, eval_batches, seq_len=train_seq)
             print(
                 f"v07 {kind} pretrain eval step={step + 1}/{steps} "
                 f"eval_loss={ev_now:.4f} best={best_eval:.4f}",
@@ -565,7 +576,7 @@ def train_text_pretrain(kind, data, out_root, runtime, vocab_size, steps, batch,
     if best_path.is_file():
         best_obj = torch.load(best_path, map_location=runtime.device, weights_only=False)
         base.load_state_dict(best_obj["model"])
-    final_eval = eval_text(base, eval_data, cfg, runtime, eval_rng, eval_batches)
+    final_eval = eval_text(base, eval_data, cfg, runtime, eval_rng, eval_batches, seq_len=train_seq)
     result = {
         "kind": kind,
         "stage": "pretrain",
@@ -578,7 +589,8 @@ def train_text_pretrain(kind, data, out_root, runtime, vocab_size, steps, batch,
         "heldout_tokens": len(eval_data),
         "nonoverlap_blocks": len(train_starts),
         "steps_per_epoch": steps_per_epoch,
-        "completed_epochs": tokens_seen / max(1, len(train_starts) * cfg.seq_len),
+        "completed_epochs": tokens_seen / max(1, len(train_starts) * train_seq),
+        "training_seq_len": train_seq,
         "sampler": "shuffled_nonoverlap_no_replacement",
         "train_loss": last,
         "eval_loss": final_eval,
@@ -600,7 +612,8 @@ def train_text_pretrain(kind, data, out_root, runtime, vocab_size, steps, batch,
 def train_text_sft(kind, base, cfg, data, mask, out_root, runtime, steps, batch, accum):
     if len(data) != len(mask):
         raise RuntimeError(f"{kind} SFT token/mask mismatch")
-    train_data, eval_data = split_train_eval_stream(data, cfg.seq_len, eval_fraction=0.02)
+    train_seq = training_seq_len(kind, cfg)
+    train_data, eval_data = split_train_eval_stream(data, train_seq, eval_fraction=0.02)
     cut = len(train_data)
     train_mask = mask[:cut]
     eval_mask = mask[cut:]
@@ -615,7 +628,7 @@ def train_text_sft(kind, base, cfg, data, mask, out_root, runtime, steps, batch,
     scaler = torch.amp.GradScaler("cuda", enabled=runtime.kind == "gpu")
     rng = np.random.default_rng(727 if kind == "main" else 737)
     eval_rng = np.random.default_rng(1727 if kind == "main" else 1737)
-    sft_starts = eligible_sft_starts(train_mask, cfg.seq_len, min_supervised=8)
+    sft_starts = eligible_sft_starts(train_mask, train_seq, min_supervised=8)
     sft_pool = ShuffledStartPool(
         sft_starts, 3727 if kind == "main" else 3737
     )
@@ -696,7 +709,7 @@ def train_text_sft(kind, base, cfg, data, mask, out_root, runtime, steps, batch,
         for _ in range(accum):
             starts = sft_pool.take(batch)
             x, y, sup = make_sft_batch_at_starts(
-                train_data, train_mask, starts, cfg.seq_len, runtime.device
+                train_data, train_mask, starts, train_seq, runtime.device
             )
             with runtime.autocast():
                 _, loss = wrapped(x, y)
@@ -722,7 +735,7 @@ def train_text_sft(kind, base, cfg, data, mask, out_root, runtime, steps, batch,
         should_eval = (step + 1) % eval_interval == 0 or step == steps - 1
         if should_eval:
             ev_now, ev_sup = eval_sft(
-                wrapped, eval_data, eval_mask, cfg, runtime, eval_rng, eval_batches
+                wrapped, eval_data, eval_mask, cfg, runtime, eval_rng, eval_batches, seq_len=train_seq
             )
             print(
                 f"v07 {kind} sft eval step={step + 1}/{steps} "
@@ -772,7 +785,7 @@ def train_text_sft(kind, base, cfg, data, mask, out_root, runtime, steps, batch,
         best_obj = torch.load(best_path, map_location=runtime.device, weights_only=False)
         model.load_state_dict(best_obj["model"])
     final_eval, eval_supervised = eval_sft(
-        model, eval_data, eval_mask, cfg, runtime, eval_rng, eval_batches
+        model, eval_data, eval_mask, cfg, runtime, eval_rng, eval_batches, seq_len=train_seq
     )
     result = {
         "stage": "sft",
@@ -782,6 +795,7 @@ def train_text_sft(kind, base, cfg, data, mask, out_root, runtime, steps, batch,
         "heldout_supervised_sampled": eval_supervised,
         "eligible_nonoverlap_blocks": len(sft_starts),
         "steps_per_epoch": sft_steps_per_epoch,
+        "training_seq_len": train_seq,
         "sampler": "shuffled_supervised_nonoverlap_no_replacement",
         "train_loss": last,
         "eval_loss": final_eval,
