@@ -1,4 +1,4 @@
-launch FLM v0.7 quality GPU after GitHub dataset verification
-text=mertsigma/flm-v07-dev-text
-computer=mertsigma/flm-v07-dev-computer
-cpu-kaggle-generation=disabled
+launch corrected FLM v0.7 Quality V2
+sampler=shuffled_nonoverlap_no_replacement
+main_steps=70000
+final_kernel=falcon-flm-v07-quality-v2-gpu
