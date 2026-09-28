@@ -19,7 +19,7 @@ esac
 DATA_ROOT="${FLM_LOCAL_DATA_ROOT:-$ROOT/.local-data/v07}"
 TEXT_DIR="$DATA_ROOT/text"
 COMPUTER_DIR="$DATA_ROOT/computer"
-OUT_ROOT="${FLM_LOCAL_OUTPUT_ROOT:-$ROOT/local-runs/flm-v0.7-quality}"
+OUT_ROOT="${FLM_LOCAL_OUTPUT_ROOT:-$ROOT/local-runs/flm-v0.7-r2}"
 LOG_DIR="$OUT_ROOT/logs"
 VENV="${FLM_LOCAL_VENV:-$ROOT/.venv-flm-v07}"
 
@@ -30,8 +30,8 @@ mkdir -p "$DATA_ROOT" "$OUT_ROOT" "$LOG_DIR"
 
 FREE_KB="$(df -Pk "$ROOT" | awk 'NR==2 {print $4}')"
 FREE_GB=$((FREE_KB / 1024 / 1024))
-if (( FREE_GB < 30 )); then
-  echo "UYARI: Bu eğitim veri + checkpointler için rahatça 30+ GB boş alan ister; mevcut yaklaşık ${FREE_GB} GB."
+if (( FREE_GB < 45 )); then
+  echo "UYARI: v0.7 r2 veri + checkpointler için rahatça 45+ GB boş alan ister; mevcut yaklaşık ${FREE_GB} GB."
 fi
 
 gpu_profile() {
@@ -53,30 +53,35 @@ gpu_profile() {
   done
   GPU_COUNT="${#VRAMS[@]}"
 
-  # Keep effective text batch close to 16 while adapting physical batch to VRAM.
-  if (( MIN_VRAM >= 23500 )); then
-    TEXT_BATCH=8
+  # 4K context profile. Keep enough accumulation for stable global batches.
+  if (( MIN_VRAM >= 80000 )); then
+    TEXT_BATCH=16
     TEXT_ACCUM=2
-    CU_BATCH=8
-    PROFILE="24GB+"
-  elif (( MIN_VRAM >= 15500 )); then
-    TEXT_BATCH=4
+    CU_BATCH=16
+    PROFILE="80GB+ 4K"
+  elif (( MIN_VRAM >= 40000 )); then
+    TEXT_BATCH=8
     TEXT_ACCUM=4
-    CU_BATCH=4
-    PROFILE="16GB"
-  elif (( MIN_VRAM >= 11500 )); then
-    TEXT_BATCH=2
+    CU_BATCH=8
+    PROFILE="40GB+ 4K"
+  elif (( MIN_VRAM >= 23500 )); then
+    TEXT_BATCH=4
     TEXT_ACCUM=8
+    CU_BATCH=4
+    PROFILE="24GB 4K"
+  elif (( MIN_VRAM >= 15500 )); then
+    TEXT_BATCH=2
+    TEXT_ACCUM=16
     CU_BATCH=2
-    PROFILE="12GB"
+    PROFILE="16GB 4K"
   else
     TEXT_BATCH=1
-    TEXT_ACCUM=16
+    TEXT_ACCUM=32
     CU_BATCH=1
-    PROFILE="8GB-safe"
+    PROFILE="8-12GB 4K-safe"
   fi
 
-  if (( MIN_VRAM < 11500 )); then
+  if (( MIN_VRAM < 40000 )); then
     TEXT_GRAD_CKPT=1
   else
     TEXT_GRAD_CKPT=0
@@ -144,7 +149,7 @@ download_dataset() {
 import json,sys
 p,v=sys.argv[1:]
 x=json.load(open(p,encoding="utf-8"))
-raise SystemExit(0 if x.get("pipeline_version")==v else 1)
+raise SystemExit(0 if x.get("pipeline_version")==v and int(x.get("data_revision",0))>=2 else 1)
 PY
   then
     echo "Hazir dataset kullaniliyor: $dest"
@@ -182,13 +187,17 @@ import json,sys
 t=json.load(open(sys.argv[1],encoding="utf-8"))
 c=json.load(open(sys.argv[2],encoding="utf-8"))
 ts=t["stats"]; cs=c["stats"]
-assert t["pipeline_version"]=="v0.7-dev-text"
-assert c["pipeline_version"]=="v0.7-dev-computer"
-assert ts["main"]["tokens"] >= 800_000_000
-assert ts["coder"]["tokens"] >= 145_000_000
+assert t["pipeline_version"]=="v0.7-dev-text" and int(t.get("data_revision",0))>=2
+assert c["pipeline_version"]=="v0.7-dev-computer" and int(c.get("data_revision",0))>=2
+assert ts["main"]["tokens"] >= 1_000_000_000
+assert ts["coder"]["tokens"] >= 190_000_000
 assert ts["main_sft"]["supervised_tokens"] >= 300_000_000
-assert ts["coder_sft"]["supervised_tokens"] >= 60_000_000
-assert cs["examples"] >= 30_000
+assert ts["coder_sft"]["supervised_tokens"] >= 90_000_000
+assert ts["tokenizer"]["vocab_size"] >= 30_000
+assert cs["examples"] >= 40_000
+ops=cs["ops"]
+for op,n in {"CLICK":20000,"KEY":1000,"TYPE":1000,"SCROLL":750,"DRAG":300,"RIGHT_CLICK":200,"DOUBLE_CLICK":200,"DONE":500}.items():
+    assert ops.get(op,0)>=n,(op,ops)
 print("V07_LOCAL_DATA_OK")
 print("main_tokens",ts["main"]["tokens"])
 print("coder_tokens",ts["coder"]["tokens"])
@@ -205,32 +214,39 @@ export FLM_V07_COMPUTER_VERSION=v0.7-dev-computer
 export FLM_V07_OUTPUT_ROOT="$OUT_ROOT"
 export FLM_V07_RESUME=1
 
-export FLM_V07_MAIN_SEQ="${FLM_V07_MAIN_SEQ:-768}"
+export FLM_V07_MAIN_SEQ="${FLM_V07_MAIN_SEQ:-4096}"
 export FLM_V07_MAIN_LAYERS="${FLM_V07_MAIN_LAYERS:-14}"
 export FLM_V07_MAIN_HEADS="${FLM_V07_MAIN_HEADS:-12}"
 export FLM_V07_MAIN_EMBD="${FLM_V07_MAIN_EMBD:-768}"
-export FLM_V07_CODER_SEQ="${FLM_V07_CODER_SEQ:-768}"
-export FLM_V07_CODER_LAYERS="${FLM_V07_CODER_LAYERS:-12}"
+export FLM_V07_CODER_SEQ="${FLM_V07_CODER_SEQ:-4096}"
+export FLM_V07_CODER_LAYERS="${FLM_V07_CODER_LAYERS:-14}"
 export FLM_V07_CODER_HEADS="${FLM_V07_CODER_HEADS:-12}"
 export FLM_V07_CODER_EMBD="${FLM_V07_CODER_EMBD:-768}"
+export FLM_V07_POSITION_ENCODING="${FLM_V07_POSITION_ENCODING:-rope}"
+export FLM_V07_CODER_INIT_FROM_MAIN="${FLM_V07_CODER_INIT_FROM_MAIN:-1}"
+export FLM_V07_CU_INIT_FROM_MAIN="${FLM_V07_CU_INIT_FROM_MAIN:-1}"
 
 export FLM_V07_TEXT_BATCH="${FLM_V07_TEXT_BATCH:-$TEXT_BATCH}"
 export FLM_V07_TEXT_ACCUM="${FLM_V07_TEXT_ACCUM:-$TEXT_ACCUM}"
 export FLM_V07_GRADIENT_CHECKPOINTING="${FLM_V07_GRADIENT_CHECKPOINTING:-$TEXT_GRAD_CKPT}"
-export FLM_V07_MAIN_STEPS="${FLM_V07_MAIN_STEPS:-70000}"
-export FLM_V07_MAIN_SFT_STEPS="${FLM_V07_MAIN_SFT_STEPS:-12000}"
-export FLM_V07_CODER_STEPS="${FLM_V07_CODER_STEPS:-25000}"
-export FLM_V07_CODER_SFT_STEPS="${FLM_V07_CODER_SFT_STEPS:-10000}"
+export FLM_V07_MAIN_STEPS="${FLM_V07_MAIN_STEPS:-0}"
+export FLM_V07_MAIN_SFT_STEPS="${FLM_V07_MAIN_SFT_STEPS:-0}"
+export FLM_V07_CODER_STEPS="${FLM_V07_CODER_STEPS:-0}"
+export FLM_V07_CODER_SFT_STEPS="${FLM_V07_CODER_SFT_STEPS:-0}"
+export FLM_V07_MAIN_PRETRAIN_EPOCHS="${FLM_V07_MAIN_PRETRAIN_EPOCHS:-1.0}"
+export FLM_V07_MAIN_SFT_EPOCHS="${FLM_V07_MAIN_SFT_EPOCHS:-1.0}"
+export FLM_V07_CODER_PRETRAIN_EPOCHS="${FLM_V07_CODER_PRETRAIN_EPOCHS:-1.0}"
+export FLM_V07_CODER_SFT_EPOCHS="${FLM_V07_CODER_SFT_EPOCHS:-1.25}"
 
 export FLM_V07_CU_IMAGE="${FLM_V07_CU_IMAGE:-224}"
-export FLM_V07_CU_TASK_LEN="${FLM_V07_CU_TASK_LEN:-160}"
+export FLM_V07_CU_TASK_LEN="${FLM_V07_CU_TASK_LEN:-512}"
 export FLM_V07_CU_PAYLOAD_LEN="${FLM_V07_CU_PAYLOAD_LEN:-128}"
 export FLM_V07_CU_EMBD="${FLM_V07_CU_EMBD:-768}"
 export FLM_V07_CU_HEADS="${FLM_V07_CU_HEADS:-12}"
 export FLM_V07_CU_TEXT_LAYERS="${FLM_V07_CU_TEXT_LAYERS:-4}"
 export FLM_V07_CU_VISION_LAYERS="${FLM_V07_CU_VISION_LAYERS:-8}"
 export FLM_V07_CU_BATCH="${FLM_V07_CU_BATCH:-$CU_BATCH}"
-export FLM_V07_CU_STEPS="${FLM_V07_CU_STEPS:-20000}"
+export FLM_V07_CU_STEPS="${FLM_V07_CU_STEPS:-30000}"
 
 export FLM_V07_EVAL_BATCHES="${FLM_V07_EVAL_BATCHES:-24}"
 export FLM_V07_CU_EVAL_EXAMPLES="${FLM_V07_CU_EVAL_EXAMPLES:-512}"
