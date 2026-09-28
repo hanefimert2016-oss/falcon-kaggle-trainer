@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import difflib
 import json
 from pathlib import Path
 import re
@@ -12,6 +13,27 @@ from flm.core.semantic_compiler import SemanticCompiler
 from flm.core.renderer import DeterministicRenderer
 from flm.models.core_memory import CoreMemoryBank
 from flm.models.interface_transformer import InterfaceConfig, InterfaceTransformer
+
+
+def _normalized_for_copy(text:str)->str:
+    text=re.sub(r"[^0-9A-Za-zÇĞİÖŞÜçğıöşü]+"," ",str(text or "").casefold())
+    return " ".join(text.split())
+
+
+def _copy_similarity(a:str,b:str)->float:
+    a=_normalized_for_copy(a)
+    b=_normalized_for_copy(b)
+    if not a or not b:
+        return 0.0
+    return difflib.SequenceMatcher(None,a,b).ratio()
+
+
+def _verbatim_requested(prompt:str)->bool:
+    low=str(prompt or "").casefold()
+    return any(x in low for x in (
+        "aynen yaz","aynen kopyala","birebir","alıntıla","alintila",
+        "verbatim","exact quote","quote exactly","copy exactly",
+    ))
 
 
 ROLE_MARKERS={
@@ -234,18 +256,27 @@ class InterfaceAgent:
             {"role":"tool","content":core_result},
         ]
         answer=""
-        for _ in range(3):
+        best=None
+        verbatim=_verbatim_requested(prompt)
+        for attempt in range(4):
             candidate=self.generate(
                 render_messages,
                 max_new=384,
-                temperature=self.render_temperature,
+                temperature=self.render_temperature*(1.0+0.08*attempt),
                 top_k=self.render_top_k,
                 top_p=self.render_top_p,
                 repetition_penalty=self.repetition_penalty,
             ).strip()
-            answer=candidate
-            if candidate and candidate not in self._recent_answers[-4:]:
+            score=0.0 if verbatim else _copy_similarity(prompt,candidate)
+            if candidate and (best is None or score<best[0]):
+                best=(score,candidate)
+            duplicate=candidate in self._recent_answers[-4:]
+            too_close=(not verbatim and len(candidate)>=40 and score>=0.86)
+            if candidate and not duplicate and not too_close:
+                answer=candidate
                 break
+        if not answer and best is not None:
+            answer=best[1]
         if answer:
             self._recent_answers.append(answer)
             self._recent_answers=self._recent_answers[-8:]
