@@ -321,7 +321,8 @@ def _validate_archives(out: Path, manifest_stats: dict) -> dict:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default="/kaggle/working/flm-v0.7-dev-computer")
+    ap.add_argument("--out", default="prepared_v07_dev_computer")
+    ap.add_argument("--owner", default="owner")
     ap.add_argument("--rexx-trajectories", type=int, default=5000)
     ap.add_argument("--groundcua", type=int, default=8000)
     ap.add_argument("--salesforce", type=int, default=18000)
@@ -413,6 +414,15 @@ def main():
     }
     (out / "sources.json").write_text(
         json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+    dataset_meta = {
+        "title": "FLM v07 DEV Computer Data",
+        "id": f"{args.owner}/flm-v07-dev-computer",
+        "licenses": [{"name": "other"}],
+        "description": "GitHub-CPU prepared FLM v0.7 ComputerUse screenshot/action data.",
+    }
+    (out / "dataset-metadata.json").write_text(
+        json.dumps(dataset_meta, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
     )
     _write_progress(out, stats, "complete")
     print("V07_DEV_COMPUTER_COMPLETE", json.dumps(summary, ensure_ascii=False), flush=True)
