@@ -843,7 +843,30 @@ def sample_quality(main, main_cfg, coder, coder_cfg, tok, device):
         "İki tamsayıyı toplayan add(a, b) adlı Python fonksiyonu yaz.",
         "Write a Python function is_even(n) that returns whether an integer is even.",
     ]
-    coder_samples = [{"prompt": p, "output": generate(coder, coder_cfg, tok, p, device, max_new=240)} for p in coder_prompts]
+    coder_samples = [{"prompt": p, "output": generate(coder, coder_cfg, tok, p, device, max_new=320)} for p in coder_prompts]
+
+    normal_prompt = (
+        "Dependency injection nedir? Tool kullanmadan, plan etiketi yazmadan iki kısa paragrafla açıkla."
+    )
+    normal_output = generate(
+        coder, coder_cfg, tok, normal_prompt, device,
+        max_new=320, temperature=0.25, top_k=20,
+    )
+    planning_system = (
+        "You are FLM-Coder. For complex software-engineering tasks, first emit "
+        "<|plan|> with a concrete multi-step implementation/debugging plan, close it "
+        "with <|plan_end|>, then provide the usable answer under <|final|>. "
+        "Do not invent tool results."
+    )
+    planning_prompt = (
+        "Bir Python servisinde testler yalnız production yapılandırmasında başarısız oluyor. "
+        "Sorunu güvenli biçimde teşhis edip düzeltmek için adım adım plan oluştur; "
+        "logları, yapılandırma farklarını, minimal reproducer'ı, testleri ve rollback'i kapsa."
+    )
+    planning_output = generate(
+        coder, coder_cfg, tok, planning_prompt, device,
+        system=planning_system, max_new=640, temperature=0.25, top_k=20,
+    )
     tool_system = (
         'Available tools: [{"name":"add","description":"Add two integers",'
         '"parameters":{"type":"object","properties":{"a":{"type":"integer"},'
@@ -858,6 +881,8 @@ def sample_quality(main, main_cfg, coder, coder_cfg, tok, device):
     return {
         "main": main_samples,
         "coder": coder_samples,
+        "coder_normal": {"prompt": normal_prompt, "output": normal_output},
+        "coder_planning": {"prompt": planning_prompt, "output": planning_output},
         "tool_call": {"prompt": tool_prompt, "output": tool_output},
     }
 
@@ -1042,6 +1067,7 @@ def eval_cu(model, rows, stores, tok, cfg, pad_id, domains, device, batches=64):
     model.eval()
     rng = random.Random(757)
     op_ok = op_n = ptr_n = ptr_hit = 0
+    op_by_class: dict[str, dict[str, int]] = {}
     ptr_l2 = []
     side = cfg.image_size // cfg.patch
     for _ in range(min(batches, len(rows))):
@@ -1051,7 +1077,14 @@ def eval_cu(model, rows, stores, tok, cfg, pad_id, domains, device, batches=64):
         if not torch.isfinite(loss):
             raise RuntimeError("non-finite CU eval loss")
         op_n += 1
-        op_ok += int(int(out["op_logits"].argmax(-1).item()) == int(kw["op_target"].item()))
+        pred_op = int(out["op_logits"].argmax(-1).item())
+        true_op = int(kw["op_target"].item())
+        correct = int(pred_op == true_op)
+        op_ok += correct
+        op_name = ID_TO_OP.get(true_op, str(true_op))
+        bucket = op_by_class.setdefault(op_name, {"correct": 0, "count": 0})
+        bucket["correct"] += correct
+        bucket["count"] += 1
         if bool(kw["pointer_valid"].item()):
             ptr_n += 1
             truth = r["coord"]
@@ -1063,6 +1096,13 @@ def eval_cu(model, rows, stores, tok, cfg, pad_id, domains, device, batches=64):
     return {
         "heldout_examples": len(rows),
         "op_accuracy": op_ok / max(1, op_n),
+        "op_accuracy_by_class": {
+            name: {
+                "accuracy": vals["correct"] / max(1, vals["count"]),
+                "count": vals["count"],
+            }
+            for name, vals in sorted(op_by_class.items())
+        },
         "pointer_examples": ptr_n,
         "pointer_hit_0p1": ptr_hit / max(1, ptr_n),
         "pointer_mean_l2": sum(ptr_l2) / max(1, len(ptr_l2)),
