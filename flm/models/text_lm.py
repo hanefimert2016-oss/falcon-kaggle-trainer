@@ -5,6 +5,8 @@ import torch.nn as nn
 import torch.utils.checkpoint
 from torch.nn import functional as F
 
+from flm.models.core_memory import CoreMemoryBank
+
 @dataclass
 class TextConfig:
     vocab_size: int = 256
@@ -14,6 +16,10 @@ class TextConfig:
     n_embd: int = 512
     dropout: float = 0.0
     position_encoding: str = "learned"
+    core_memory: bool = True
+    core_memory_order: int = 4
+    core_memory_logit_scale: float = 2.0
+    core_memory_residual_scale: float = 0.10
 
 class CausalSelfAttention(nn.Module):
     def __init__(self, cfg: TextConfig):
@@ -81,7 +87,23 @@ class ByteCausalLM(nn.Module):
         self.head=nn.Linear(cfg.n_embd,cfg.vocab_size,bias=False)
         self.head.weight=self.token.weight
         self.gradient_checkpointing=False
+        self.core_memory: CoreMemoryBank | None = None
         self.apply(self._init)
+
+    def attach_core_memory(self, bank: CoreMemoryBank | None):
+        if bank is not None:
+            if not self.cfg.core_memory:
+                raise RuntimeError("checkpoint/config has CoreMemory disabled")
+            if bank.vocab_size != self.cfg.vocab_size:
+                raise RuntimeError(
+                    f"CoreMemory vocab mismatch: bank={bank.vocab_size} model={self.cfg.vocab_size}"
+                )
+            if bank.order != self.cfg.core_memory_order:
+                raise RuntimeError(
+                    f"CoreMemory order mismatch: bank={bank.order} model={self.cfg.core_memory_order}"
+                )
+        self.core_memory = bank
+        return self
     @staticmethod
     def _init(m):
         if isinstance(m,(nn.Linear,nn.Embedding)):
@@ -90,6 +112,8 @@ class ByteCausalLM(nn.Module):
         _,t=idx.shape
         if t>self.cfg.seq_len: raise ValueError("sequence too long")
         x=self.token(idx)
+        if self.core_memory is not None and self.cfg.core_memory_residual_scale:
+            x=x+self.cfg.core_memory_residual_scale*self.core_memory.residual(idx,self.token)
         if self.pos is not None:
             p=torch.arange(t,device=idx.device)
             x=x+self.pos(p)[None]
@@ -99,6 +123,10 @@ class ByteCausalLM(nn.Module):
             else:
                 x=block(x)
         logits=self.head(self.ln(x))
+        if self.core_memory is not None:
+            logits=self.core_memory.apply_logits(
+                idx,logits,self.cfg.core_memory_logit_scale
+            )
         loss=None
         if targets is not None:
             loss=F.cross_entropy(logits.reshape(-1,logits.size(-1)),targets.reshape(-1))
