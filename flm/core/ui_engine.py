@@ -61,9 +61,15 @@ class UIPlanner:
             r"(?:type|write|enter|yaz|gir)\s+[\"“']?(.+?)[\"”']?(?:\s+(?:into|to|içine|alanına))?$",
             goal,re.I,
         )
+        payload=None
         if type_match:
+            payload=type_match.group(1).strip(" .\"'“”")
+        elif any(word in g for word in ("type","write","enter","yaz","gir")):
+            quoted=re.search(r"[\"“'](.+?)[\"”']",goal)
+            if quoted:
+                payload=quoted.group(1).strip()
+        if payload:
             boxes=graph.find(roles=("textbox","input","editor"))
-            payload=type_match.group(1).strip()
             if boxes:
                 return [UIAction("CLICK",boxes[0].id),UIAction("TYPE",payload=payload)]
             return [UIAction("TYPE",payload=payload)]
