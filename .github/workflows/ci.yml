@@ -27,7 +27,7 @@ jobs:
 
       - name: Python compile
         run: |
-          python -m py_compile             falconctl.py             kaggle/train_flm.py             scripts/colab_setup.py             colab/train_v07_r2.py             scripts/build_kernel_bundle.py             flm/runtime.py             flm/models/text_lm.py             flm/models/core_memory.py             scripts/build_core_memory.py             flm/models/computer_use.py             flm/models/computer_use_v2.py             flm/models/computer_use_v3.py             flm/computer_use/action_protocol.py             flm/computer_use/context.py             flm/computer_use/executor.py             flm/tooling/protocol.py             flm/tooling/runtime.py             flm/inference_v07.py             flm/data/prepare_hf.py             flm/data/prepare_v05.py             flm/data/prepare_v06.py             flm/data/prepare_v07.py             flm/data/prepare_v07_text_dev.py             flm/data/prepare_v07_computer_dev.py             scripts/build_v07_dev_computer_cpu_kernel.py             scripts/build_v07_dev_gpu_kernel.py             flm/data/preflight_v05.py             flm/train_v05.py             flm/train_v06.py             flm/train_v07.py             flm/computer_use/agent.py             flm/train_text.py             flm/train_computer_use.py             flm/train_suite.py             run_flm_v06.py             scripts/validate_v06_quality.py             scripts/build_kernel_bundle_v07.py             scripts/validate_v07_quality.py             scripts/run_computer_use_v07.py             scripts/run_flm_v07.py
+          python -m py_compile             falconctl.py             kaggle/train_flm.py             scripts/colab_setup.py             colab/train_v07_r2.py             scripts/build_kernel_bundle.py             flm/runtime.py             flm/models/text_lm.py             flm/models/core_memory.py             flm/models/interface_transformer.py             flm/core/semantic_ir.py             flm/core/semantic_memory.py             flm/core/semantic_compiler.py             flm/core/reasoning_vm.py             flm/core/runtime.py             flm/core/code_engine.py             flm/core/ui_engine.py             flm/interface_agent.py             flm/data/semantic_curriculum.py             flm/train_interface_v07.py             scripts/build_core_memory.py             flm/models/computer_use.py             flm/models/computer_use_v2.py             flm/models/computer_use_v3.py             flm/computer_use/action_protocol.py             flm/computer_use/context.py             flm/computer_use/executor.py             flm/tooling/protocol.py             flm/tooling/runtime.py             flm/inference_v07.py             flm/data/prepare_hf.py             flm/data/prepare_v05.py             flm/data/prepare_v06.py             flm/data/prepare_v07.py             flm/data/prepare_v07_text_dev.py             flm/data/prepare_v07_computer_dev.py             scripts/build_v07_dev_computer_cpu_kernel.py             scripts/build_v07_dev_gpu_kernel.py             flm/data/preflight_v05.py             flm/train_v05.py             flm/train_v06.py             flm/train_v07.py             flm/computer_use/agent.py             flm/train_text.py             flm/train_computer_use.py             flm/train_suite.py             run_flm_v06.py             scripts/validate_v06_quality.py             scripts/build_kernel_bundle_v07.py             scripts/validate_v07_quality.py             scripts/run_computer_use_v07.py             scripts/run_flm_v07.py
 
       - name: Unit tests
         run: pytest -q
@@ -220,142 +220,125 @@ jobs:
           print('mounted image dir regression OK')
           PY
 
-      - name: FLM v0.7 GitHub-data quality bundle regression
+      - name: Semantic FLM single-transformer architecture regression
         run: |
           set -euo pipefail
           python -m py_compile \
-            flm/train_v07.py \
-            flm/data/prepare_v07_computer_dev.py \
+            flm/models/interface_transformer.py \
+            flm/core/semantic_ir.py \
+            flm/core/semantic_memory.py \
+            flm/core/semantic_compiler.py \
+            flm/core/reasoning_vm.py \
+            flm/core/runtime.py \
+            flm/core/code_engine.py \
+            flm/core/ui_engine.py \
+            flm/interface_agent.py \
+            flm/data/semantic_curriculum.py \
+            flm/train_interface_v07.py \
             scripts/build_v07_dev_gpu_kernel.py
+
           python scripts/build_v07_dev_gpu_kernel.py \
             --owner test-owner \
-            --out /tmp/v07-quality-gpu
-          python -m py_compile /tmp/v07-quality-gpu/train_v07_dev.py
+            --out /tmp/v07-semantic-interface
+          python -m py_compile /tmp/v07-semantic-interface/train_interface_v07.py
+
           python - <<'PY'
           import json
           from pathlib import Path
-
-          gpu=json.loads(Path('/tmp/v07-quality-gpu/kernel-metadata.json').read_text())
-          assert gpu['id']=='test-owner/falcon-flm-v07-quality-v2-gpu',gpu
-          assert gpu['title']=='Falcon FLM v07 Quality V2 GPU',gpu
-          assert gpu['enable_gpu'] is True and gpu['machine_shape']=='NvidiaTeslaT4'
-          assert gpu['dataset_sources']==[
-              'test-owner/flm-v07-dev-text',
-              'test-owner/flm-v07-dev-computer',
-          ],gpu
-          assert gpu['kernel_sources']==[],gpu
-
-          src=Path('/tmp/v07-quality-gpu/train_v07_dev.py').read_text()
-          for key,value in (
-              ('FLM_V07_MAIN_SEQ','4096'),
-              ('FLM_V07_CODER_SEQ','4096'),
-              ('FLM_V07_CODER_LAYERS','14'),
-              ('FLM_V07_POSITION_ENCODING','rope'),
-              ('FLM_V07_MAIN_STEPS','0'),
-              ('FLM_V07_MAIN_SFT_STEPS','0'),
-              ('FLM_V07_CODER_STEPS','0'),
-              ('FLM_V07_CODER_SFT_STEPS','0'),
-              ('FLM_V07_CODER_INIT_FROM_MAIN','1'),
-              ('FLM_V07_CU_INIT_FROM_MAIN','1'),
-              ('FLM_V07_CU_TASK_LEN','512'),
-              ('FLM_V07_TEXT_EVAL_INTERVAL','1000'),
-              ('FLM_V07_SFT_EVAL_INTERVAL','500'),
-          ):
-              assert key in src and value in src,(key,value)
-
-          train=Path('flm/train_v07.py').read_text()
-          assert 'validate_pipeline_inputs' in train
-          assert 'init_checkpoint=main_seed' in train
-          assert 'V07_CU_TEXT_FROM_MAIN' in train
-          assert 'PRETRAIN_EPOCHS' in train
-          assert 'SFT_EPOCHS' in train
-
-          from flm.train_v07 import text_config
-          main_cfg=text_config('main',32768)
-          coder_cfg=text_config('coder',32768)
-          assert main_cfg==coder_cfg,(main_cfg,coder_cfg)
-          assert main_cfg.seq_len==4096 and main_cfg.position_encoding=='rope'
-          assert main_cfg.core_memory is True
-          assert main_cfg.core_memory_order==4
-
           import torch
-          from flm.models.text_lm import ByteCausalLM,TextConfig
-          from flm.models.computer_use_v3 import ComputerUseV3,ComputerUseV3Config
-          from flm.train_v07 import initialize_computer_text_from_main
-          tm=ByteCausalLM(TextConfig(
-              vocab_size=128,seq_len=64,n_layer=2,n_head=4,n_embd=32,
-              position_encoding='rope',
-          ))
-          cu=ComputerUseV3(ComputerUseV3Config(
-              text_vocab=128,task_len=32,image_size=32,patch=16,
-              embd=32,text_layers=2,vision_layers=1,n_head=4,
-          ))
-          copied=initialize_computer_text_from_main(cu,tm.state_dict())
-          assert copied==2
-          assert torch.equal(cu.task_emb.weight,tm.token.weight)
-          assert torch.equal(
-              cu.text_encoder.layers[0].self_attn.in_proj_weight,
-              tm.blocks[0].attn.qkv.weight,
+
+          gpu=json.loads(Path('/tmp/v07-semantic-interface/kernel-metadata.json').read_text())
+          assert gpu['id']=='test-owner/falcon-flm-v07-semantic-interface-gpu',gpu
+          assert gpu['title']=='Falcon FLM v07 Semantic Interface Transformer',gpu
+          assert gpu['enable_gpu'] is True
+          assert gpu['dataset_sources']==['test-owner/flm-v07-dev-text'],gpu
+          assert 'flm-v07-dev-computer' not in json.dumps(gpu)
+
+          wrapper=Path('/tmp/v07-semantic-interface/train_interface_v07.py').read_text()
+          assert 'from flm.train_interface_v07 import main' in wrapper
+          for key,value in (
+              ('FLM_INTERFACE_SEQ','4096'),
+              ('FLM_INTERFACE_LAYERS','16'),
+              ('FLM_INTERFACE_HEADS','12'),
+              ('FLM_INTERFACE_KV_HEADS','4'),
+              ('FLM_INTERFACE_GENERAL_SEQ','1024'),
+              ('FLM_INTERFACE_CODE_SEQ','2048'),
+              ('FLM_INTERFACE_SFT_SEQ','4096'),
+          ):
+              assert key in wrapper and value in wrapper,(key,value)
+
+          trainer=Path('flm/train_interface_v07.py').read_text()
+          assert trainer.count('InterfaceTransformer(cfg)')==1
+          assert 'ComputerUseV3(' not in trainer
+          assert 'ByteCausalLM(' not in trainer
+          assert '"transformer_count":1' in trainer
+
+          from flm.models.interface_transformer import InterfaceConfig,InterfaceTransformer
+          cfg=InterfaceConfig(
+              vocab_size=256,seq_len=128,n_layer=2,n_head=4,n_kv_head=2,n_embd=64,
+              core_memory=False,
           )
+          model=InterfaceTransformer(cfg)
+          x=torch.randint(0,256,(2,64))
+          _,loss=model(x,x)
+          assert torch.isfinite(loss)
+          loss.backward()
+          assert model.blocks[0].attn.k_proj.out_features==32
+          assert model.blocks[0].attn.q_proj.out_features==64
+          print('INTERFACE_TRANSFORMER_OK params=',model.parameter_count())
 
-          assert 'split_train_eval_stream' in train
-          assert 'checkpoint_best_pretrain.pt' in train
-          assert 'checkpoint_best_sft.pt' in train
+          from flm.core import Atom,Rule,Query,Program,FLMCore
+          core=FLMCore()
+          program=Program(
+              facts=[
+                  Atom('TallerThan',('Ali','Ayse')),
+                  Atom('TallerThan',('Ayse','Mehmet')),
+              ],
+              rules=[Rule(
+                  (
+                      Atom('TallerThan',('?x','?y')),
+                      Atom('TallerThan',('?y','?z')),
+                  ),
+                  Atom('TallerThan',('?x','?z')),
+                  'transitive',
+              )],
+              queries=[Query(Atom('TallerThan',('Ali','Mehmet')))],
+          )
+          result=core.execute(program)
+          assert result.results[0].answer is True
+          assert result.results[0].proof
+          print('TRAINING_FREE_REASONING_OK',result.results[0])
 
-          import numpy as np
-          from flm.train_v07 import ShuffledStartPool, nonoverlap_starts, eligible_sft_starts
-          starts=nonoverlap_starts(10000,64)
-          pool=ShuffledStartPool(starts,123)
-          first=pool.take(len(starts))
-          assert len(first)==len(starts)
-          assert len(set(map(int,first)))==len(starts)
-          assert pool.epoch==0
-          nxt=pool.take(3)
-          assert pool.epoch==1 and len(set(map(int,nxt)))==3
-          mask=np.zeros(10000,dtype=np.uint8)
-          mask[1:65]=1
-          mask[66:130]=1
-          eligible=eligible_sft_starts(mask,64,min_supervised=8)
-          assert 0 in set(map(int,eligible))
-          print('v0.7 no-replacement sampler OK',len(starts),len(eligible))
+          from flm.core.semantic_compiler import SemanticCompiler
+          compiler=SemanticCompiler()
+          parsed=compiler.compile_canonical('Mert bir bilgisayardır.')
+          assert parsed.facts[0].predicate=='IsA'
+          assert parsed.facts[0].args==('Mert','bilgisayar')
 
-          from flm.data.prepare_v07_text_dev import normalize_agentic_coder_messages
-          msgs=normalize_agentic_coder_messages([
-              {'role':'system','content':'Use tools carefully.'},
-              {'role':'user','content':'Fix the failing project.'},
-              {'role':'reasoning','content':'<think>Inspect logs, reproduce, patch, test.</think>'},
-              {'role':'tool_call','content':'<tool_call>{"name":"shell","arguments":{"cmd":"pytest"}}</tool_call>'},
-              {'role':'tool_output','content':'<tool_response>1 failed</tool_response>'},
-              {'role':'reasoning','content':'<think>Inspect failing assertion and minimal reproducer.</think>'},
-              {'role':'answer','content':'<answer>Patched the bug and added regression coverage.</answer>'},
-          ])
-          joined='\n'.join(x['content'] for x in msgs)
-          assert '<|plan|>' in joined and '<|plan_end|>' in joined
-          assert '<|tool_call|>' in joined and '<|tool_result|>' in joined
+          from flm.core.code_engine import CodeEngine
+          graph=CodeEngine().analyze_python('import os\ndef f(x):\n    return print(x)\n')
+          assert any(x.name=='f' for x in graph.symbols)
+          assert ('f','print') in graph.calls
+
+          from flm.core.ui_engine import UIGraph,UIElement,UIPlanner
+          ui=UIGraph('editor',[UIElement('save','button','Save',x=.9,y=.1)])
+          plan=UIPlanner().plan('Dosyayı kaydet',ui)
+          assert plan and plan[0].op=='CLICK' and plan[0].target_id=='save'
+
+          from flm.data.semantic_curriculum import messages_for
+          joined='\n'.join(x['content'] for x in messages_for(2))
+          assert '<|semantic_ir|>' in joined
+          assert '<|semantic_end|>' in joined
+          assert '<|core_result|>' in joined
           assert '<|final|>' in joined
 
-          from flm.data.prepare_v07_computer_dev import _unigui_plan_fallback
-          assert _unigui_plan_fallback({'plan':{'arguments':{'action':'type','text':'hello'}}},'TYPE')['payload']=='hello'
-          assert _unigui_plan_fallback({'plan':{'arguments':{'action':'key','keys':['CTRL','S']}}},'KEY')['payload']=='CTRL+S'
-          drag=_unigui_plan_fallback({'plan':{'arguments':{'action':'left_click_drag','start_coordinate':[100,200],'coordinate':[800,700]}}},'DRAG')
-          assert drag['coord'] and drag['coord2']
-          assert _unigui_plan_fallback({'plan':{'arguments':{'action':'terminate','status':'success'}}},'DONE')['op']=='DONE'
-
-          data_workflow=Path('.github/workflows/flm-v07-dev-parallel.yml').read_text()
-          assert 'name: FLM v0.7 GitHub Computer Data' in data_workflow
-          assert 'kaggle kernels push' not in data_workflow
-          assert 'build_v07_dev_computer_cpu_kernel.py' not in data_workflow
-          assert 'python -m flm.data.prepare_v07_computer_dev' in data_workflow
-
           gate=Path('.github/workflows/flm-v07-dev-training-gate.yml').read_text()
-          assert 'falcon-flm-v07-quality-v2-gpu' in gate
-          assert 'flm-v07-dev-computer' in gate
-          assert 'falcon-flm-v07-dev-computer-cpu' not in gate
-          assert "data_revision" in gate
-          assert "4096" in gate and "rope" in gate
-          assert "data_revision" in data_workflow
-          assert "LEGACY_REF" not in data_workflow
-          print('v0.7 r2 GitHub-data quality pipeline OK')
+          assert 'falcon-flm-v07-semantic-interface-gpu' in gate
+          assert 'FLM v0.7 DEV Text Repair' in gate
+          assert 'flm-v07-dev-computer' not in gate
+          assert "data_revision',0))>=3" in gate
+          assert 'if: ${{ false }}' not in gate
+          print('SEMANTIC_FLM_SINGLE_TRANSFORMER_PIPELINE_OK')
           PY
 
       - name: FLM v0.7 real input executor regression
