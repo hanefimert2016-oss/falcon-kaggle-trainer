@@ -233,8 +233,8 @@ jobs:
           assert 'validate_pipeline_inputs' in train
           assert 'init_checkpoint=main_seed' in train
           assert 'V07_CU_TASK_EMBEDDING_FROM_MAIN' in train
-          assert 'FLM_V07_MAIN_PRETRAIN_EPOCHS' in train
-          assert 'FLM_V07_CODER_SFT_EPOCHS' in train
+          assert 'PRETRAIN_EPOCHS' in train
+          assert 'SFT_EPOCHS' in train
 
           from flm.train_v07 import text_config
           main_cfg=text_config('main',32768)
