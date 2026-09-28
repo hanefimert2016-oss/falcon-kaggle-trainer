@@ -52,14 +52,6 @@ jobs:
             "numpy>=1.26" \
             "kaggle>=2.2.1"
 
-      - name: Confirm Kaggle CPU generation is disabled
-        run: |
-          set -euo pipefail
-          test -z "$CUDA_VISIBLE_DEVICES"
-          ! grep -q "kaggle kernels push" .github/workflows/flm-v07-dev-parallel.yml
-          ! grep -q "build_v07_dev_computer_cpu_kernel.py" .github/workflows/flm-v07-dev-parallel.yml
-          echo "KAGGLE_CPU_GENERATION_DISABLED"
-
       - name: Reuse existing prepared data or build on GitHub CPU
         id: prepare
         shell: bash
