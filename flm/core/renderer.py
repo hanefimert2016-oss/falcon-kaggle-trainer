@@ -20,6 +20,16 @@ class DeterministicRenderer:
     in wording. Variation never changes the verified Core facts.
     """
 
+    def __init__(self):
+        self._last_identity: dict[str,str] = {}
+
+    def _choose_nonrepeating(self, key:str, variants:tuple[str,...])->str:
+        last=self._last_identity.get(key)
+        choices=[x for x in variants if x!=last] or list(variants)
+        answer=random.SystemRandom().choice(choices)
+        self._last_identity[key]=answer
+        return answer
+
     def render(self, prompt: str, response: CoreResponse) -> str:
         tr=_is_turkish(prompt)
 
@@ -49,7 +59,7 @@ class DeterministicRenderer:
                         "I'm FLM: an AI assistant designed to understand requests, reason through a Semantic Core, and return useful answers.",
                         "I'm FLM. I use one language interface model, while planning, verification, and other reasoning live in my Core.",
                     )
-                return random.SystemRandom().choice(variants)
+                return self._choose_nonrepeating("tr" if tr else "en",variants)
 
             if kind=="ARITHMETIC":
                 return (f"Sonuç: {item.get('value')}." if tr else f"Result: {item.get('value')}.")
