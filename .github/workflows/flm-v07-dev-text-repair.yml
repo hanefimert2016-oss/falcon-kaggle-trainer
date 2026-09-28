@@ -62,13 +62,16 @@ jobs:
             --out prepared_v07_dev_text \
             --owner "$KAGGLE_OWNER" \
             --main-bytes 3072000000 \
-            --coder-bytes 512000000 \
-            --vocab-size 16384 \
+            --wiki-tr-bytes 768000000 \
+            --wiki-en-bytes 768000000 \
+            --coder-bytes 768000000 \
+            --vocab-size 32768 \
             --en-sft-rows 200000 \
             --tr-knowledge-rows 180000 \
             --coder-code-rows 150000 \
             --xlam-tool-rows 60000 \
-            --tool100k-rows 100000
+            --tool100k-rows 100000 \
+            --coder-agent-rows 3000
 
       - name: Verify massive text scale
         run: |
@@ -79,17 +82,23 @@ jobs:
           p=Path('prepared_v07_dev_text/sources.json')
           x=json.loads(p.read_text())
           assert x['pipeline_version']=='v0.7-dev-text'
+          assert int(x.get('data_revision',0)) >= 2, x.get('data_revision')
           s=x['stats']
           assert s['main_raw']['bytes'] >= 3_000_000_000, s['main_raw']
-          assert s['coder_raw']['content_bytes'] >= 490_000_000, s['coder_raw']
-          assert s['main']['tokens'] >= 800_000_000, s['main']
-          assert s['coder']['tokens'] >= 145_000_000, s['coder']
+          assert s['main_raw']['bytes_total_with_knowledge'] >= 4_400_000_000, s['main_raw']
+          assert s['main_wiki_tr']['bytes'] >= 700_000_000, s['main_wiki_tr']
+          assert s['main_wiki_en']['bytes'] >= 700_000_000, s['main_wiki_en']
+          assert s['coder_raw']['content_bytes'] >= 730_000_000, s['coder_raw']
+          assert s['main']['tokens'] >= 1_000_000_000, s['main']
+          assert s['coder']['tokens'] >= 190_000_000, s['coder']
           assert s['main_sft_raw']['rows'] >= 450_000, s['main_sft_raw']
           assert s['main_sft']['supervised_tokens'] >= 300_000_000, s['main_sft']
           assert s['coder_sft_raw']['rows'] >= 280_000, s['coder_sft_raw']
           assert s['coder_sft_tool100k']['rows'] >= 85000, s['coder_sft_tool100k']
-          assert s['coder_sft']['supervised_tokens'] >= 60_000_000, s['coder_sft']
-          assert s['tokenizer']['vocab_size'] >= 16000
+          assert s['coder_sft_agentic']['rows'] >= 2500, s['coder_sft_agentic']
+          assert s['coder_sft_agentic']['plan_turns'] >= 5000, s['coder_sft_agentic']
+          assert s['coder_sft']['supervised_tokens'] >= 90_000_000, s['coder_sft']
+          assert s['tokenizer']['vocab_size'] >= 30000
           print('V07_DEV_TEXT_VERIFIED')
           print(json.dumps(s,indent=2,ensure_ascii=False))
           PY
@@ -100,7 +109,7 @@ jobs:
           set -euo pipefail
           REF="$KAGGLE_OWNER/flm-v07-dev-text"
           if kaggle datasets list --mine -s flm-v07-dev-text -v | grep -Fq "$REF"; then
-            kaggle datasets version -p prepared_v07_dev_text -m "FLM v0.7 DEV 3GB bilingual pretrain + massive SFT/tool data" -q -t -r skip
+            kaggle datasets version -p prepared_v07_dev_text -m "FLM v0.7 r2 4.6GB bilingual knowledge + agentic coder data" -q -t -r skip
           else
             kaggle datasets create -p prepared_v07_dev_text -q -t -r skip
           fi
