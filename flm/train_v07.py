@@ -75,6 +75,10 @@ def validate_pipeline_inputs(text_root: Path, computer_root: Path) -> dict:
         raise RuntimeError(f"wrong text pipeline: {text_manifest.get('pipeline_version')}")
     if computer_manifest.get("pipeline_version") != "v0.7-dev-computer":
         raise RuntimeError(f"wrong ComputerUse pipeline: {computer_manifest.get('pipeline_version')}")
+    if int(text_manifest.get("data_revision", 0)) < 2:
+        raise RuntimeError("v0.7 text data revision 2+ is required")
+    if int(computer_manifest.get("data_revision", 0)) < 2:
+        raise RuntimeError("v0.7 ComputerUse data revision 2+ is required")
 
     ts = text_manifest.get("stats") or {}
     cs = computer_manifest.get("stats") or {}
@@ -85,15 +89,15 @@ def validate_pipeline_inputs(text_root: Path, computer_root: Path) -> dict:
         "coder_sft_supervised": int((ts.get("coder_sft") or {}).get("supervised_tokens", 0)),
         "tokenizer_vocab": int((ts.get("tokenizer") or {}).get("vocab_size", 0)),
     }
-    if required_text["main_tokens"] < 800_000_000:
+    if required_text["main_tokens"] < 1_000_000_000:
         raise RuntimeError(f"main token corpus too small: {required_text}")
-    if required_text["coder_tokens"] < 145_000_000:
+    if required_text["coder_tokens"] < 190_000_000:
         raise RuntimeError(f"coder token corpus too small: {required_text}")
     if required_text["main_sft_supervised"] < 300_000_000:
         raise RuntimeError(f"main SFT corpus too small: {required_text}")
-    if required_text["coder_sft_supervised"] < 60_000_000:
+    if required_text["coder_sft_supervised"] < 90_000_000:
         raise RuntimeError(f"coder SFT corpus too small: {required_text}")
-    if required_text["tokenizer_vocab"] < 16_000:
+    if required_text["tokenizer_vocab"] < 30_000:
         raise RuntimeError(f"tokenizer too small: {required_text}")
 
     examples = int(cs.get("examples", 0))
@@ -102,10 +106,13 @@ def validate_pipeline_inputs(text_root: Path, computer_root: Path) -> dict:
     domains = int(cs.get("domains", 0))
     if examples < 30_000:
         raise RuntimeError(f"ComputerUse corpus too small: {examples}")
-    if int(ops.get("CLICK", 0)) < 20_000:
-        raise RuntimeError(f"ComputerUse CLICK coverage too small: {ops}")
-    if int(ops.get("KEY", 0)) < 100 or int(ops.get("TYPE", 0)) < 10:
-        raise RuntimeError(f"ComputerUse keyboard/type coverage too small: {ops}")
+    minimum_ops = {
+        "CLICK": 20_000, "KEY": 1_000, "TYPE": 1_000, "SCROLL": 750,
+        "DRAG": 300, "RIGHT_CLICK": 200, "DOUBLE_CLICK": 200, "DONE": 500,
+    }
+    short = {k: (int(ops.get(k, 0)), v) for k, v in minimum_ops.items() if int(ops.get(k, 0)) < v}
+    if short:
+        raise RuntimeError(f"ComputerUse multi-action coverage too small: {short}; all={ops}")
     if len(sources) < 2 or domains < 2:
         raise RuntimeError(f"ComputerUse source/domain diversity too small: sources={sources} domains={domains}")
 
@@ -1060,7 +1067,7 @@ def train_computer_use(v07_root, out_root, runtime, tok, vocab_size, steps):
     cfg = ComputerUseV3Config(
         text_vocab=vocab_size,
         task_pad_token=pad_id,
-        task_len=int(os.environ.get("FLM_V07_CU_TASK_LEN", "160")),
+        task_len=int(os.environ.get("FLM_V07_CU_TASK_LEN", "512")),
         image_size=int(os.environ.get("FLM_V07_CU_IMAGE", "224")),
         embd=int(os.environ.get("FLM_V07_CU_EMBD", "768")),
         text_layers=int(os.environ.get("FLM_V07_CU_TEXT_LAYERS", "4")),
