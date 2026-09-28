@@ -1,1 +1,4 @@
-wait for text-data and computer-data then launch v07 dev training
+launch FLM v0.7 quality GPU after GitHub dataset verification
+text=mertsigma/flm-v07-dev-text
+computer=mertsigma/flm-v07-dev-computer
+cpu-kaggle-generation=disabled
