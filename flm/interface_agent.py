@@ -187,10 +187,17 @@ class InterfaceAgent:
             direct_program=None
         if direct_program is not None:
             direct_result=core.execute(direct_program)
-            return self.deterministic_renderer.render(prompt,direct_result)
-
-        program=self.compile(prompt)
-        result=core.execute(program)
+            neural_render_kinds={
+                op.kind for op in direct_program.operations
+                if op.kind in {"IDENTITY","SYNTHESIZE_FACTS"}
+            }
+            if not neural_render_kinds:
+                return self.deterministic_renderer.render(prompt,direct_result)
+            program=direct_program
+            result=direct_result
+        else:
+            program=self.compile(prompt)
+            result=core.execute(program)
         payload={
             "results":[
                 {
