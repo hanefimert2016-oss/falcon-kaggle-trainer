@@ -10,6 +10,7 @@ def _is_turkish(text: str) -> bool:
     return any(x in low for x in (
         " mı"," mi"," mu"," mü"," bir ","hesapla","kodu","kodunu","analiz","sıcakkanlı",
         "kaydet","dosya","nedir","kaç","işlemi","memeli","bilgisayar","hayvan","araç",
+        "sen ","kimsin","kendini tanıt","kendini tanit","nesin",
     )) or any(ch in low for ch in "çğıöşü")
 
 
