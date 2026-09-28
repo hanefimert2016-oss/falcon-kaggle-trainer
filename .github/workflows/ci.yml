@@ -162,7 +162,7 @@ jobs:
           for key,value in (
               ('FLM_V07_MAIN_SEQ','768'),
               ('FLM_V07_CODER_SEQ','768'),
-              ('FLM_V07_MAIN_STEPS','65000'),
+              ('FLM_V07_MAIN_STEPS','70000'),
               ('FLM_V07_MAIN_SFT_STEPS','12000'),
               ('FLM_V07_CODER_STEPS','25000'),
               ('FLM_V07_CODER_SFT_STEPS','10000'),
