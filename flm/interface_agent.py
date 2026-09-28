@@ -9,6 +9,7 @@ from tokenizers import Tokenizer
 
 from flm.core import FLMCore, Program
 from flm.core.semantic_compiler import SemanticCompiler
+from flm.core.renderer import DeterministicRenderer
 from flm.models.core_memory import CoreMemoryBank
 from flm.models.interface_transformer import InterfaceConfig, InterfaceTransformer
 
@@ -80,6 +81,7 @@ class InterfaceAgent:
         self.top_k=int(top_k)
         self.max_new=int(max_new)
         self.semantic_compiler=SemanticCompiler()
+        self.deterministic_renderer=DeterministicRenderer()
 
         memory_path=Path(core_memory) if core_memory else checkpoint.parent/"core_memory.pt"
         if memory_path.is_file():
@@ -146,6 +148,16 @@ class InterfaceAgent:
         return Program.from_json(self._extract_ir(raw))
 
     def answer(self,prompt:str,core:FLMCore)->str:
+        # Canonical facts, queries, arithmetic and code-analysis requests are
+        # answered entirely by FLM Core; no Transformer generation is needed.
+        try:
+            direct_program=self.semantic_compiler.compile_any(prompt)
+        except ValueError:
+            direct_program=None
+        if direct_program is not None:
+            direct_result=core.execute(direct_program)
+            return self.deterministic_renderer.render(prompt,direct_result)
+
         program=self.compile(prompt)
         result=core.execute(program)
         payload={
