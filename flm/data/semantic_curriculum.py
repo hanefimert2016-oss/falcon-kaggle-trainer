@@ -10,8 +10,14 @@ from flm.core import FLMCore, Program
 TR_NAMES=("Ali","Ayşe","Mehmet","Zeynep","Deniz","Ece","Mert","Selin")
 EN_NAMES=("Alice","Bob","Charlie","Diana","Ethan","Grace","Henry","Iris")
 TYPES=(
-    ("kedi","Cat"),("köpek","Dog"),("kuş","Bird"),("memeli","Mammal"),
-    ("araç","Vehicle"),("bilgisayar","Computer"),("program","Program"),("dosya","File"),
+    ("kedi","cat","Cat"),
+    ("köpek","dog","Dog"),
+    ("kuş","bird","Bird"),
+    ("memeli","mammal","Mammal"),
+    ("araç","vehicle","Vehicle"),
+    ("bilgisayar","computer","Computer"),
+    ("program","program","Program"),
+    ("dosya","file","File"),
 )
 RELATIONS=(
     ("daha uzundur","is taller than","TallerThan"),
