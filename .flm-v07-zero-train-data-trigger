@@ -1,0 +1,8 @@
+FLM v0.7 strict zero-train data build r1
+main_tokenizer_corpus_bytes=3072000000
+coder_tokenizer_corpus_bytes=768000000
+wikidata_labeled_triples=1000000
+turkish_thesaurus=all
+tokenizer_training=Kaggle-only
+neural_model_training=false
+raw_source_answer_memory=false
