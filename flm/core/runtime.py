@@ -52,22 +52,26 @@ class FLMCore:
             return {"kind":kind,"ok":True,**self.identity}
 
         if kind=="DESCRIBE_ENTITY":
-            entity=str(args.get("entity") or "").strip()
-            if not entity:
+            requested=str(args.get("entity") or "").strip()
+            if not requested:
                 raise ValueError("DESCRIBE_ENTITY requires entity")
+            entity=self.memory.resolve_entity(requested)
             atoms=self.memory.facts_about(entity)
             facts=[
                 {
-                    "subject":str(atom.args[0]) if atom.args else entity,
+                    "subject":self.memory.display_entity(atom.args[0]) if atom.args else self.memory.display_entity(entity),
                     "predicate":atom.predicate,
-                    "args":[str(x) for x in atom.args],
+                    "predicate_label":self.memory.predicate_label(atom.predicate),
+                    "args":[self.memory.display_entity(x) for x in atom.args],
+                    "canonical_args":[str(x) for x in atom.args],
                 }
                 for atom in atoms
             ]
             return {
                 "kind":kind,
                 "ok":True,
-                "entity":entity,
+                "entity":self.memory.display_entity(entity),
+                "canonical_entity":entity,
                 "facts":facts,
                 "fact_count":len(facts),
             }
@@ -205,7 +209,7 @@ class FLMCore:
     def execute(self, program: Program) -> CoreResponse:
         self.memory.ingest(Program(facts=program.facts,rules=program.rules))
         vm=ReasoningVM(self.memory)
-        results=[vm.prove(q.atom) for q in program.queries]
+        results=[vm.prove(self.memory.resolve_atom(q.atom)) for q in program.queries]
         operation_results=[]
         for op in program.operations:
             try:
