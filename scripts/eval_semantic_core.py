@@ -20,14 +20,13 @@ run("Mert bir bilgisayar mıdır?", "Evet")
 run("Her memeli sıcakkanlıdır.", "Bilgi kaydedildi")
 run("Ali bir memelidir.", "Bilgi kaydedildi")
 run("Ali sıcakkanlı mıdır?", "Evet")
-identity_answers=[agent.ask("Sen kimsin?") for _ in range(3)]
+identity_answers=[agent.ask("Sen kimsin?") for _ in range(4)]
 rows.append({
-    "question":"Sen kimsin? (3 kez)",
+    "question":"Sen kimsin? (4 kez)",
     "answer":" || ".join(identity_answers),
     "ok":all("FLM" in x for x in identity_answers)
         and all(any(k in x for k in ("Ben","Adım","FLM'im","Bana FLM")) for x in identity_answers)
-        and identity_answers[0]!=identity_answers[1]
-        and identity_answers[1]!=identity_answers[2],
+        and len(set(identity_answers))>=3,
 })
 run("Hesapla: 27*14", "378")
 run("""Bu Python kodunu analiz et:
