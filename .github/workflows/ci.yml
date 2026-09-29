@@ -226,55 +226,43 @@ jobs:
           print('mounted image dir regression OK')
           PY
 
-      - name: Semantic FLM single-transformer architecture regression
+      - name: Semantic FLM strict zero-train architecture regression
         run: |
           set -euo pipefail
           python -m py_compile \
-            flm/models/interface_transformer.py \
             flm/core/semantic_ir.py \
             flm/core/semantic_memory.py \
             flm/core/semantic_compiler.py \
+            flm/core/knowledge_compiler.py \
             flm/core/reasoning_vm.py \
             flm/core/runtime.py \
+            flm/core/renderer.py \
             flm/core/code_engine.py \
             flm/core/ui_engine.py \
-            flm/interface_agent.py \
+            flm/core_agent.py \
             flm/data/semantic_curriculum.py \
-            flm/train_interface_v07.py \
-            scripts/build_v07_dev_gpu_kernel.py
+            scripts/build_v07_tokenizer_kernel.py
 
-          python scripts/build_v07_dev_gpu_kernel.py \
+          python scripts/build_v07_tokenizer_kernel.py \
             --owner test-owner \
-            --out /tmp/v07-semantic-interface
-          python -m py_compile /tmp/v07-semantic-interface/train_interface_v07.py
+            --dataset flm-v07-semantic-text-r8 \
+            --out /tmp/v07-tokenizer-only
+          python -m py_compile /tmp/v07-tokenizer-only/train_tokenizer.py
 
           python - <<'PY'
           import json
           from pathlib import Path
-          import torch
 
-          gpu=json.loads(Path('/tmp/v07-semantic-interface/kernel-metadata.json').read_text())
-          assert gpu['id']=='test-owner/falcon-flm-v07-semantic-interface-gpu',gpu
-          assert gpu['title']=='Falcon FLM v07 Semantic Interface Transformer',gpu
-          assert gpu['enable_gpu'] is True
-          assert gpu['dataset_sources']==['test-owner/flm-v07-semantic-text-r8'],gpu
-          assert 'flm-v07-dev-computer' not in json.dumps(gpu)
-
-          wrapper=Path('/tmp/v07-semantic-interface/train_interface_v07.py').read_text()
-          assert 'from flm.train_interface_v07 import main' in wrapper
-          for key,value in (
-              ('FLM_INTERFACE_SEQ','4096'),
-              ('FLM_INTERFACE_LAYERS','16'),
-              ('FLM_INTERFACE_HEADS','12'),
-              ('FLM_INTERFACE_KV_HEADS','4'),
-              ('FLM_INTERFACE_GENERAL_SEQ','1024'),
-              ('FLM_INTERFACE_CODE_SEQ','2048'),
-              ('FLM_INTERFACE_REFRESH_SEQ','2048'),
-              ('FLM_INTERFACE_REFRESH_EPOCHS','0.12'),
-              ('FLM_INTERFACE_SFT_SEQ','4096'),
-              ('FLM_INTERFACE_SFT_EPOCHS','0.65'),
-          ):
-              assert key in wrapper and value in wrapper,(key,value)
+          meta=json.loads(Path('/tmp/v07-tokenizer-only/kernel-metadata.json').read_text())
+          assert meta['id']=='test-owner/falcon-flm-v07-tokenizer-only',meta
+          assert meta['title']=='Falcon FLM v07 Tokenizer Only',meta
+          assert meta['enable_gpu'] is False,meta
+          assert meta['dataset_sources']==['test-owner/flm-v07-semantic-text-r8'],meta
+          assert meta['model_sources']==[],meta
+          wrapper=Path('/tmp/v07-tokenizer-only/train_tokenizer.py').read_text()
+          assert 'BpeTrainer' in wrapper
+          assert 'torch' not in wrapper
+          assert 'InterfaceTransformer' not in wrapper
 
           from flm.interface_agent import _copy_similarity,_verbatim_requested,_candidate_preserves_core,_has_long_verbatim_overlap
           assert _copy_similarity("aynı veri satırı","aynı veri satırı")>0.99
@@ -289,34 +277,11 @@ jobs:
               "Ada, memeliler sınıfındaki bir kedidir"
           )
 
-          trainer=Path('flm/train_interface_v07.py').read_text()
-          assert trainer.count('InterfaceTransformer(cfg)')==1
-          assert 'general_refresh' in trainer
-          assert 'ComputerUseV3(' not in trainer
-          assert 'ByteCausalLM(' not in trainer
-          assert 'train_computer_use' not in trainer
-          assert 'train_text_pretrain' not in trainer
-          assert '"transformer_count":1' in trainer
-          assert 'semantic_data' in trainer and 'semantic_mask' in trainer
-          assert '"semantic":0.60' in trainer
-          assert 'mixed_sft-r8' in trainer
-          assert 'evaluate_interface_behavior' in trainer
-          assert 'behavior_quality.json' in trainer
-          assert 'trained InterfaceTransformer failed behavior gate' in trainer
-
-          from flm.models.interface_transformer import InterfaceConfig,InterfaceTransformer
-          cfg=InterfaceConfig(
-              vocab_size=256,seq_len=128,n_layer=2,n_head=4,n_kv_head=2,n_embd=64,
-              core_memory=False,
-          )
-          model=InterfaceTransformer(cfg)
-          x=torch.randint(0,256,(2,64))
-          _,loss=model(x,x)
-          assert torch.isfinite(loss)
-          loss.backward()
-          assert model.blocks[0].attn.k_proj.out_features==32
-          assert model.blocks[0].attn.q_proj.out_features==64
-          print('INTERFACE_TRANSFORMER_OK params=',model.parameter_count())
+          # Authoritative runtime must not require a checkpoint or neural model.
+          from flm.core_agent import TrainingFreeAgent
+          agent=TrainingFreeAgent()
+          assert not hasattr(agent,'model')
+          assert not hasattr(agent,'checkpoint')
 
           from flm.core import Atom,Rule,Query,Program,FLMCore
           core=FLMCore()
@@ -416,6 +381,23 @@ jobs:
               "Ada bir kedi değildir.",
               "Ada hakkında ne biliyorsun?",describe,describe_result
           )
+
+          from flm.core.knowledge_compiler import SemanticKnowledgeCompiler
+          from flm.core.semantic_memory import SemanticMemory
+          kmem=SemanticMemory()
+          kcompiler=SemanticKnowledgeCompiler()
+          raw_source='Ada bir kedidir.'
+          clean_program,fingerprint=kcompiler.compile_record(raw_source)
+          assert clean_program.metadata=={}
+          assert raw_source not in clean_program.to_json()
+          assert len(fingerprint)==64
+          stats=kcompiler.ingest(kmem,[raw_source,{'subject':'Ada','predicate':'IsA','object':'Mammal'}])
+          assert stats.accepted==2 and stats.facts_added==2,stats
+          saved=Path('/tmp/flm-zero-train-memory.json')
+          kmem.save(saved)
+          memory_text=saved.read_text(encoding='utf-8')
+          assert raw_source not in memory_text
+          assert 'Ada' in memory_text and 'Cat' in memory_text and 'Mammal' in memory_text
 
           from flm.core.code_engine import CodeEngine
           graph=CodeEngine().analyze_python('import os\ndef f(x):\n    return print(x)\n')
@@ -557,13 +539,13 @@ jobs:
           print('SEMANTIC_CURRICULUM_ALL_MODES_OK',sorted(seen_ops))
 
           gate=Path('.github/workflows/flm-v07-dev-training-gate.yml').read_text()
-          assert 'falcon-flm-v07-semantic-interface-gpu' in gate
+          assert 'falcon-flm-v07-tokenizer-only' in gate
           assert 'FLM v0.7 DEV Text Repair' in gate
-          assert 'flm-v07-dev-computer' not in gate
           assert 'flm-v07-semantic-text-r8' in gate
-          assert "data_revision',0))>=8" in gate
-          assert 'if: ${{ false }}' not in gate
-          print('SEMANTIC_FLM_SINGLE_TRANSFORMER_PIPELINE_OK')
+          assert 'build_v07_tokenizer_kernel.py' in gate
+          assert 'falcon-flm-v07-semantic-interface-gpu' not in gate
+          assert '--accelerator NvidiaTeslaT4' not in gate
+          print('SEMANTIC_FLM_ZERO_TRAIN_PIPELINE_OK')
           PY
 
           python scripts/eval_semantic_core.py
