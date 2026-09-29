@@ -104,7 +104,8 @@ jobs:
           assert int(sem.get('anti_copy_phrase_words',0))==9, sem
           assert sem.get('source')=='synthetic:flm-semantic-curriculum-v5', sem
           assert int(sem.get('render_focused_rows',0)) >= 590_000, sem
-          assert sem.get('ir_supervision_policy') == '1/2 compiler+render, 1/2 render-only', sem
+          assert sem.get('ir_supervision_policy') == '1/2 compiler+render, 1/2 source-hidden render-only', sem
+          assert sem.get('source_hidden_rendering') is True, sem
           assert s['semantic_sft']['supervised_tokens'] >= 150_000_000, s['semantic_sft']
           langs=sem.get('language_counts') or {}
           assert int(langs.get('tr',0)) >= 590_000, langs
