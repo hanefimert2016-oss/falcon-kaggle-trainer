@@ -459,7 +459,7 @@ jobs:
                   assert 'TYPE' in ops,ops
           # Same semantic request/Core program, different valid surface answer.
           first=messages_for(13)
-          second=messages_for(13+SEMANTIC_MODES*2)
+          second=messages_for(13+SEMANTIC_MODES*4)
           first_user=next(x['content'] for x in first if x['role']=='user')
           second_user=next(x['content'] for x in second if x['role']=='user')
           first_ir=next(x['content'] for x in first if x['role']=='assistant' and '<|semantic_ir|>' in x['content'])
@@ -470,16 +470,27 @@ jobs:
           assert first_ir==second_ir,(first_ir,second_ir)
           assert first_final!=second_final,(first_final,second_final)
 
-          render_focus=messages_for(SEMANTIC_MODES*2+13)
-          assert render_focus[2]['role']=='assistant'
-          assert render_focus[2].get('train') is False
-          assert render_focus[-1].get('train') is True
+          # Both TR and EN receive compiler-supervised and source-hidden
+          # renderer-only rows; render-only context never exposes raw source wording.
+          for mode in range(SEMANTIC_MODES):
+              tr_compile=messages_for(mode)
+              en_compile=messages_for(SEMANTIC_MODES+mode)
+              tr_render=messages_for(SEMANTIC_MODES*2+mode)
+              en_render=messages_for(SEMANTIC_MODES*3+mode)
+              assert tr_compile[2].get('train') is True,(mode,tr_compile)
+              assert en_compile[2].get('train') is True,(mode,en_compile)
+              assert tr_render[2].get('train') is False,(mode,tr_render)
+              assert en_render[2].get('train') is False,(mode,en_render)
+              assert 'Ham kaynak metin gizlidir' in tr_render[1]['content'],tr_render[1]
+              assert 'raw source wording is hidden' in en_render[1]['content'],en_render[1]
+              assert tr_render[-1].get('train') is True
+              assert en_render[-1].get('train') is True
 
           assert len(language_seen)==SEMANTIC_MODES*2,language_seen
-          assert SEMANTIC_MODES>=16
+          assert SEMANTIC_MODES>=20
           assert seen_ops=={
               'ARITHMETIC','ANALYZE_CODE','STATE_PLAN','UI_PLAN','VERIFY',
-              'IDENTITY','SYNTHESIZE_FACTS'
+              'IDENTITY','SYNTHESIZE_FACTS','DESCRIBE_ENTITY'
           },seen_ops
           print('SEMANTIC_CURRICULUM_ALL_MODES_OK',sorted(seen_ops))
 
