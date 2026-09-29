@@ -461,8 +461,8 @@ def main()->int:
 
     root=resolve_text_root(os.environ.get("FLM_V07_TEXT_VERSION","v0.7-dev-text"))
     manifest=json.loads((root/"sources.json").read_text(encoding="utf-8"))
-    if int(manifest.get("data_revision",0))<6:
-        raise RuntimeError("single-transformer FLM requires text data revision 6+")
+    if int(manifest.get("data_revision",0))<7:
+        raise RuntimeError("single-transformer FLM requires text data revision 7+")
     semantic_rows=int(((manifest.get("stats") or {}).get("semantic_interface_sft") or {}).get("rows",0))
     if semantic_rows<1_200_000:
         raise RuntimeError(f"r7 semantic interface curriculum too small: {semantic_rows}")
