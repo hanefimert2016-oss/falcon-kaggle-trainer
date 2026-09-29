@@ -15,7 +15,7 @@ case "$MODE" in
     ;;
 esac
 
-DATA_ROOT="${FLM_LOCAL_DATA_ROOT:-$ROOT/.local-data/v07-semantic-r7}"
+DATA_ROOT="${FLM_LOCAL_DATA_ROOT:-$ROOT/.local-data/v07-semantic-r8}"
 TEXT_DIR="$DATA_ROOT/text"
 OUT_ROOT="${FLM_LOCAL_OUTPUT_ROOT:-$ROOT/local-runs/flm-v0.7-semantic}"
 LOG_DIR="$OUT_ROOT/logs"
