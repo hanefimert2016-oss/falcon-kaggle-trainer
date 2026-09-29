@@ -22,7 +22,7 @@ def valid_revision(path:Path)->bool:
         obj=json.loads(meta.read_text(encoding="utf-8"))
     except Exception:
         return False
-    return obj.get("pipeline_version")=="v0.7-dev-text" and int(obj.get("data_revision",0))>=5
+    return obj.get("pipeline_version")=="v0.7-dev-text" and int(obj.get("data_revision",0))>=6
 
 
 def ensure_text_dataset(ref:str,dest:Path)->None:
@@ -78,7 +78,7 @@ def main()->int:
 
     data_root=Path(args.data_root)
     text_dir=data_root/"text"
-    ensure_text_dataset(f"{args.owner}/flm-v07-semantic-text-r5",text_dir)
+    ensure_text_dataset(f"{args.owner}/flm-v07-semantic-text-r6",text_dir)
 
     batch,accum=gpu_profile()
     out=Path(args.drive_root)/"runs"/"flm-v0.7-semantic"
