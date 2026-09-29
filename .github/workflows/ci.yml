@@ -500,11 +500,11 @@ jobs:
           second_ir=next(x['content'] for x in second if x['role']=='assistant' and '<|semantic_ir|>' in x['content'])
           first_final=next(x['content'] for x in first if x['role']=='assistant' and '<|final|>' in x['content'])
           second_final=next(x['content'] for x in second if x['role']=='assistant' and '<|final|>' in x['content'])
-          # Renderer-only rows deliberately hide/rewrite the user source wording.
-          # Equality belongs to semantic IR/Core meaning, not the surface prompt.
+          # These two are compiler-supervised TR cycles: same request/IR, but a
+          # different valid surface answer teaches wording diversity.
+          assert first_user==second_user,(first_user,second_user)
           assert first_ir==second_ir,(first_ir,second_ir)
           assert first_final!=second_final,(first_final,second_final)
-          assert first_user!=second_user,(first_user,second_user)
 
           # Both TR and EN receive compiler-supervised and source-hidden
           # renderer-only rows; render-only context never exposes raw source wording.
@@ -523,6 +523,22 @@ jobs:
               assert en_render[-1].get('train') is True
 
           assert len(language_seen)==SEMANTIC_MODES*2,language_seen
+          from flm.data.prepare_v07_text_dev import normalize_swe_hero_messages
+          swe_fixture=[
+              {"role":"system","content":"Fix the repository issue using tools."},
+              {"role":"user","content":"A boundary test is failing."},
+              {"role":"assistant","content":"I will inspect the failing code."},
+              {"role":"tool","content":"def item(xs,i): return xs[i+1]"},
+              {"role":"assistant","content":"I will patch the off-by-one error."},
+              {"role":"tool","content":"patch applied"},
+              {"role":"assistant","content":"The focused regression test now passes."},
+          ]
+          swe_msgs=normalize_swe_hero_messages(swe_fixture)
+          assert any('<|plan|>' in x['content'] for x in swe_msgs if x['role']=='assistant'),swe_msgs
+          assert any('<|tool_call|>' in x['content'] for x in swe_msgs if x['role']=='assistant'),swe_msgs
+          assert any('<|tool_result|>' in x['content'] for x in swe_msgs if x['role']=='tool'),swe_msgs
+          assert any('<|final|>' in x['content'] for x in swe_msgs if x['role']=='assistant'),swe_msgs
+
           assert SEMANTIC_MODES>=20
           assert seen_ops=={
               'ARITHMETIC','ANALYZE_CODE','STATE_PLAN','UI_PLAN','VERIFY',
