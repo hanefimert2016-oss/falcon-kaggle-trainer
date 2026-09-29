@@ -421,6 +421,12 @@ class InterfaceAgent:
                     "Net ve profesyonel bir üslup kullan.",
                     "Teknik jargonu gereksiz yere artırmadan anlat.",
                     "Önceki yanıtlardan farklı bir cümle yapısı seç.",
+                    "Sonucu kısa bir açıklamayla farklı sözcükler kullanarak ifade et.",
+                    "Ana fikri koru ama cümle sırasını değiştir.",
+                    "Doğrudan sonuca gir ve ardından tek kısa açıklama ekle.",
+                    "Aynı bilgiyi daha gündelik ama doğru bir Türkçeyle anlat.",
+                    "Anlamı bozmadan farklı fiiller ve bağlaçlar seç.",
+                    "Cevabı yeni bir giriş cümlesiyle yeniden kur.",
                 )
                 render_request=(
                     "Doğrulanmış çekirdek anlamını doğal Türkçe ile, kendi cümlelerinle ve "
@@ -435,6 +441,12 @@ class InterfaceAgent:
                     "Use a clear professional tone.",
                     "Avoid unnecessary jargon.",
                     "Choose a sentence structure different from recent answers.",
+                    "Use different wording while preserving the exact meaning.",
+                    "Reorder the explanation without changing any verified fact.",
+                    "Lead with the conclusion and add one short explanation.",
+                    "Use a more conversational but still precise formulation.",
+                    "Choose different verbs and connectors while staying faithful.",
+                    "Reconstruct the answer with a fresh opening sentence.",
                 )
                 render_request=(
                     "Express the verified Core meaning in fresh natural English. Do not reconstruct "
@@ -459,7 +471,7 @@ class InterfaceAgent:
         best=None
         self.last_render_source="none"
         self.last_render_attempts=0
-        for attempt in range(4):
+        for attempt in range(6):
             self.last_render_attempts=attempt+1
             candidate=self.generate(
                 render_messages,
@@ -473,10 +485,10 @@ class InterfaceAgent:
             faithful=_candidate_preserves_core(
                 candidate,prompt,program,result,verbatim=verbatim
             )
-            duplicate=candidate in self._recent_answers[-8:]
+            duplicate=candidate in self._recent_answers[-24:]
             near_repeat=any(
                 _copy_similarity(candidate,previous)>=0.84
-                for previous in semantic_history[-8:]
+                for previous in semantic_history[-24:]
             )
             if faithful and not duplicate and not near_repeat and (best is None or score<best[0]):
                 best=(score,candidate)
@@ -494,10 +506,10 @@ class InterfaceAgent:
             self.last_render_source="deterministic_fallback"
         if answer:
             self._recent_answers.append(answer)
-            self._recent_answers=self._recent_answers[-8:]
+            self._recent_answers=self._recent_answers[-24:]
             history=self._recent_by_semantic.setdefault(semantic_key,[])
             history.append(answer)
-            self._recent_by_semantic[semantic_key]=history[-12:]
+            self._recent_by_semantic[semantic_key]=history[-24:]
         return answer
 
 
