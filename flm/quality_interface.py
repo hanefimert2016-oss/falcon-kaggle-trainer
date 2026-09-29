@@ -80,7 +80,7 @@ def evaluate_interface_behavior(
     synth_result=core.execute(synth_prog)
     synth_answers=[]
     synth_neural=0
-    for _ in range(4):
+    for _ in range(8):
         synth_answer=agent.render_verified(synth_prompt,synth_prog,synth_result)
         synth_answers.append(synth_answer)
         synth_neural+=int(agent.last_render_source=="neural")
