@@ -28,6 +28,15 @@ def _copy_similarity(a:str,b:str)->float:
     return difflib.SequenceMatcher(None,a,b).ratio()
 
 
+def _has_long_verbatim_overlap(source:str,answer:str,min_words:int=9)->bool:
+    a=_normalized_for_copy(source).split()
+    b=_normalized_for_copy(answer).split()
+    if len(a)<min_words or len(b)<min_words:
+        return False
+    grams={tuple(a[i:i+min_words]) for i in range(len(a)-min_words+1)}
+    return any(tuple(b[i:i+min_words]) in grams for i in range(len(b)-min_words+1))
+
+
 def _verbatim_requested(prompt:str)->bool:
     low=str(prompt or "").casefold()
     return any(x in low for x in (
@@ -45,8 +54,11 @@ def _candidate_preserves_core(candidate:str,prompt:str,program:Program,result,*,
     # Never expose internal protocol/serialized payload as an answer.
     if any(x in text for x in ("<|semantic_ir|>","<|semantic_end|>","<|core_result|>","<|core_end|>")):
         return False
-    if not verbatim and len(text)>=40 and _copy_similarity(prompt,text)>=0.86:
-        return False
+    if not verbatim:
+        if len(text)>=40 and _copy_similarity(prompt,text)>=0.86:
+            return False
+        if _has_long_verbatim_overlap(prompt,text,min_words=9):
+            return False
 
     for op_result in result.operation_results:
         if not op_result.get("ok",False):
