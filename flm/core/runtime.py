@@ -51,6 +51,27 @@ class FLMCore:
         if kind=="IDENTITY":
             return {"kind":kind,"ok":True,**self.identity}
 
+        if kind=="DESCRIBE_ENTITY":
+            entity=str(args.get("entity") or "").strip()
+            if not entity:
+                raise ValueError("DESCRIBE_ENTITY requires entity")
+            atoms=self.memory.facts_about(entity)
+            facts=[
+                {
+                    "subject":str(atom.args[0]) if atom.args else entity,
+                    "predicate":atom.predicate,
+                    "args":[str(x) for x in atom.args],
+                }
+                for atom in atoms
+            ]
+            return {
+                "kind":kind,
+                "ok":True,
+                "entity":entity,
+                "facts":facts,
+                "fact_count":len(facts),
+            }
+
         if kind=="SYNTHESIZE_FACTS":
             facts=[]
             for raw in (args.get("facts") or []):
