@@ -43,7 +43,7 @@ rows.append({
     "question":"17 mi büyük 9 mu?",
     "answer":compare_answer,
     "ok":"17" in compare_answer and "9" in compare_answer
-        and any(x in compare_answer.casefold() for x in ("büyük","daha büyük")),
+        and any(x in compare_answer.casefold() for x in ("büyük","daha büyük","aşıyor","aşar","üstünde")),
 })
 sort_answer=agent.ask("Şunları küçükten büyüğe sırala: 9, 3, 7, 1.")
 rows.append({
