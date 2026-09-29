@@ -29,13 +29,13 @@ rows.append({
     "ok":all("Ada" in x and "kedi" in x and "memeli" in x for x in memory_answers)
         and len(set(memory_answers))>=2,
 })
-identity_answers=[agent.ask("Sen kimsin?") for _ in range(4)]
+identity_answers=[agent.ask("Sen kimsin?") for _ in range(8)]
 rows.append({
-    "question":"Sen kimsin? (4 kez)",
+    "question":"Sen kimsin? (8 kez)",
     "answer":" || ".join(identity_answers),
     "ok":all("FLM" in x for x in identity_answers)
-        and all(any(k in x for k in ("Ben","Adım","FLM'im","Bana FLM")) for x in identity_answers)
-        and len(set(identity_answers))>=3,
+        and all(any(k in x.casefold() for k in ("yapay zek", "ai ", "asistan")) for x in identity_answers)
+        and len(set(identity_answers))>=6,
 })
 run("Hesapla: 27*14", "378")
 run("""Bu Python kodunu analiz et:
