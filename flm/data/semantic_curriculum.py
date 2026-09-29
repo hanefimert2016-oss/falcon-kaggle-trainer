@@ -522,12 +522,16 @@ def messages_for(i:int):
         "facts exactly, avoid mirroring the source wording, and vary phrasing across equivalent "
         "examples without changing the conclusion."
     )
+    # Two thirds train both compiler + renderer. One third keeps the
+    # Semantic IR in context but applies loss only to the natural final answer.
+    # This prevents long JSON targets from dominating response-synthesis learning.
+    train_ir=((i//SEMANTIC_MODES)%3)!=2
     return [
         {"role":"system","content":system},
         {"role":"user","content":user},
-        {"role":"assistant","content":ir},
+        {"role":"assistant","content":ir,"train":train_ir},
         {"role":"tool","content":core},
-        {"role":"assistant","content":"<|final|>\n"+final},
+        {"role":"assistant","content":"<|final|>\n"+final,"train":True},
     ]
 
 
@@ -537,6 +541,7 @@ def append_semantic_curriculum(path:Path,rows:int=800_000,seed:int=7071)->dict:
     rng.shuffle(indices)
     mode_counts={str(i):0 for i in range(SEMANTIC_MODES)}
     language_counts={"tr":0,"en":0}
+    render_focused_rows=0
     with path.open("a",encoding="utf-8") as fh:
         for i in indices:
             messages=messages_for(i)
@@ -546,6 +551,8 @@ def append_semantic_curriculum(path:Path,rows:int=800_000,seed:int=7071)->dict:
             },ensure_ascii=False)+"\n")
             mode_counts[str(i%SEMANTIC_MODES)]+=1
             language_counts["tr" if ((i//SEMANTIC_MODES)%2==0) else "en"]+=1
+            if not bool(messages[2].get("train",True)):
+                render_focused_rows+=1
     return {
         "rows":rows,
         "modes":SEMANTIC_MODES,
@@ -554,6 +561,8 @@ def append_semantic_curriculum(path:Path,rows:int=800_000,seed:int=7071)->dict:
         "source":"synthetic:flm-semantic-curriculum-v3",
         "core_executed":True,
         "anti_copy_verified":True,
+        "render_focused_rows":render_focused_rows,
+        "ir_supervision_policy":"2/3 compiler+render, 1/3 render-only",
         "identity_variants_tr":len(TR_IDENTITY_ANSWERS),
         "identity_variants_en":len(EN_IDENTITY_ANSWERS),
     }
