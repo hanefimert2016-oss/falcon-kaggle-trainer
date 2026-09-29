@@ -78,7 +78,7 @@ def main()->int:
 
     data_root=Path(args.data_root)
     text_dir=data_root/"text"
-    ensure_text_dataset(f"{args.owner}/flm-v07-semantic-text-r6",text_dir)
+    ensure_text_dataset(f"{args.owner}/flm-v07-semantic-text-r7",text_dir)
 
     batch,accum=gpu_profile()
     out=Path(args.drive_root)/"runs"/"flm-v0.7-semantic"
