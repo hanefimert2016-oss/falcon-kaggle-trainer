@@ -71,7 +71,8 @@ jobs:
           assert int(sem.get('anti_copy_phrase_words',0))==9
           assert sem.get('source')=='synthetic:flm-semantic-curriculum-v5'
           assert int(sem.get('render_focused_rows',0))>=590_000
-          assert sem.get('ir_supervision_policy')=='1/2 compiler+render, 1/2 render-only'
+          assert sem.get('ir_supervision_policy')=='1/2 compiler+render, 1/2 source-hidden render-only'
+          assert sem.get('source_hidden_rendering') is True
           assert int((s.get('semantic_sft') or {}).get('supervised_tokens',0))>=150_000_000
           langs=sem.get('language_counts') or {}
           assert int(langs.get('tr',0))>=590_000 and int(langs.get('en',0))>=590_000
