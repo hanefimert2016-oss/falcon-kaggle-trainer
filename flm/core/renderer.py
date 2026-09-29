@@ -38,6 +38,60 @@ class DeterministicRenderer:
         self._recent[key]=history
         return answer
 
+    @staticmethod
+    def _identity_variants(tr: bool) -> tuple[str,...]:
+        if tr:
+            openers=(
+                "Ben FLM'im.",
+                "Adım FLM.",
+                "Bana FLM diyebilirsin.",
+                "Kısaca, ben FLM adlı bir yapay zekâ asistanıyım.",
+                "Benim adım FLM.",
+                "FLM olarak çalışan bir yapay zekâ asistanıyım.",
+            )
+            architecture=(
+                "Dili tek bir arayüz Transformer'ıyla işler, doğrulanabilir muhakemeyi Semantic Core'da yürütürüm.",
+                "Doğal dili arayüz modelim yorumlar; planlama, mantık ve doğrulama çekirdekte çalışır.",
+                "İstekleri Semantic IR'ye dönüştürür, hesaplama ve yapılandırılmış reasoning'i Core'a bırakırım.",
+                "Tek eğitilebilir dil arayüzünü semantik hafıza, planlayıcı ve doğrulayıcı çekirdekle birlikte kullanırım.",
+                "Metni anlamak için arayüz modelini, sonuçları hesaplayıp kontrol etmek için Semantic Core'u kullanırım.",
+                "Dil katmanım isteği anlam yapısına çevirir; asıl yapılandırılmış işlemleri çekirdeğim yapar.",
+            )
+            purpose=(
+                "Amacım doğrulanmış sonucu doğal ve yararlı bir cevap halinde sunmak.",
+                "Cevabı ezberlenmiş bir satırdan kopyalamak yerine doğrulanmış anlamdan yeniden kurarım.",
+                "Aynı gerçeği korurken ifadeyi bağlama uygun biçimde değiştirebilirim.",
+                "Bilgiyi ham metin olarak tekrarlamak yerine semantik içeriğini kullanırım.",
+                "Hedefim tutarlı, doğrulanabilir ve doğal cevaplar üretmek.",
+                "Core sonucunu kullanıcıya uygun yeni bir anlatımla ifade ederim.",
+            )
+        else:
+            openers=(
+                "I'm FLM.",
+                "My name is FLM.",
+                "You can call me FLM.",
+                "In short, I'm an AI assistant called FLM.",
+                "I go by FLM.",
+                "I operate as FLM, an AI assistant.",
+            )
+            architecture=(
+                "One interface Transformer handles language while verifiable reasoning runs in my Semantic Core.",
+                "My interface model interprets natural language; planning, logic, and verification run in the Core.",
+                "I translate requests into Semantic IR and leave structured computation and reasoning to the Core.",
+                "I combine one trainable language interface with semantic memory, planning, and verification.",
+                "The interface handles text while the Semantic Core calculates and checks structured results.",
+                "My language layer converts requests into semantic structure and the Core performs the actual operations.",
+            )
+            purpose=(
+                "My goal is to turn verified results into natural and useful answers.",
+                "I reconstruct answers from verified meaning instead of copying a memorized source line.",
+                "I can vary the wording while keeping the underlying conclusion unchanged.",
+                "I use the semantic content of information instead of replaying raw text.",
+                "The aim is to produce natural, consistent, and verifiable responses.",
+                "I express Core results in fresh wording suited to the user.",
+            )
+        return tuple(f"{a} {b} {d}" for a in openers for b in architecture for d in purpose)
+
     def render(self, prompt: str, response: CoreResponse) -> str:
         tr=_is_turkish(prompt)
 
@@ -66,37 +120,8 @@ class DeterministicRenderer:
                 return (f"İşlem başarısız: {msg}" if tr else f"Operation failed: {msg}")
 
             if kind=="IDENTITY":
-                if tr:
-                    variants=(
-                        "Ben FLM'im. İstekleri anlayıp Semantic Core üzerinden akıl yürüten bir yapay zekâ asistanıyım.",
-                        "Adım FLM. Tek bir dil arayüzü modeliyle çalışan, asıl muhakemeyi Semantic Core'da yapan bir yapay zekâ asistanıyım.",
-                        "Ben FLM adlı yapay zekâ asistanıyım; dili arayüz modeli işler, planlama ve doğrulama gibi işleri ise çekirdeğim yürütür.",
-                        "FLM'im; bir yapay zekâ asistanı olarak soruları anlar, çekirdek araçlarla sonuç üretir ve bunu doğal biçimde aktarırım.",
-                        "Bana FLM diyebilirsin. Bir yapay zekâ asistanıyım; dil tarafını tek bir Transformer işler, hesaplama, mantık ve doğrulama Semantic Core'da yürür.",
-                        "Ben FLM adlı bir yapay zekâ asistanıyım. Soruyu önce anlam yapısına çevirir, ardından çekirdekteki araçlarla doğrulanmış bir sonuç üretirim.",
-                        "FLM adlı bir AI asistanıyım. Ezberlenmiş tek bir cevap vermek yerine Core sonucunu kullanarak cevabı yeniden kurarım.",
-                        "Kısaca FLM adlı bir yapay zekâ asistanıyım: dil için bir arayüz modelim, yapılandırılmış muhakeme için de eğitim gerektirmeyen bir çekirdeğim var.",
-                        "Benim adım FLM; bir yapay zekâ asistanıyım. İsteğini yorumlar, gereken işlemleri Semantic Core'da çalıştırır ve sonucu doğal dille ifade ederim.",
-                        "FLM'im. Tek bir eğitilebilir arayüz ile semantik hafıza, planlama ve doğrulamayı bir arada kullanan bir yapay zekâ asistanıyım.",
-                        "Ben FLM adlı asistanım; ne istediğini arayüzden anlar, sonucu çekirdekte hesaplayıp farklı ama tutarlı biçimlerde anlatabilirim.",
-                        "Adım FLM; bir yapay zekâ asistanıyım. Cevaplarımın anlamını Core belirler, cümleleri ise bağlama uygun biçimde yeniden oluştururum.",
-                    )
-                else:
-                    variants=(
-                        "I'm FLM, an AI assistant that uses a Semantic Core for reasoning and a single trainable interface model for language.",
-                        "My name is FLM. I'm an AI assistant whose reasoning is handled by a Semantic Core while one interface model handles language.",
-                        "I'm FLM: an AI assistant designed to understand requests, reason through a Semantic Core, and return useful answers.",
-                        "I'm FLM, an AI assistant. I use one language interface model, while planning, verification, and other reasoning live in my Core.",
-                        "You can call me FLM. I'm an AI assistant; one Transformer handles language, while structured logic and verification run in the Semantic Core.",
-                        "I'm FLM, an AI assistant. I translate requests into semantic structure, execute the relevant Core operations, and then phrase the result naturally.",
-                        "I'm an AI assistant named FLM. Rather than replaying one memorized sentence, I render answers from verified Core meaning.",
-                        "In short, I'm FLM, an AI assistant with one trainable language interface paired with a training-free structured reasoning Core.",
-                        "My name is FLM. I'm an AI assistant that interprets your request, lets the Semantic Core do the structured work, and explains the verified result.",
-                        "I'm FLM, an AI assistant combining a language interface with semantic memory, planning, tools, and verification in the Core.",
-                        "I'm the FLM assistant. The Core fixes the meaning of the answer while the interface can express it in different faithful ways.",
-                        "I'm FLM, an AI assistant. My answers are generated from Core-verified meaning rather than copied from a fixed response string.",
-                    )
-                return self._choose_nonrepeating("tr" if tr else "en",variants)
+                variants=self._identity_variants(tr)
+                return self._choose_nonrepeating("identity-tr" if tr else "identity-en",variants)
 
             if kind=="DESCRIBE_ENTITY":
                 entity=str(item.get("entity") or "Bu varlık")
