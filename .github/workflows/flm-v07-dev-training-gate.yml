@@ -9,7 +9,6 @@ on:
   push:
     paths:
       - '.flm-v07-dev-gate-trigger'
-      - 'scripts/build_v07_tokenizer_kernel.py'
   workflow_dispatch:
 
 permissions:
