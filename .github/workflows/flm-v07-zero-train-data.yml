@@ -1,0 +1,114 @@
+name: FLM v0.7 Zero-Train Data
+
+on:
+  push:
+    paths:
+      - '.flm-v07-zero-train-data-trigger'
+      - 'flm/data/prepare_zero_train_data.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flm-v07-zero-train-data-r1
+  cancel-in-progress: true
+
+jobs:
+  build-zero-train-data:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
+      CUDA_VISIBLE_DEVICES: ""
+      HF_HUB_DISABLE_TELEMETRY: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install CPU data stack
+        run: python -m pip install "datasets>=4.0" "huggingface_hub>=0.30" "kaggle>=2.2.1" numpy pillow
+
+      - name: Verify strict zero-train builder
+        run: |
+          set -euo pipefail
+          test -z "$CUDA_VISIBLE_DEVICES"
+          python -m py_compile flm/data/prepare_zero_train_data.py
+          python - <<'PY'
+          from pathlib import Path
+          src=Path('flm/data/prepare_zero_train_data.py').read_text()
+          for forbidden in ('train_tokenizer(', 'InterfaceTransformer(', 'ByteCausalLM(', 'optimizer.', 'backward('):
+              assert forbidden not in src,forbidden
+          assert 'model_training":False' in src
+          assert 'tokenizer_trained_here":False' in src
+          print('ZERO_TRAIN_DATA_BUILDER_OK')
+          PY
+
+      - name: Build tokenizer corpus and semantic knowledge
+        run: |
+          set -euo pipefail
+          python -m flm.data.prepare_zero_train_data             --out prepared_zero_train             --owner "$KAGGLE_OWNER"             --main-bytes 3072000000             --coder-bytes 768000000             --wikidata-rows 1000000
+
+      - name: Verify zero-train data
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('prepared_zero_train')
+          m=json.loads((root/'zero_train_manifest.json').read_text())
+          assert m['format']=='flm-zero-train-data-v1'
+          assert m['training_steps']==0
+          assert m['model_training'] is False
+          assert m['tokenizer_trained_here'] is False
+          assert m['raw_prose_answer_memory'] is False
+          assert m['source_hidden_semantic_memory'] is True
+          s=m['stats']
+          assert s['tokenizer_main_corpus']['bytes']>=3_000_000_000
+          assert s['tokenizer_code_corpus']['content_bytes']>=730_000_000
+          assert s['wikidata']['rows']>=1_000_000
+          assert s['wikidata']['unique_entities']>=100_000
+          assert s['turkish_lexicon']['rows']>=20_000
+          assert s['turkish_lexicon']['synonym_edges']>=20_000
+          for name in ('main.raw.txt','coder_pretrain.jsonl','semantic_wikidata.jsonl','turkish_lexicon.jsonl'):
+              p=root/name
+              assert p.is_file() and p.stat().st_size>0,(name,p.exists())
+          assert not (root/'tokenizer.json').exists()
+          assert not any(root.rglob('checkpoint.pt'))
+          print('ZERO_TRAIN_DATA_VERIFIED',json.dumps(s,ensure_ascii=False))
+          PY
+          du -sh prepared_zero_train
+
+      - name: Upload private zero-train dataset
+        run: |
+          set -euo pipefail
+          REF="$KAGGLE_OWNER/flm-v07-zero-train-data-r1"
+          if kaggle datasets list --mine -s flm-v07-zero-train-data-r1 -v | grep -Fq "$REF"; then
+            kaggle datasets version -p prepared_zero_train -m "FLM zero-train tokenizer corpus + semantic knowledge r1" -q -t -r skip
+          else
+            kaggle datasets create -p prepared_zero_train -q -t -r skip
+          fi
+          for attempt in $(seq 1 120); do
+            if kaggle datasets files "$REF" --page-size 50 | tee /tmp/zero-train-files.txt; then
+              grep -Fq "main.raw.txt" /tmp/zero-train-files.txt
+              grep -Fq "semantic_wikidata.jsonl" /tmp/zero-train-files.txt
+              grep -Fq "turkish_lexicon.jsonl" /tmp/zero-train-files.txt
+              echo "FLM_ZERO_TRAIN_KAGGLE_READY"
+              exit 0
+            fi
+            sleep 5
+          done
+          exit 1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flm-v07-zero-train-data-r1-manifest
+          path: prepared_zero_train/zero_train_manifest.json
+          retention-days: 14
