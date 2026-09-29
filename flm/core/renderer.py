@@ -26,14 +26,16 @@ class DeterministicRenderer:
 
     def _choose_nonrepeating(self, key:str, variants:tuple[str,...])->str:
         history=self._recent.get(key,[])
-        # Avoid short-cycle repetition. For large response banks this keeps
-        # the last eight phrasings out of the candidate set; for small banks it
-        # uses every alternative before allowing a repeat.
-        recent=set(history[-min(8,max(1,len(variants)-1)):])
-        choices=[x for x in variants if x not in recent] or list(variants)
+        # Exhaust the entire surface bank before allowing any wording to repeat.
+        # Meaning remains fixed by Core; only phrasing changes.
+        used=set(history)
+        choices=[x for x in variants if x not in used]
+        if not choices:
+            history=[]
+            choices=list(variants)
         answer=random.SystemRandom().choice(choices)
         history.append(answer)
-        self._recent[key]=history[-16:]
+        self._recent[key]=history
         return answer
 
     def render(self, prompt: str, response: CoreResponse) -> str:
@@ -159,20 +161,67 @@ class DeterministicRenderer:
                 facts=item.get("facts") or []
                 if not facts:
                     return "Kullanılabilir bilgi yok." if tr else "No usable facts."
-                subject=str(facts[0].get("subject") or "Bu varlık")
-                values=[str(x.get("object") or "") for x in facts if x.get("object")]
-                values=list(dict.fromkeys(values))
+                subject=str(facts[0].get("subject") or ("Bu varlık" if tr else "This entity"))
+                tr_values={
+                    "cat":"kedi","Cat":"kedi","dog":"köpek","Dog":"köpek",
+                    "bird":"kuş","Bird":"kuş","mammal":"memeli","Mammal":"memeli",
+                    "animal":"hayvan","Animal":"hayvan","computer":"bilgisayar",
+                    "Computer":"bilgisayar","vehicle":"araç","Vehicle":"araç",
+                    "home":"ev","File":"dosya","Program":"program",
+                }
+                classes=[]
+                locations=[]
+                other=[]
+                for fact in facts:
+                    pred=str(fact.get("predicate") or "").casefold()
+                    value=str(fact.get("object") or "").strip()
+                    if not value:
+                        continue
+                    if pred in {"type","class","isa","is_a"}:
+                        classes.append(tr_values.get(value,value) if tr else value.lower())
+                    elif pred in {"habitat","located_in","location"}:
+                        locations.append(tr_values.get(value,value) if tr else value)
+                    else:
+                        other.append((pred,value))
+                classes=list(dict.fromkeys(classes))
+                locations=list(dict.fromkeys(locations))
                 if tr:
+                    clauses=[]
+                    if classes:
+                        if len(classes)==1:
+                            clauses.append(f"{subject} bir {classes[0]}")
+                        else:
+                            clauses.append(f"{subject} hem {', hem '.join(classes)}")
+                    if locations:
+                        clauses.append(f"{subject} {', '.join(locations)} ortamında bulunur")
+                    for pred,value in other:
+                        clauses.append(f"{subject} için {pred} bilgisi {tr_values.get(value,value)}")
+                    meaning="; ".join(clauses) or f"{subject} hakkında doğrulanmış bilgiler mevcut"
                     variants=(
-                        f"{subject} hakkında doğrulanan bilgiler: {', '.join(values)}.",
-                        f"{subject}, {', '.join(values)} özellikleriyle tanımlanıyor.",
-                        f"Özetle {subject} için geçerli bilgiler {', '.join(values)}.",
+                        meaning+".",
+                        f"Hafızamdaki doğrulanmış bilgilere göre {meaning[0].lower()+meaning[1:]}.",
+                        f"Özetle, {meaning[0].lower()+meaning[1:]}.",
+                        f"{subject} hakkındaki semantik kayıtların ortak sonucu şu: {meaning[0].lower()+meaning[1:]}.",
+                        f"Bilgileri birlikte değerlendirdiğimde {meaning[0].lower()+meaning[1:]}.",
                     )
                     return self._choose_nonrepeating("synth-tr:"+subject,variants)
+                clauses=[]
+                if classes:
+                    clauses.append(
+                        f"{subject} is a {classes[0]}" if len(classes)==1
+                        else f"{subject} is both " + " and ".join(classes)
+                    )
+                if locations:
+                    clauses.append(f"{subject} is associated with {', '.join(locations)}")
+                for pred,value in other:
+                    clauses.append(f"{subject}'s {pred} is {value}")
+                meaning="; ".join(clauses) or f"verified information is stored about {subject}"
                 variants=(
-                    f"The verified facts about {subject} are: {', '.join(values)}.",
-                    f"{subject} is described by these verified facts: {', '.join(values)}.",
-                    f"In short, the Core associates {subject} with {', '.join(values)}.",
+                    meaning+".",
+                    f"According to verified memory, {meaning[0].lower()+meaning[1:]}.",
+                    f"In short, {meaning[0].lower()+meaning[1:]}.",
+                    f"The semantic records about {subject} jointly indicate that {meaning[0].lower()+meaning[1:]}.",
+                    f"Putting the verified facts together, {meaning[0].lower()+meaning[1:]}.",
                 )
                 return self._choose_nonrepeating("synth-en:"+subject,variants)
 
