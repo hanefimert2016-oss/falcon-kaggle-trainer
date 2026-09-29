@@ -27,7 +27,7 @@ RELATIONS=(
     ("içindedir","is in","LocatedIn"),
 )
 
-SEMANTIC_MODES=20
+SEMANTIC_MODES=24
 
 TR_IDENTITY_ANSWERS=(
     "Ben FLM'im. Dili tek bir arayüz modeliyle işler, asıl muhakemeyi Semantic Core üzerinden yürütürüm.",
@@ -505,7 +505,7 @@ def _identity_case(i:int,tr:bool):
         if tr else
         ("Who are you?" if (i//(SEMANTIC_MODES*2))%2==0 else "Introduce yourself.")
     )
-    prog=semantic_ir(operations=[operation("IDENTITY")],source="synthetic-semantic-curriculum-v5")
+    prog=semantic_ir(operations=[operation("IDENTITY")],source="synthetic-semantic-curriculum-v6")
     final=identity_surface(i//(SEMANTIC_MODES*2),tr)
     return user,prog,final
 
@@ -552,7 +552,7 @@ def _fact_synthesis_case(i:int,tr:bool,names):
         )
     prog=semantic_ir(
         operations=[operation("SYNTHESIZE_FACTS",facts=facts)],
-        source="synthetic-semantic-curriculum-v5",
+        source="synthetic-semantic-curriculum-v6",
     )
     return user,prog,variants[(i//(SEMANTIC_MODES*2))%len(variants)]
 
@@ -566,7 +566,7 @@ def _answer_style_case(i:int,tr:bool):
     )
     prog=semantic_ir(
         operations=[operation("ARITHMETIC",expression=str(value))],
-        source="synthetic-semantic-curriculum-v5",
+        source="synthetic-semantic-curriculum-v6",
     )
     if tr:
         variants=(
@@ -603,7 +603,7 @@ def _code_explain_case(i:int,tr:bool):
     )
     prog=semantic_ir(
         operations=[operation("ANALYZE_CODE",language="python",source=source)],
-        source="synthetic-semantic-curriculum-v5",
+        source="synthetic-semantic-curriculum-v6",
     )
     variants=(
         (
@@ -664,7 +664,7 @@ def _multi_fact_synthesis_case(i:int,tr:bool,names):
         )
     prog=semantic_ir(
         operations=[operation("SYNTHESIZE_FACTS",facts=facts)],
-        source="synthetic-semantic-curriculum-v5",
+        source="synthetic-semantic-curriculum-v6",
     )
     return user,prog,variants[(i//(SEMANTIC_MODES*2))%len(variants)]
 
@@ -675,7 +675,7 @@ def _identity_working_case(i:int,tr:bool):
         if tr else
         ("How do you work?" if (i//(SEMANTIC_MODES*2))%2==0 else "How do you form your answers?")
     )
-    prog=semantic_ir(operations=[operation("IDENTITY")],source="synthetic-semantic-curriculum-v5")
+    prog=semantic_ir(operations=[operation("IDENTITY")],source="synthetic-semantic-curriculum-v6")
     return user,prog,identity_surface((i//(SEMANTIC_MODES*2))+37,tr)
 
 
@@ -713,7 +713,7 @@ def _relation_synthesis_case(i:int,tr:bool,names):
         )
     prog=semantic_ir(
         operations=[operation("SYNTHESIZE_FACTS",facts=facts)],
-        source="synthetic-semantic-curriculum-v5",
+        source="synthetic-semantic-curriculum-v6",
     )
     return user,prog,variants[(i//(SEMANTIC_MODES*2))%len(variants)]
 
@@ -747,9 +747,148 @@ def _knowledge_answer_case(i:int,tr:bool,names):
     prog=semantic_ir(
         facts=[atom("IsA",a,"Cat"),atom("IsA",a,"Mammal")],
         operations=[operation("DESCRIBE_ENTITY",entity=a)],
-        source="synthetic-semantic-curriculum-v5",
+        source="synthetic-semantic-curriculum-v6",
     )
     return user,prog,variants[(i//(SEMANTIC_MODES*2))%len(variants)]
+
+
+def _compare_values_case(i:int,tr:bool):
+    left=11+(i%89)
+    right=7+((i*13)%83)
+    if left==right:
+        right+=3
+    user=(
+        f"{left} ile {right} sayılarını karşılaştır; hangisi daha büyük?"
+        if tr else
+        f"Compare {left} and {right}; which value is greater?"
+    )
+    prog=semantic_ir(
+        operations=[operation("COMPARE_VALUES",left=left,right=right)],
+        source="synthetic-semantic-curriculum-v6",
+    )
+    if left>right:
+        variants=(
+            f"{left}, {right}'den daha büyüktür.",
+            f"İki değer arasında büyük olan {left}; {right} daha küçüktür.",
+            f"Karşılaştırmanın sonucu: {left} > {right}.",
+        ) if tr else (
+            f"{left} is greater than {right}.",
+            f"Of the two values, {left} is larger and {right} is smaller.",
+            f"The comparison gives {left} > {right}.",
+        )
+    else:
+        variants=(
+            f"{right}, {left}'den daha büyüktür.",
+            f"İki değer arasında büyük olan {right}; {left} daha küçüktür.",
+            f"Karşılaştırmanın sonucu: {left} < {right}.",
+        ) if tr else (
+            f"{right} is greater than {left}.",
+            f"Of the two values, {right} is larger and {left} is smaller.",
+            f"The comparison gives {left} < {right}.",
+        )
+    return user,prog,variants[(i//(SEMANTIC_MODES*2))%len(variants)]
+
+
+def _sort_values_case(i:int,tr:bool):
+    base=3+(i%19)
+    values=[base+7,base-2,base+3,base]
+    descending=((i//(SEMANTIC_MODES*2))%2)==1
+    order=sorted(values,reverse=descending)
+    if tr:
+        direction="büyükten küçüğe" if descending else "küçükten büyüğe"
+        user=f"Şu sayıları {direction} sırala: {', '.join(map(str,values))}."
+        variants=(
+            f"{direction.capitalize()} sıralama: {', '.join(map(str,order))}.",
+            f"Doğru sıra {', '.join(map(str,order))}.",
+            f"Sayıları {direction} dizince {', '.join(map(str,order))} elde edilir.",
+        )
+    else:
+        direction="descending" if descending else "ascending"
+        user=f"Sort these numbers in {direction} order: {', '.join(map(str,values))}."
+        variants=(
+            f"The {direction} order is {', '.join(map(str,order))}.",
+            f"The correctly sorted sequence is {', '.join(map(str,order))}.",
+            f"Sorting them in {direction} order gives {', '.join(map(str,order))}.",
+        )
+    prog=semantic_ir(
+        operations=[operation("SORT_VALUES",values=values,descending=descending)],
+        source="synthetic-semantic-curriculum-v6",
+    )
+    return user,prog,variants[(i//(SEMANTIC_MODES*2))%len(variants)]
+
+
+def _code_flow_case(i:int,tr:bool):
+    helper=f"helper_{i%53}"
+    outer=f"process_{i%47}"
+    source=(
+        f"def {helper}(x):\n"
+        "    return x * 2\n\n"
+        f"def {outer}(value):\n"
+        f"    return {helper}(value) + 1\n"
+    )
+    user=(
+        f"Bu Python kodundaki fonksiyon ilişkisini, kaynak kodu kopyalamadan açıkla:\n\n```python\n{source}```"
+        if tr else
+        f"Explain the function relationship in this Python code without copying the source:\n\n```python\n{source}```"
+    )
+    prog=semantic_ir(
+        operations=[operation("ANALYZE_CODE",language="python",source=source)],
+        source="synthetic-semantic-curriculum-v6",
+    )
+    variants=(
+        (
+            f"{outer}, aldığı değeri {helper} fonksiyonuna gönderir; {helper} değeri iki katına çıkarır ve dış fonksiyon sonuca 1 ekler.",
+            f"Akışta {outer} fonksiyonu {helper}'ı çağırıyor. İç fonksiyon girdiyi ikiyle çarpıyor, ardından {outer} bu değeri bir artırıyor.",
+            f"{helper} temel ikiye katlama işini yaparken {outer} onu kullanıp sonuca 1 ekleyen üst seviye fonksiyondur.",
+        )
+        if tr else
+        (
+            f"{outer} calls {helper}; the helper doubles the input and the outer function adds 1 to that result.",
+            f"The call flow goes from {outer} to {helper}. The helper doubles the value, then {outer} increments the returned result.",
+            f"{helper} performs the doubling step, while {outer} wraps it and adds one afterward.",
+        )
+    )
+    return user,prog,variants[(i//(SEMANTIC_MODES*2))%len(variants)]
+
+
+def _attribute_synthesis_case(i:int,tr:bool,names):
+    a=names[i%len(names)]
+    if tr:
+        facts=[
+            {"subject":a,"predicate":"renk","object":"mavi"},
+            {"subject":a,"predicate":"durum","object":"aktif"},
+            {"subject":a,"predicate":"rol","object":"yardımcı"},
+        ]
+        user=(
+            f"Notlar: {a} için renk mavi, durum aktif ve rol yardımcı. "
+            "Bu bilgileri veri satırı gibi tekrar etmeden doğal bir cümleye dönüştür."
+        )
+        variants=(
+            f"{a}, mavi renkle ilişkilendirilen, aktif durumda ve yardımcı rolünde bir varlıktır.",
+            f"{a} hakkında doğrulanan nitelikler mavi renk, aktif durum ve yardımcı roldür.",
+            f"Özetle {a} aktif bir yardımcıdır ve mavi niteliğiyle kayıtlıdır.",
+        )
+    else:
+        facts=[
+            {"subject":a,"predicate":"color","object":"blue"},
+            {"subject":a,"predicate":"status","object":"active"},
+            {"subject":a,"predicate":"role","object":"assistant"},
+        ]
+        user=(
+            f"Notes: {a} has color blue, status active, and role assistant. "
+            "Turn these facts into a natural answer instead of replaying data fields."
+        )
+        variants=(
+            f"{a} is recorded as active, blue, and serving in an assistant role.",
+            f"The verified attributes describe {a} as blue, active, and an assistant.",
+            f"In natural terms, {a} is an active assistant associated with the color blue.",
+        )
+    prog=semantic_ir(
+        operations=[operation("SYNTHESIZE_FACTS",facts=facts)],
+        source="synthetic-semantic-curriculum-v6",
+    )
+    return user,prog,variants[(i//(SEMANTIC_MODES*2))%len(variants)]
+
 
 def messages_for(i:int):
     mode=i%SEMANTIC_MODES
@@ -804,8 +943,16 @@ def messages_for(i:int):
         user,prog,final=_identity_working_case(i,tr)
     elif mode==18:
         user,prog,final=_relation_synthesis_case(i,tr,names)
-    else:
+    elif mode==19:
         user,prog,final=_knowledge_answer_case(i,tr,names)
+    elif mode==20:
+        user,prog,final=_compare_values_case(i,tr)
+    elif mode==21:
+        user,prog,final=_sort_values_case(i,tr)
+    elif mode==22:
+        user,prog,final=_code_flow_case(i,tr)
+    else:
+        user,prog,final=_attribute_synthesis_case(i,tr,names)
 
     _assert_not_copy(user,final)
     payload=_core_payload(prog)
@@ -845,7 +992,7 @@ def messages_for(i:int):
     ]
 
 
-def append_semantic_curriculum(path:Path,rows:int=1_200_000,seed:int=7071)->dict:
+def append_semantic_curriculum(path:Path,rows:int=2_400_000,seed:int=7071)->dict:
     rng=random.Random(seed)
     indices=list(range(rows))
     rng.shuffle(indices)
@@ -877,5 +1024,5 @@ def append_semantic_curriculum(path:Path,rows:int=1_200_000,seed:int=7071)->dict
         "source_hidden_rendering":True,
         "identity_variants_tr":216,
         "identity_variants_en":216,
-        "response_synthesis_modes":[13,14,15,16,17,18,19],
+        "response_synthesis_modes":[13,14,15,16,17,18,19,20,21,22,23],
     }
