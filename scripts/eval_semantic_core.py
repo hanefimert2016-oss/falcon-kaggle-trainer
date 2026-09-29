@@ -27,7 +27,7 @@ rows.append({
     "question":"Ada hakkında ne biliyorsun? (3 kez)",
     "answer":" || ".join(memory_answers),
     "ok":all("Ada" in x and "kedi" in x and "memeli" in x for x in memory_answers)
-        and len(set(memory_answers))>=2,
+        and len(set(memory_answers))==3,
 })
 identity_answers=[agent.ask("Sen kimsin?") for _ in range(8)]
 rows.append({
@@ -35,7 +35,7 @@ rows.append({
     "answer":" || ".join(identity_answers),
     "ok":all("FLM" in x for x in identity_answers)
         and all(any(k in x.casefold() for k in ("yapay zek", "ai ", "asistan")) for x in identity_answers)
-        and len(set(identity_answers))>=6,
+        and len(set(identity_answers))==8,
 })
 run("Hesapla: 27*14", "378")
 run("""Bu Python kodunu analiz et:
