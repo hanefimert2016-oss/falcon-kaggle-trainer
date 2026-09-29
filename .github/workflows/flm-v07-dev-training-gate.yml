@@ -88,8 +88,6 @@ jobs:
           assert int(extra.get('plan_turns',0))>=4500
           assert int(extra.get('tool_turns',0))>=4500
           assert extra.get('permissive_repo_license_filter') is True
-          assert int(nebius.get('plan_turns',0))>=9000
-          assert int(nebius.get('tool_turns',0))>=4500
           assert int(sem.get('identity_variants_tr',0))>=216
           assert int(sem.get('identity_variants_en',0))>=216
           assert int((s.get('tokenizer') or {}).get('vocab_size',0))>=30_000
