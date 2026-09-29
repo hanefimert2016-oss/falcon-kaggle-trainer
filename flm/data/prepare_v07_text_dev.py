@@ -307,13 +307,13 @@ def main():
     ap.add_argument("--wiki-en-bytes",type=int,default=768_000_000)
     ap.add_argument("--coder-bytes",type=int,default=768_000_000)
     ap.add_argument("--vocab-size",type=int,default=32_768)
-    ap.add_argument("--en-sft-rows",type=int,default=260_000)
-    ap.add_argument("--tr-knowledge-rows",type=int,default=260_000)
-    ap.add_argument("--coder-code-rows",type=int,default=200_000)
-    ap.add_argument("--xlam-tool-rows",type=int,default=80_000)
+    ap.add_argument("--en-sft-rows",type=int,default=300_000)
+    ap.add_argument("--tr-knowledge-rows",type=int,default=320_000)
+    ap.add_argument("--coder-code-rows",type=int,default=250_000)
+    ap.add_argument("--xlam-tool-rows",type=int,default=100_000)
     ap.add_argument("--tool100k-rows",type=int,default=100_000)
-    ap.add_argument("--coder-agent-rows",type=int,default=5_000)
-    ap.add_argument("--semantic-sft-rows",type=int,default=600_000)
+    ap.add_argument("--coder-agent-rows",type=int,default=6_000)
+    ap.add_argument("--semantic-sft-rows",type=int,default=800_000)
     args=ap.parse_args()
 
     out=Path(args.out)
@@ -371,15 +371,25 @@ def main():
 
     stats["main_sft_base"]=prepare_main_sft(out,60_000,args.en_sft_rows)
     stats["main_sft_tr_knowledge"]=append_turkish_knowledge(out/"main_sft.jsonl",args.tr_knowledge_rows)
-    stats["semantic_interface_sft"]=append_semantic_curriculum(
-        out/"main_sft.jsonl",args.semantic_sft_rows
-    )
     stats["main_sft_raw"]={
         "file":"main_sft.jsonl",
         "rows":count_jsonl(out/"main_sft.jsonl"),
         "file_bytes":(out/"main_sft.jsonl").stat().st_size,
     }
     print("V07_DEV_TEXT main_sft_done",json.dumps(stats["main_sft_raw"]),flush=True)
+
+    # Keep response-synthesis/IR training independent from ordinary instruction
+    # data so the single InterfaceTransformer can sample it at an explicit ratio.
+    semantic_raw=out/"semantic_sft.jsonl"
+    stats["semantic_interface_sft"]=append_semantic_curriculum(
+        semantic_raw,args.semantic_sft_rows
+    )
+    stats["semantic_sft_raw"]={
+        "file":"semantic_sft.jsonl",
+        "rows":count_jsonl(semantic_raw),
+        "file_bytes":semantic_raw.stat().st_size,
+    }
+    print("V07_DEV_TEXT semantic_sft_done",json.dumps(stats["semantic_sft_raw"]),flush=True)
 
     stats["coder_sft_base"]=prepare_coder_sft(out,args.coder_code_rows,args.xlam_tool_rows,6_000)
     stats["coder_sft_tool100k"]=append_tool_100k(out/"coder_sft.jsonl",args.tool100k_rows)
@@ -410,12 +420,15 @@ def main():
     stats["main_sft"]=encode_chat_sft(tok,out/"main_sft.jsonl",out/"main_sft_tokens.u16",out/"main_sft_mask.u8")
     (out/"main_sft.jsonl").unlink(missing_ok=True)
 
+    stats["semantic_sft"]=encode_chat_sft(tok,out/"semantic_sft.jsonl",out/"semantic_sft_tokens.u16",out/"semantic_sft_mask.u8")
+    (out/"semantic_sft.jsonl").unlink(missing_ok=True)
+
     stats["coder_sft"]=encode_chat_sft(tok,out/"coder_sft.jsonl",out/"coder_sft_tokens.u16",out/"coder_sft_mask.u8")
     (out/"coder_sft.jsonl").unlink(missing_ok=True)
 
     manifest={
         "pipeline_version":"v0.7-dev-text",
-        "data_revision":5,
+        "data_revision":6,
         "training_pipeline":"v0.7",
         "owner":args.owner,
         "sources":{**SOURCES,**DEV_SOURCES},
@@ -423,7 +436,8 @@ def main():
         "format":{
             "main_train.u16":"uint16 BPE token IDs",
             "coder_train.u16":"uint16 BPE token IDs; code formatting preserved",
-            "main_sft_*":"packed bilingual chat + Semantic IR/Core protocol SFT + assistant mask",
+            "main_sft_*":"packed bilingual general instruction SFT + assistant mask",
+            "semantic_sft_*":"packed Semantic IR/Core response-synthesis SFT + assistant mask",
             "coder_sft_*":"packed code/tool/agentic-plan SFT + assistant mask",
             "semantic_tokens":["<|semantic_ir|>","<|semantic_end|>","<|core_result|>","<|core_end|>"],
             "planning_tokens":["<|plan|>","<|plan_end|>","<|final|>"],
@@ -431,8 +445,8 @@ def main():
     }
     (out/"sources.json").write_text(json.dumps(manifest,indent=2,ensure_ascii=False),encoding="utf-8")
     meta={
-        "title":"FLM v0.7 Semantic Interface Text r5",
-        "id":f"{args.owner}/flm-v07-semantic-text-r5",
+        "title":"FLM v0.7 Semantic Interface Text r6",
+        "id":f"{args.owner}/flm-v07-semantic-text-r6",
         "licenses":[{"name":"other"}],
     }
     (out/"dataset-metadata.json").write_text(json.dumps(meta,indent=2),encoding="utf-8")
