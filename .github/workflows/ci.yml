@@ -45,7 +45,7 @@ jobs:
           assert 'flm.train_interface_v07' in launcher
           assert 'python -u -m flm.train_v07' not in launcher
           assert 'flm-v07-dev-computer' not in launcher
-          assert 'flm-v07-semantic-text-r7' in launcher
+          assert 'flm-v07-semantic-text-r8' in launcher
           from flm.train_v07 import ShuffledStartPool, BalancedSampler
 
           starts=np.arange(100,dtype=np.int64)
@@ -257,7 +257,7 @@ jobs:
           assert gpu['id']=='test-owner/falcon-flm-v07-semantic-interface-gpu',gpu
           assert gpu['title']=='Falcon FLM v07 Semantic Interface Transformer',gpu
           assert gpu['enable_gpu'] is True
-          assert gpu['dataset_sources']==['test-owner/flm-v07-semantic-text-r7'],gpu
+          assert gpu['dataset_sources']==['test-owner/flm-v07-semantic-text-r8'],gpu
           assert 'flm-v07-dev-computer' not in json.dumps(gpu)
 
           wrapper=Path('/tmp/v07-semantic-interface/train_interface_v07.py').read_text()
@@ -272,6 +272,7 @@ jobs:
               ('FLM_INTERFACE_REFRESH_SEQ','2048'),
               ('FLM_INTERFACE_REFRESH_EPOCHS','0.12'),
               ('FLM_INTERFACE_SFT_SEQ','4096'),
+              ('FLM_INTERFACE_SFT_EPOCHS','0.65'),
           ):
               assert key in wrapper and value in wrapper,(key,value)
 
@@ -298,7 +299,7 @@ jobs:
           assert '"transformer_count":1' in trainer
           assert 'semantic_data' in trainer and 'semantic_mask' in trainer
           assert '"semantic":0.60' in trainer
-          assert 'mixed_sft-r7' in trainer
+          assert 'mixed_sft-r8' in trainer
           assert 'evaluate_interface_behavior' in trainer
           assert 'behavior_quality.json' in trainer
           assert 'trained InterfaceTransformer failed behavior gate' in trainer
@@ -351,6 +352,14 @@ jobs:
           math_prog=compiler.operation_canonical('Hesapla: (27+15)*2')
           assert math_prog.operations[0].kind=='ARITHMETIC'
           assert FLMCore().execute(math_prog).operation_results[0]['value']==84
+          compare_prog=compiler.operation_canonical('17 mi büyük 9 mu?')
+          compare_result=FLMCore().execute(compare_prog).operation_results[0]
+          assert compare_result['kind']=='COMPARE_VALUES'
+          assert compare_result['relation']=='greater' and compare_result['difference']==8
+          sort_prog=compiler.operation_canonical('Şunları küçükten büyüğe sırala: 9, 3, 7, 1.')
+          sort_result=FLMCore().execute(sort_prog).operation_results[0]
+          assert sort_result['kind']=='SORT_VALUES'
+          assert sort_result['sorted']==[1,3,7,9]
           identity_prog=compiler.identity_canonical('Sen kimsin?')
           identity=FLMCore().execute(identity_prog).operation_results[0]
           assert identity['kind']=='IDENTITY' and identity['name']=='FLM'
@@ -539,10 +548,11 @@ jobs:
           assert any('<|tool_result|>' in x['content'] for x in swe_msgs if x['role']=='tool'),swe_msgs
           assert any('<|final|>' in x['content'] for x in swe_msgs if x['role']=='assistant'),swe_msgs
 
-          assert SEMANTIC_MODES>=20
+          assert SEMANTIC_MODES>=24
           assert seen_ops=={
               'ARITHMETIC','ANALYZE_CODE','STATE_PLAN','UI_PLAN','VERIFY',
-              'IDENTITY','SYNTHESIZE_FACTS','DESCRIBE_ENTITY'
+              'IDENTITY','SYNTHESIZE_FACTS','DESCRIBE_ENTITY',
+              'COMPARE_VALUES','SORT_VALUES'
           },seen_ops
           print('SEMANTIC_CURRICULUM_ALL_MODES_OK',sorted(seen_ops))
 
@@ -550,8 +560,8 @@ jobs:
           assert 'falcon-flm-v07-semantic-interface-gpu' in gate
           assert 'FLM v0.7 DEV Text Repair' in gate
           assert 'flm-v07-dev-computer' not in gate
-          assert 'flm-v07-semantic-text-r7' in gate
-          assert "data_revision',0))>=7" in gate
+          assert 'flm-v07-semantic-text-r8' in gate
+          assert "data_revision',0))>=8" in gate
           assert 'if: ${{ false }}' not in gate
           print('SEMANTIC_FLM_SINGLE_TRANSFORMER_PIPELINE_OK')
           PY
