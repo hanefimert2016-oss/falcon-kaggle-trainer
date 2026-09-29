@@ -185,6 +185,36 @@ class SemanticCompiler:
                     break
                 return Program(operations=[Operation("ARITHMETIC",{"expression":expr})])
 
+        compare_patterns=(
+            re.compile(r"^(?P<a>-?\d+(?:\.\d+)?)\s*(?:mi|mı|mu|mü) büyük\s+(?P<b>-?\d+(?:\.\d+)?)\s*(?:mi|mı|mu|mü)[?]?$",re.I),
+            re.compile(r"^hangisi büyük[: ]+(?P<a>-?\d+(?:\.\d+)?)\s*(?:,|ve|ile)\s*(?P<b>-?\d+(?:\.\d+)?)[?]?$",re.I),
+            re.compile(r"^which is greater[: ]+(?P<a>-?\d+(?:\.\d+)?)\s*(?:,|or|and)\s*(?P<b>-?\d+(?:\.\d+)?)[?]?$",re.I),
+        )
+        for pat in compare_patterns:
+            m=pat.match(normalized)
+            if m:
+                def number(raw):
+                    return float(raw) if "." in raw else int(raw)
+                return Program(operations=[Operation(
+                    "COMPARE_VALUES",
+                    {"left":number(m.group("a")),"right":number(m.group("b"))},
+                )])
+
+        sort_patterns=(
+            re.compile(r"^(?:şunları|bunları|sayıları)\s+(?P<desc>büyükten küçüğe\s+)?sırala[: ]+(?P<values>-?[0-9.,\s-]+)[.]?$",re.I),
+            re.compile(r"^sort(?: these)?(?: numbers)?\s+(?P<desc>descending\s+)?[: ]*(?P<values>-?[0-9.,\s-]+)[.]?$",re.I),
+        )
+        for pat in sort_patterns:
+            m=pat.match(normalized)
+            if m:
+                raw_values=re.findall(r"-?\d+(?:\.\d+)?",m.group("values"))
+                if len(raw_values)>=2:
+                    values=[float(x) if "." in x else int(x) for x in raw_values]
+                    return Program(operations=[Operation(
+                        "SORT_VALUES",
+                        {"values":values,"descending":bool(m.group("desc"))},
+                    )])
+
         # Canonical code-analysis requests keep source formatting intact.
         fenced=re.search(
             r"```(?P<lang>python|py|java|javascript|js|typescript|ts|go|rust|rs|c|cpp|c\+\+)?\s*\n(?P<src>.*?)```",
