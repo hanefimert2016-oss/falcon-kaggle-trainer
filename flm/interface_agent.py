@@ -175,6 +175,8 @@ class InterfaceAgent:
         self.render_top_p=float(render_top_p)
         self.repetition_penalty=float(repetition_penalty)
         self._recent_answers: list[str] = []
+        self.last_render_source="none"
+        self.last_render_attempts=0
         self.semantic_compiler=SemanticCompiler()
         self.deterministic_renderer=DeterministicRenderer()
 
@@ -311,7 +313,10 @@ class InterfaceAgent:
         answer=""
         best=None
         verbatim=_verbatim_requested(prompt)
+        self.last_render_source="none"
+        self.last_render_attempts=0
         for attempt in range(4):
+            self.last_render_attempts=attempt+1
             candidate=self.generate(
                 render_messages,
                 max_new=384,
@@ -329,13 +334,16 @@ class InterfaceAgent:
                 best=(score,candidate)
             if faithful and not duplicate:
                 answer=candidate
+                self.last_render_source="neural"
                 break
         if not answer and best is not None:
             answer=best[1]
+            self.last_render_source="neural"
         if not answer:
             # If stochastic rendering only produced repeats/invalid outputs,
             # correctness and diversity both fall back to Core-grounded templates.
             answer=self.deterministic_renderer.render(prompt,result)
+            self.last_render_source="deterministic_fallback"
         if answer:
             self._recent_answers.append(answer)
             self._recent_answers=self._recent_answers[-8:]
