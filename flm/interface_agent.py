@@ -36,6 +36,58 @@ def _verbatim_requested(prompt:str)->bool:
     ))
 
 
+
+def _candidate_preserves_core(candidate:str,prompt:str,program:Program,result,*,verbatim:bool=False)->bool:
+    text=str(candidate or "").strip()
+    if not text:
+        return False
+    low=text.casefold()
+    # Never expose internal protocol/serialized payload as an answer.
+    if any(x in text for x in ("<|semantic_ir|>","<|semantic_end|>","<|core_result|>","<|core_end|>")):
+        return False
+    if not verbatim and len(text)>=40 and _copy_similarity(prompt,text)>=0.86:
+        return False
+
+    for op_result in result.operation_results:
+        if not op_result.get("ok",False):
+            continue
+        kind=op_result.get("kind")
+        if kind=="IDENTITY" and "flm" not in low:
+            return False
+        if kind=="ARITHMETIC":
+            value=str(op_result.get("value"))
+            if value not in text:
+                return False
+        if kind=="SYNTHESIZE_FACTS":
+            facts=op_result.get("facts") or []
+            # Preserve entities and fact values, but not their serialized JSON wording.
+            required=[]
+            for fact in facts:
+                required.extend((str(fact.get("subject") or ""),str(fact.get("object") or "")))
+            required=[x.casefold() for x in required if x]
+            if any(x not in low for x in set(required)):
+                return False
+            if any(k in low for k in ('"subject"','"predicate"','"object"')):
+                return False
+        if kind=="ANALYZE_CODE":
+            symbols=[str(x.get("name") or "") for x in (op_result.get("symbols") or [])]
+            symbols=[x for x in symbols if x]
+            if symbols and not any(x.casefold() in low for x in symbols):
+                return False
+
+    if result.results:
+        tr=any(ch in prompt.casefold() for ch in "çğıöşü") or any(
+            x in prompt.casefold() for x in (" mı"," mi"," mu"," mü"," nedir"," kim"," nasıl")
+        )
+        expected_true=bool(result.results[0].answer)
+        positive=("evet","doğru","yes","true")
+        negative=("hayır","hayir","değil","degil","no","false")
+        vocab=positive if expected_true else negative
+        if not any(x in low for x in vocab):
+            return False
+    return True
+
+
 ROLE_MARKERS={
     "system":"<|system|>",
     "user":"<|user|>",
@@ -191,8 +243,10 @@ class InterfaceAgent:
             "user's language/code request into executable FLM Semantic IR JSON inside "
             "<|semantic_ir|>...<|semantic_end|>. Do not solve logical, code, math, UI "
             "or planning steps yourself. FLM Core executes facts, rules, queries and "
-            "operations. Use ARITHMETIC, ANALYZE_CODE, STATE_PLAN, UI_PLAN or VERIFY "
-            "when appropriate."
+            "operations. Use ARITHMETIC, ANALYZE_CODE, STATE_PLAN, UI_PLAN, VERIFY, "
+            "IDENTITY, or SYNTHESIZE_FACTS when appropriate. IDENTITY is for "
+            "questions about who FLM is. SYNTHESIZE_FACTS is for turning supplied "
+            "structured facts into a fresh answer without copying source wording."
         )
         raw=self.generate([
             {"role":"system","content":system},
@@ -268,15 +322,20 @@ class InterfaceAgent:
                 repetition_penalty=self.repetition_penalty,
             ).strip()
             score=0.0 if verbatim else _copy_similarity(prompt,candidate)
-            if candidate and (best is None or score<best[0]):
+            faithful=_candidate_preserves_core(
+                candidate,prompt,program,result,verbatim=verbatim
+            )
+            if faithful and (best is None or score<best[0]):
                 best=(score,candidate)
             duplicate=candidate in self._recent_answers[-4:]
-            too_close=(not verbatim and len(candidate)>=40 and score>=0.86)
-            if candidate and not duplicate and not too_close:
+            if faithful and not duplicate:
                 answer=candidate
                 break
         if not answer and best is not None:
             answer=best[1]
+        if not answer:
+            # Correctness wins over stylistic diversity.
+            answer=self.deterministic_renderer.render(prompt,result)
         if answer:
             self._recent_answers.append(answer)
             self._recent_answers=self._recent_answers[-8:]
