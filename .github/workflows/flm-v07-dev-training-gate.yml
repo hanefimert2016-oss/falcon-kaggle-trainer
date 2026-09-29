@@ -91,7 +91,7 @@ jobs:
           assert int(sem.get('identity_variants_tr',0))>=216
           assert int(sem.get('identity_variants_en',0))>=216
           assert int((s.get('tokenizer') or {}).get('vocab_size',0))>=30_000
-          print('SEMANTIC_FLM_TEXT_R7_READY',s.get('main'),s.get('coder'),s.get('semantic_interface_sft'))
+          print('SEMANTIC_FLM_TEXT_R8_READY',s.get('main'),s.get('coder'),s.get('semantic_interface_sft'))
           PY
 
       - name: Build quality GPU bundle
