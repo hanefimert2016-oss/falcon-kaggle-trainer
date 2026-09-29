@@ -557,7 +557,7 @@ def main():
     ap.add_argument("--tool100k-rows",type=int,default=100_000)
     ap.add_argument("--coder-agent-rows",type=int,default=4_000)
     ap.add_argument("--coder-agent-extra-rows",type=int,default=5_000)
-    ap.add_argument("--semantic-sft-rows",type=int,default=1_000_000)
+    ap.add_argument("--semantic-sft-rows",type=int,default=1_200_000)
     args=ap.parse_args()
 
     out=Path(args.out)
