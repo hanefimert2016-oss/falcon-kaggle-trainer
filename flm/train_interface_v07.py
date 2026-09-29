@@ -291,7 +291,7 @@ def train_mixed_sft(
     sp=ShuffledStartPool(ss,8166)
     cp=ShuffledStartPool(cs,8222)
 
-    # r7 curriculum: 60% semantic reasoning/response synthesis,
+    # r8 curriculum: 60% semantic reasoning/response synthesis,
     # 20% ordinary conversation/instruction, 20% coding/tool traces.
     # The semantic lane now carries the anti-copy, paraphrase and identity-
     # variation behavior that defines the interface model's main job.
@@ -324,7 +324,7 @@ def train_mixed_sft(
 
     if resume_enabled() and resume.is_file():
         ck=torch.load(resume,map_location=runtime.device,weights_only=False)
-        if ck.get("config")!=cfg.__dict__ or ck.get("stage")!="mixed_sft-r7":
+        if ck.get("config")!=cfg.__dict__ or ck.get("stage")!="mixed_sft-r8":
             raise RuntimeError("mixed SFT r7 resume config/stage mismatch")
         model.load_state_dict(ck["model"])
         opt.load_state_dict(ck["optimizer"]); optimizer_to_device(opt,runtime.device)
@@ -396,7 +396,7 @@ def train_mixed_sft(
                     "step":step+1,
                 },best_path)
             print(
-                f"interface mixed_sft-r7 step={step+1}/{steps} loss={total:.4f} "
+                f"interface mixed_sft-r8 step={step+1}/{steps} loss={total:.4f} "
                 f"main_eval={em:.4f} semantic_eval={es:.4f} "
                 f"coder_eval={ec:.4f} score={score:.4f}",
                 flush=True,
@@ -405,7 +405,7 @@ def train_mixed_sft(
         if ckpt_interval>0 and (step+1)%ckpt_interval==0:
             atomic_torch_save({
                 "format":"flm-interface-v07-resume",
-                "stage":"mixed_sft-r7",
+                "stage":"mixed_sft-r8",
                 "model":model.state_dict(),
                 "optimizer":opt.state_dict(),
                 "scaler":scaler.state_dict() if scaler.is_enabled() else None,
@@ -428,7 +428,7 @@ def train_mixed_sft(
     es=eval_sft(model,se,sem,seq,runtime.device,eval_rng,12)
     ec=eval_sft(model,ce,cem,seq,runtime.device,eval_rng,12)
     metrics={
-        "stage":"mixed_sft-r7",
+        "stage":"mixed_sft-r8",
         "steps":steps,
         "training_seq_len":seq,
         "sampling_ratio":{"main":0.20,"semantic":0.60,"coder":0.20},
@@ -444,7 +444,7 @@ def train_mixed_sft(
     }
     atomic_torch_save({
         "format":"flm-interface-v07-stage",
-        "stage":"mixed_sft-r7",
+        "stage":"mixed_sft-r8",
         "model":model.state_dict(),
         "config":cfg.__dict__,
         "steps":steps,
@@ -461,11 +461,11 @@ def main()->int:
 
     root=resolve_text_root(os.environ.get("FLM_V07_TEXT_VERSION","v0.7-dev-text"))
     manifest=json.loads((root/"sources.json").read_text(encoding="utf-8"))
-    if int(manifest.get("data_revision",0))<7:
-        raise RuntimeError("single-transformer FLM requires text data revision 7+")
+    if int(manifest.get("data_revision",0))<8:
+        raise RuntimeError("single-transformer FLM requires text data revision 8+")
     semantic_rows=int(((manifest.get("stats") or {}).get("semantic_interface_sft") or {}).get("rows",0))
-    if semantic_rows<1_200_000:
-        raise RuntimeError(f"r7 semantic interface curriculum too small: {semantic_rows}")
+    if semantic_rows<2_400_000:
+        raise RuntimeError(f"r8 semantic interface curriculum too small: {semantic_rows}")
 
     tok=Tokenizer.from_file(str(root/"tokenizer.json"))
     vocab=tok.get_vocab_size()
