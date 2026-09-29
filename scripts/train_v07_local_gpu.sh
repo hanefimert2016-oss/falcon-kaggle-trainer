@@ -15,12 +15,12 @@ case "$MODE" in
     ;;
 esac
 
-DATA_ROOT="${FLM_LOCAL_DATA_ROOT:-$ROOT/.local-data/v07-semantic-r4}"
+DATA_ROOT="${FLM_LOCAL_DATA_ROOT:-$ROOT/.local-data/v07-semantic-r6}"
 TEXT_DIR="$DATA_ROOT/text"
 OUT_ROOT="${FLM_LOCAL_OUTPUT_ROOT:-$ROOT/local-runs/flm-v0.7-semantic}"
 LOG_DIR="$OUT_ROOT/logs"
 VENV="${FLM_LOCAL_VENV:-$ROOT/.venv-flm-v07-interface}"
-TEXT_REF="${FLM_V07_TEXT_DATASET:-mertsigma/flm-v07-semantic-text-r5}"
+TEXT_REF="${FLM_V07_TEXT_DATASET:-mertsigma/flm-v07-semantic-text-r6}"
 
 mkdir -p "$DATA_ROOT" "$OUT_ROOT" "$LOG_DIR"
 
@@ -83,7 +83,7 @@ if [[ "${FLM_LOCAL_SKIP_DOWNLOAD:-0}" != "1" ]]; then
     if python - "$TEXT_DIR/sources.json" <<'PY'
 import json,sys
 x=json.load(open(sys.argv[1],encoding="utf-8"))
-raise SystemExit(0 if x.get("pipeline_version")=="v0.7-dev-text" and int(x.get("data_revision",0))>=5 else 1)
+raise SystemExit(0 if x.get("pipeline_version")=="v0.7-dev-text" and int(x.get("data_revision",0))>=6 else 1)
 PY
     then READY=1; fi
   fi
@@ -99,12 +99,12 @@ import json,sys
 x=json.load(open(sys.argv[1],encoding="utf-8"))
 s=x.get("stats") or {}
 assert x.get("pipeline_version")=="v0.7-dev-text"
-assert int(x.get("data_revision",0))>=5
+assert int(x.get("data_revision",0))>=6
 assert int((s.get("main") or {}).get("tokens",0))>=1_000_000_000
 assert int((s.get("coder") or {}).get("tokens",0))>=175_000_000
 assert int((s.get("semantic_interface_sft") or {}).get("rows",0))>=200_000
 assert int((s.get("tokenizer") or {}).get("vocab_size",0))>=30_000
-print("SEMANTIC_FLM_R4_LOCAL_DATA_OK")
+print("SEMANTIC_FLM_R6_LOCAL_DATA_OK")
 PY
 
 export PYTHONPATH="$ROOT"
