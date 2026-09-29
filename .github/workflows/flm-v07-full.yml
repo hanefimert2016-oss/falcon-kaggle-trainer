@@ -1,4 +1,4 @@
-name: FLM v0.7 Full GPU
+name: FLM v0.7 Full GPU (LEGACY DISABLED)
 
 on:
   workflow_run:
@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   launch:
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    if: ${{ false }} # strict zero-train FLM: legacy neural training disabled
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
