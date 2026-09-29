@@ -552,7 +552,7 @@ def main()->int:
         cfg=cfg,runtime=runtime,out=out,
         seq=int(os.environ.get("FLM_INTERFACE_SFT_SEQ","4096")),
         batch=batch,accum=accum,
-        epochs=float(os.environ.get("FLM_INTERFACE_SFT_EPOCHS","1.0")),
+        epochs=float(os.environ.get("FLM_INTERFACE_SFT_EPOCHS","0.65")),
     )
 
     final_dir=out/"interface"
