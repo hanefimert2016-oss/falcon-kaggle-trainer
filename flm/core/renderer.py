@@ -93,6 +93,57 @@ class DeterministicRenderer:
                     )
                 return self._choose_nonrepeating("tr" if tr else "en",variants)
 
+            if kind=="DESCRIBE_ENTITY":
+                entity=str(item.get("entity") or "Bu varlık")
+                facts=item.get("facts") or []
+                if not facts:
+                    return (
+                        f"{entity} hakkında hafızamda doğrulanmış bir bilgi yok."
+                        if tr else
+                        f"I don't have any verified facts about {entity} in memory."
+                    )
+                pieces=[]
+                for fact in facts:
+                    pred=str(fact.get("predicate") or "")
+                    args=[str(x) for x in (fact.get("args") or [])]
+                    if pred=="IsA" and len(args)>=2:
+                        pieces.append(
+                            f"{entity} bir {args[1]}" if tr else f"{entity} is a {args[1]}"
+                        )
+                    elif pred=="WarmBlooded":
+                        pieces.append(
+                            f"{entity} sıcakkanlıdır" if tr else f"{entity} is warm-blooded"
+                        )
+                    elif pred=="LocatedIn" and len(args)>=2:
+                        pieces.append(
+                            f"{entity}, {args[1]} içindedir" if tr else f"{entity} is in {args[1]}"
+                        )
+                    elif pred=="TallerThan" and len(args)>=2:
+                        pieces.append(
+                            f"{entity}, {args[1]}'den uzundur" if tr else f"{entity} is taller than {args[1]}"
+                        )
+                    elif len(args)>=2:
+                        pieces.append(f"{pred}({', '.join(args)})")
+                if not pieces:
+                    return (
+                        f"{entity} hakkında {len(facts)} doğrulanmış kayıt var."
+                        if tr else
+                        f"There are {len(facts)} verified records about {entity}."
+                    )
+                if tr:
+                    variants=(
+                        f"{entity} hakkında bildiğim şu: " + "; ".join(pieces) + ".",
+                        f"Hafızamdaki doğrulanmış bilgilere göre " + "; ".join(pieces) + ".",
+                        f"{entity} için kayıtlı bilgiler özetle şöyle: " + "; ".join(pieces) + ".",
+                    )
+                    return self._choose_nonrepeating("describe-tr:"+entity,variants)
+                variants=(
+                    f"Here is what I know about {entity}: " + "; ".join(pieces) + ".",
+                    f"According to my verified memory, " + "; ".join(pieces) + ".",
+                    f"The stored facts about {entity} can be summarized as: " + "; ".join(pieces) + ".",
+                )
+                return self._choose_nonrepeating("describe-en:"+entity,variants)
+
             if kind=="SYNTHESIZE_FACTS":
                 facts=item.get("facts") or []
                 if not facts:
