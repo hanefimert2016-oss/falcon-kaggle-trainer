@@ -109,7 +109,7 @@ jobs:
           assert s['semantic_sft']['supervised_tokens'] >= 280_000_000, s['semantic_sft']
           langs=sem.get('language_counts') or {}
           assert int(langs.get('tr',0)) >= 1_190_000, langs
-          assert int(langs.get('en',0)) >= 590_000, langs
+          assert int(langs.get('en',0)) >= 1_190_000, langs
           modes=sem.get('mode_counts') or {}
           assert len(modes) >= 24 and min(map(int,modes.values())) >= 99_000, modes
           assert s['main_sft']['supervised_tokens'] >= 350_000_000, s['main_sft']
