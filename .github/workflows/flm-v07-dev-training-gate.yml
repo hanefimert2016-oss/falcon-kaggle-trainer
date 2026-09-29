@@ -27,7 +27,7 @@ jobs:
     env:
       KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
       KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
-      TEXT_REF: ${{ vars.KAGGLE_OWNER }}/flm-v07-semantic-text-r6
+      TEXT_REF: ${{ vars.KAGGLE_OWNER }}/flm-v07-semantic-text-r7
       GPU_REF: ${{ vars.KAGGLE_OWNER }}/falcon-flm-v07-semantic-interface-gpu
     steps:
       - uses: actions/checkout@v4
@@ -40,7 +40,7 @@ jobs:
 
       - run: python -m pip install "kaggle>=2.2.1"
 
-      - name: Verify Semantic FLM text r6 dataset
+      - name: Verify Semantic FLM text r7 dataset
         shell: bash
         run: |
           set -euo pipefail
@@ -83,7 +83,7 @@ jobs:
           assert int(agentic.get('synthetic_rows',0))>=1500
           assert int(agentic.get('plan_turns',0))>=12000
           assert int((s.get('tokenizer') or {}).get('vocab_size',0))>=30_000
-          print('SEMANTIC_FLM_TEXT_R6_READY',s.get('main'),s.get('coder'),s.get('semantic_interface_sft'))
+          print('SEMANTIC_FLM_TEXT_R7_READY',s.get('main'),s.get('coder'),s.get('semantic_interface_sft'))
           PY
 
       - name: Build quality GPU bundle
@@ -101,7 +101,7 @@ jobs:
           owner=m['id'].split('/')[0]
           assert m['id']==f'{owner}/falcon-flm-v07-semantic-interface-gpu',m
           assert m['title']=='Falcon FLM v07 Semantic Interface Transformer',m
-          assert m['dataset_sources']==[f'{owner}/flm-v07-semantic-text-r6'],m
+          assert m['dataset_sources']==[f'{owner}/flm-v07-semantic-text-r7'],m
           assert m['kernel_sources']==[],m
           assert m['enable_gpu'] is True
           assert m['enable_internet'] is False
