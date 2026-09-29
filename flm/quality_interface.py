@@ -49,7 +49,7 @@ def evaluate_interface_behavior(
     identity_prog=Program(operations=[Operation("IDENTITY",{})])
     identity=[]
     identity_neural=0
-    for _ in range(4):
+    for _ in range(8):
         result=core.execute(identity_prog)
         answer=agent.render_verified("Sen kimsin?",identity_prog,result)
         source=agent.last_render_source
@@ -61,9 +61,10 @@ def evaluate_interface_behavior(
         })
     if not all(_clean(x) and "flm" in x.casefold() for x in identity):
         failures.append("identity_not_faithful")
-    if len(set(identity))<3:
+    identity_unique=len(set(identity))
+    if identity_unique<6:
         failures.append("identity_not_diverse")
-    if identity_neural<2:
+    if identity_neural<6:
         failures.append("identity_neural_renderer_too_weak")
 
     synth_prompt=(
@@ -77,19 +78,27 @@ def evaluate_interface_behavior(
         ]
     })])
     synth_result=core.execute(synth_prog)
-    synth_answer=agent.render_verified(synth_prompt,synth_prog,synth_result)
-    cases.append({
-        "case":"fact_synthesis","answer":synth_answer,
-        "source":agent.last_render_source,"attempts":agent.last_render_attempts,
-    })
-    if not _candidate_preserves_core(
-        synth_answer,synth_prompt,synth_prog,synth_result,verbatim=False
-    ):
-        failures.append("fact_synthesis_core_drift")
-    if _has_long_verbatim_overlap(synth_prompt,synth_answer,9):
-        failures.append("fact_synthesis_verbatim_copy")
-    if agent.last_render_source!="neural":
-        failures.append("fact_synthesis_used_fallback")
+    synth_answers=[]
+    synth_neural=0
+    for _ in range(4):
+        synth_answer=agent.render_verified(synth_prompt,synth_prog,synth_result)
+        synth_answers.append(synth_answer)
+        synth_neural+=int(agent.last_render_source=="neural")
+        cases.append({
+            "case":"fact_synthesis","answer":synth_answer,
+            "source":agent.last_render_source,"attempts":agent.last_render_attempts,
+        })
+        if not _candidate_preserves_core(
+            synth_answer,synth_prompt,synth_prog,synth_result,verbatim=False
+        ):
+            failures.append("fact_synthesis_core_drift")
+        if _has_long_verbatim_overlap(synth_prompt,synth_answer,9):
+            failures.append("fact_synthesis_verbatim_copy")
+    synth_unique=len(set(synth_answers))
+    if synth_unique<3:
+        failures.append("fact_synthesis_not_diverse")
+    if synth_neural<3:
+        failures.append("fact_synthesis_neural_renderer_too_weak")
 
     math_prompt=(
         "Çekirdek 27 ile 14'ün çarpımını hesapladı. "
@@ -133,8 +142,10 @@ def evaluate_interface_behavior(
         "ok":not failures,
         "failures":failures,
         "cases":cases,
-        "identity_unique":len(set(identity)),
+        "identity_unique":identity_unique,
         "identity_neural":identity_neural,
+        "fact_synthesis_unique":synth_unique,
+        "fact_synthesis_neural":synth_neural,
         "neural_cases":neural,
         "total_cases":len(cases),
     }
