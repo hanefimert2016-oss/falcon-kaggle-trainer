@@ -50,11 +50,11 @@ class DeterministicRenderer:
                 "FLM olarak çalışan bir yapay zekâ asistanıyım.",
             )
             architecture=(
-                "Dili tek bir arayüz Transformer'ıyla işler, doğrulanabilir muhakemeyi Semantic Core'da yürütürüm.",
-                "Doğal dili arayüz modelim yorumlar; planlama, mantık ve doğrulama çekirdekte çalışır.",
+                "Metni tokenizer ve Semantic Compiler ile işler, doğrulanabilir muhakemeyi Semantic Core'da yürütürüm.",
+                "Doğal dili kural tabanlı Semantic Compiler yorumlar; planlama, mantık ve doğrulama çekirdekte çalışır.",
                 "İstekleri Semantic IR'ye dönüştürür, hesaplama ve yapılandırılmış reasoning'i Core'a bırakırım.",
-                "Tek eğitilebilir dil arayüzünü semantik hafıza, planlayıcı ve doğrulayıcı çekirdekle birlikte kullanırım.",
-                "Metni anlamak için arayüz modelini, sonuçları hesaplayıp kontrol etmek için Semantic Core'u kullanırım.",
+                "Tokenizer, semantik hafıza, planlayıcı ve doğrulayıcı çekirdeği birlikte kullanırım.",
+                "Metni anlam yapısına çevirmek için Semantic Compiler'ı, sonuçları hesaplayıp kontrol etmek için Semantic Core'u kullanırım.",
                 "Dil katmanım isteği anlam yapısına çevirir; asıl yapılandırılmış işlemleri çekirdeğim yapar.",
             )
             purpose=(
@@ -75,11 +75,11 @@ class DeterministicRenderer:
                 "I operate as FLM, an AI assistant.",
             )
             architecture=(
-                "One interface Transformer handles language while verifiable reasoning runs in my Semantic Core.",
-                "My interface model interprets natural language; planning, logic, and verification run in the Core.",
+                "A tokenizer and Semantic Compiler handle text while verifiable reasoning runs in my Semantic Core.",
+                "A rule-based Semantic Compiler interprets supported language; planning, logic, and verification run in the Core.",
                 "I translate requests into Semantic IR and leave structured computation and reasoning to the Core.",
-                "I combine one trainable language interface with semantic memory, planning, and verification.",
-                "The interface handles text while the Semantic Core calculates and checks structured results.",
+                "I combine a tokenizer with semantic memory, planning, verification, and a training-free response composer.",
+                "The Semantic Compiler handles text while the Core calculates and checks structured results.",
                 "My language layer converts requests into semantic structure and the Core performs the actual operations.",
             )
             purpose=(
