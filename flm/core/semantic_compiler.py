@@ -33,10 +33,11 @@ def _norm(text:str)->str:
 
 
 class SemanticCompiler:
-    """Deterministic fallback compiler for a small explicit TR/EN grammar.
+    """Training-free compiler for the supported TR/EN semantic grammar.
 
-    The InterfaceTransformer handles open-ended language. This compiler keeps a
-    fully training-free path for canonical statements, rules and queries.
+    This compiler is the authoritative language-to-IR path in strict zero-train
+    FLM. Coverage grows through code, lexicons and grammar rules rather than
+    gradient training.
     """
 
     COPULA_PATTERNS=(
