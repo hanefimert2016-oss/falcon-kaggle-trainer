@@ -201,8 +201,16 @@ class SemanticCompiler:
                 )])
 
         sort_patterns=(
-            re.compile(r"^(?:şunları|bunları|sayıları)\s+(?P<desc>büyükten küçüğe\s+)?sırala[: ]+(?P<values>-?[0-9.,\s-]+)[.]?$",re.I),
-            re.compile(r"^sort(?: these)?(?: numbers)?\s+(?P<desc>descending\s+)?[: ]*(?P<values>-?[0-9.,\s-]+)[.]?$",re.I),
+            re.compile(
+                r"^(?:şunları|bunları|sayıları)\s+(?P<direction>büyükten küçüğe|küçükten büyüğe)\s+sırala[: ]+(?P<values>-?[0-9.,\s-]+)[.]?$",
+                re.I,
+            ),
+            re.compile(
+                r"^sort(?: these)?(?: numbers)?\s+(?:in\s+)?(?P<direction>descending|ascending)\s+order[: ]+(?P<values>-?[0-9.,\s-]+)[.]?$",
+                re.I,
+            ),
+            re.compile(r"^(?:şunları|bunları|sayıları)\s+sırala[: ]+(?P<values>-?[0-9.,\s-]+)[.]?$",re.I),
+            re.compile(r"^sort(?: these)?(?: numbers)?[: ]+(?P<values>-?[0-9.,\s-]+)[.]?$",re.I),
         )
         for pat in sort_patterns:
             m=pat.match(normalized)
@@ -210,9 +218,11 @@ class SemanticCompiler:
                 raw_values=re.findall(r"-?\d+(?:\.\d+)?",m.group("values"))
                 if len(raw_values)>=2:
                     values=[float(x) if "." in x else int(x) for x in raw_values]
+                    direction=(m.groupdict().get("direction") or "").casefold()
+                    descending=direction in {"büyükten küçüğe","descending"}
                     return Program(operations=[Operation(
                         "SORT_VALUES",
-                        {"values":values,"descending":bool(m.group("desc"))},
+                        {"values":values,"descending":descending},
                     )])
 
         # Canonical code-analysis requests keep source formatting intact.
