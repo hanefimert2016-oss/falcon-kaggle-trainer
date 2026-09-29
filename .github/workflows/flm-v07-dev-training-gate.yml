@@ -59,7 +59,7 @@ jobs:
           p=Path('/tmp/v07-gate-data/text/sources.json')
           t=json.loads(p.read_text(encoding='utf-8'))
           assert t.get('pipeline_version')=='v0.7-dev-text'
-          assert int(t.get('data_revision',0))>=6,t.get('data_revision')
+          assert int(t.get('data_revision',0))>=7,t.get('data_revision')
           s=t.get('stats') or {}
           assert int((s.get('main') or {}).get('tokens',0))>=1_000_000_000
           assert int((s.get('coder') or {}).get('tokens',0))>=175_000_000
