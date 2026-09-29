@@ -63,12 +63,13 @@ def _core_source_texts(program:Program,result)->list[str]:
                     value=fact.get(key)
                     if isinstance(value,str) and value.strip():
                         texts.append(value.strip())
-    # Semantic-memory facts/rules are structured, but may contain longer literal
-    # arguments in future datasets. Include them only when they look like prose.
-    for atom in list(getattr(result,"memory_facts",[]) or []):
-        raw=json.dumps(atom,ensure_ascii=False) if not isinstance(atom,str) else atom
-        if len(_normalized_for_copy(raw).split())>=9:
-            texts.append(raw)
+    # CoreResponse exposes memory counts, not raw memory entries. Inspect only
+    # the current Program's structured atom arguments for prose-like literals.
+    for atom in getattr(program,"facts",[]) or []:
+        for value in getattr(atom,"args",()) or ():
+            raw=str(value)
+            if len(_normalized_for_copy(raw).split())>=9:
+                texts.append(raw)
     return texts
 
 
@@ -119,6 +120,8 @@ def _candidate_preserves_core(candidate:str,prompt:str,program:Program,result,*,
             if any(x not in low for x in set(required)):
                 return False
             if any(k in low for k in ('"subject"','"predicate"','"object"')):
+                return False
+            if any(x in low for x in (" değildir", " degildir", " değil", " degil", " is not ", " isn't ")):
                 return False
         if kind=="DESCRIBE_ENTITY":
             entity=str(op_result.get("entity") or "").casefold()
