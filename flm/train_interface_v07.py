@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import math
 import os
@@ -556,16 +557,49 @@ def main()->int:
 
     final_dir=out/"interface"
     final_dir.mkdir(parents=True,exist_ok=True)
+    checkpoint_path=final_dir/"checkpoint.pt"
+    tokenizer_path=final_dir/"tokenizer.json"
     atomic_torch_save({
         "format":"flm-semantic-v07-interface",
         "model":model.state_dict(),
         "config":cfg.__dict__,
         "result":summary,
-    },final_dir/"checkpoint.pt")
-    shutil.copy2(root/"tokenizer.json",final_dir/"tokenizer.json")
+    },checkpoint_path)
+    shutil.copy2(root/"tokenizer.json",tokenizer_path)
+
+    # Release the training copy before loading the checkpoint for generation.
+    model.to("cpu")
+    del model
+    gc.collect()
+    if runtime.kind=="gpu":
+        torch.cuda.empty_cache()
+
+    from flm.quality_interface import evaluate_interface_behavior
+    behavior=evaluate_interface_behavior(
+        checkpoint_path,
+        tokenizer=tokenizer_path,
+        device=str(runtime.device),
+    )
+    summary["behavior_quality"]=behavior
+    (final_dir/"behavior_quality.json").write_text(
+        json.dumps(behavior,indent=2,ensure_ascii=False),encoding="utf-8"
+    )
+
+    # Persist the quality report into the final checkpoint metadata as well.
+    ck=torch.load(checkpoint_path,map_location="cpu",weights_only=False)
+    ck["result"]=summary
+    atomic_torch_save(ck,checkpoint_path)
+    del ck
+
     (final_dir/"metrics.json").write_text(
         json.dumps(summary,indent=2,ensure_ascii=False),encoding="utf-8"
     )
+    print("FLM_INTERFACE_BEHAVIOR="+json.dumps(behavior,ensure_ascii=False),flush=True)
+    if not behavior.get("ok"):
+        raise RuntimeError(
+            "trained InterfaceTransformer failed behavior gate: "
+            +json.dumps(behavior.get("failures") or [])
+        )
     print("FLM_INTERFACE_RESULT="+json.dumps(summary,ensure_ascii=False),flush=True)
     return 0
 
