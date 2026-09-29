@@ -38,6 +38,19 @@ rows.append({
         and len(set(identity_answers))==8,
 })
 run("Hesapla: 27*14", "378")
+compare_answer=agent.ask("17 mi büyük 9 mu?")
+rows.append({
+    "question":"17 mi büyük 9 mu?",
+    "answer":compare_answer,
+    "ok":"17" in compare_answer and "9" in compare_answer
+        and any(x in compare_answer.casefold() for x in ("büyük","daha büyük")),
+})
+sort_answer=agent.ask("Şunları küçükten büyüğe sırala: 9, 3, 7, 1.")
+rows.append({
+    "question":"Şunları küçükten büyüğe sırala: 9, 3, 7, 1.",
+    "answer":sort_answer,
+    "ok":"1, 3, 7, 9" in sort_answer,
+})
 run("""Bu Python kodunu analiz et:
 ```python
 def kare(x):
