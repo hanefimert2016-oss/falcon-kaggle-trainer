@@ -82,6 +82,13 @@ jobs:
           assert int(agentic.get('real_rows',0))>=3800
           assert int(agentic.get('synthetic_rows',0))>=1500
           assert int(agentic.get('plan_turns',0))>=12000
+          nebius=s.get('coder_sft_agentic_nebius') or {}
+          assert int(nebius.get('rows',0))>=4500
+          assert nebius.get('resolved_only') is True
+          assert int(nebius.get('plan_turns',0))>=9000
+          assert int(nebius.get('tool_turns',0))>=4500
+          assert int(sem.get('identity_variants_tr',0))>=216
+          assert int(sem.get('identity_variants_en',0))>=216
           assert int((s.get('tokenizer') or {}).get('vocab_size',0))>=30_000
           print('SEMANTIC_FLM_TEXT_R7_READY',s.get('main'),s.get('coder'),s.get('semantic_interface_sft'))
           PY
