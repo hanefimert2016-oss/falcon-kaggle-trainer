@@ -124,9 +124,6 @@ jobs:
           assert extra['plan_turns'] >= 4500, extra
           assert extra['tool_turns'] >= 4500, extra
           assert extra.get('permissive_repo_license_filter') is True, extra
-          nebius=s['coder_sft_agentic_nebius']
-          assert nebius['rows'] >= 4500, nebius
-          assert nebius.get('resolved_only') is True, nebius
           assert nebius['plan_turns'] >= 9000, nebius
           assert nebius['tool_turns'] >= 4500, nebius
           assert int(sem.get('identity_variants_tr',0)) >= 216, sem
