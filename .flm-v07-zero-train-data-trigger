@@ -6,3 +6,4 @@ turkish_thesaurus=all
 tokenizer_training=Kaggle-only
 neural_model_training=false
 raw_source_answer_memory=false
+retry=dependency-fix
