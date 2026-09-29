@@ -107,9 +107,17 @@ class DeterministicRenderer:
                     pred=str(fact.get("predicate") or "")
                     args=[str(x) for x in (fact.get("args") or [])]
                     if pred=="IsA" and len(args)>=2:
-                        pieces.append(
-                            f"{entity} bir {args[1]}" if tr else f"{entity} is a {args[1]}"
-                        )
+                        value=args[1]
+                        if tr:
+                            tr_types={
+                                "Cat":"kedi","Dog":"köpek","Bird":"kuş","Mammal":"memeli",
+                                "Vehicle":"araç","Computer":"bilgisayar","Program":"program",
+                                "File":"dosya","Human":"insan","Animal":"hayvan",
+                            }
+                            value=tr_types.get(value,value)
+                            pieces.append(f"{entity} bir {value}")
+                        else:
+                            pieces.append(f"{entity} is a {value}")
                     elif pred=="WarmBlooded":
                         pieces.append(
                             f"{entity} sıcakkanlıdır" if tr else f"{entity} is warm-blooded"
