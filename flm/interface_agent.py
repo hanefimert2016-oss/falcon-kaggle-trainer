@@ -325,16 +325,17 @@ class InterfaceAgent:
             faithful=_candidate_preserves_core(
                 candidate,prompt,program,result,verbatim=verbatim
             )
-            if faithful and (best is None or score<best[0]):
-                best=(score,candidate)
             duplicate=candidate in self._recent_answers[-4:]
+            if faithful and not duplicate and (best is None or score<best[0]):
+                best=(score,candidate)
             if faithful and not duplicate:
                 answer=candidate
                 break
         if not answer and best is not None:
             answer=best[1]
         if not answer:
-            # Correctness wins over stylistic diversity.
+            # If stochastic rendering only produced repeats/invalid outputs,
+            # correctness and diversity both fall back to Core-grounded templates.
             answer=self.deterministic_renderer.render(prompt,result)
         if answer:
             self._recent_answers.append(answer)
