@@ -823,13 +823,26 @@ def messages_for(i:int):
         "facts exactly, avoid mirroring the source wording, and vary phrasing across equivalent "
         "examples without changing the conclusion."
     )
-    # Half the rows train compiler + renderer; half apply loss only to the
-    # natural final answer while keeping verified IR/Core context visible.
-    # This gives response synthesis as much weight as IR serialization.
-    train_ir=((i//SEMANTIC_MODES)%2)==0
+    # Each language gets both compiler-supervised and renderer-only examples.
+    # Renderer-only rows deliberately hide the raw source wording so the model
+    # must compose from Semantic IR + verified Core state rather than copy input.
+    cycle=i//SEMANTIC_MODES
+    train_ir=((cycle//2)%2)==0
+    if train_ir:
+        model_user=user
+    elif tr:
+        model_user=(
+            "Doğrulanmış Semantic IR ve Core sonucunu kullanarak kendi cümlelerinle doğal "
+            "bir Türkçe cevap üret. Ham kaynak metin gizlidir; onu yeniden kurmaya çalışma."
+        )
+    else:
+        model_user=(
+            "Use the verified Semantic IR and Core result to write a fresh natural English "
+            "answer. The raw source wording is hidden; do not try to reconstruct it."
+        )
     return [
         {"role":"system","content":system},
-        {"role":"user","content":user},
+        {"role":"user","content":model_user},
         {"role":"assistant","content":ir,"train":train_ir},
         {"role":"tool","content":core},
         {"role":"assistant","content":"<|final|>\n"+final,"train":True},
@@ -864,7 +877,8 @@ def append_semantic_curriculum(path:Path,rows:int=1_200_000,seed:int=7071)->dict
         "anti_copy_verified":True,
         "anti_copy_phrase_words":9,
         "render_focused_rows":render_focused_rows,
-        "ir_supervision_policy":"1/2 compiler+render, 1/2 render-only",
+        "ir_supervision_policy":"1/2 compiler+render, 1/2 source-hidden render-only",
+        "source_hidden_rendering":True,
         "identity_variants_tr":216,
         "identity_variants_en":216,
         "response_synthesis_modes":[13,14,15,16,17,18,19],
