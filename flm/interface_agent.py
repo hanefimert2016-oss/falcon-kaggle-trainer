@@ -120,6 +120,19 @@ def _candidate_preserves_core(candidate:str,prompt:str,program:Program,result,*,
                 return False
             if any(k in low for k in ('"subject"','"predicate"','"object"')):
                 return False
+        if kind=="DESCRIBE_ENTITY":
+            entity=str(op_result.get("entity") or "").casefold()
+            facts=op_result.get("facts") or []
+            if entity and entity not in low:
+                return False
+            values=[]
+            for fact in facts:
+                args=[str(x).casefold() for x in (fact.get("args") or [])]
+                values.extend(args[1:])
+            if values and not any(v and v in low for v in set(values)):
+                return False
+            if any(k in low for k in ('"subject"','"predicate"','"args"')):
+                return False
             # Positive structured facts must not be flipped by the renderer.
             if any(x in low for x in (" değildir", " degildir", " değil", " degil", " is not ", " isn't ")):
                 return False
@@ -301,7 +314,7 @@ class InterfaceAgent:
             "<|semantic_ir|>...<|semantic_end|>. Do not solve logical, code, math, UI "
             "or planning steps yourself. FLM Core executes facts, rules, queries and "
             "operations. Use ARITHMETIC, ANALYZE_CODE, STATE_PLAN, UI_PLAN, VERIFY, "
-            "IDENTITY, or SYNTHESIZE_FACTS when appropriate. IDENTITY is for "
+            "IDENTITY, DESCRIBE_ENTITY, or SYNTHESIZE_FACTS when appropriate. IDENTITY is for "
             "questions about who FLM is. SYNTHESIZE_FACTS is for turning supplied "
             "structured facts into a fresh answer without copying source wording."
         )
@@ -347,25 +360,42 @@ class InterfaceAgent:
             ensure_ascii=False,sort_keys=True,separators=(",",":"),
         )
         semantic_history=self._recent_by_semantic.get(semantic_key,[])
+        verbatim=_verbatim_requested(prompt)
+        low_prompt=str(prompt or "").casefold()
+        turkish=any(ch in low_prompt for ch in "çğıöşü") or any(
+            x in low_prompt for x in (
+                " mı"," mi"," mu"," mü"," nedir"," kim"," nasıl"," hakkında",
+                "hesapla","kodu","kodunu","anlat","açıkla","acikla",
+            )
+        )
+        if verbatim:
+            render_request=prompt
+        elif turkish:
+            render_request=(
+                "Doğrulanmış çekirdek anlamını doğal Türkçe ile, kendi cümlelerinle ve "
+                "gereksiz alıntı yapmadan açıkla. Ham kaynak metin özellikle verilmemiştir."
+            )
+        else:
+            render_request=(
+                "Express the verified Core meaning in fresh natural English. Do not reconstruct "
+                "or quote the hidden source wording; the raw source text is intentionally omitted."
+            )
         render_messages=[
             {
                 "role":"system",
                 "content":(
                     "Render the verified FLM Core result naturally. Treat the Core payload as "
-                    "meaning, not as wording to copy. Do not quote or mirror the user's source "
-                    "text unless an exact quote is explicitly requested. Synthesize a fresh, "
-                    "concise answer in the user's language, preserve every verified fact, and "
-                    "never contradict the Core result. Vary phrasing naturally across runs "
-                    "while keeping the same meaning."
+                    "meaning, not as wording to copy. The original source text is intentionally "
+                    "hidden for ordinary answers. Synthesize a fresh concise response, preserve "
+                    "every verified fact, and vary phrasing without changing the conclusion."
                 ),
             },
-            {"role":"user","content":prompt},
+            {"role":"user","content":render_request},
             {"role":"assistant","content":ir},
             {"role":"tool","content":core_result},
         ]
         answer=""
         best=None
-        verbatim=_verbatim_requested(prompt)
         self.last_render_source="none"
         self.last_render_attempts=0
         for attempt in range(4):
@@ -421,7 +451,7 @@ class InterfaceAgent:
             direct_result=core.execute(direct_program)
             neural_render_kinds={
                 op.kind for op in direct_program.operations
-                if op.kind in {"IDENTITY","SYNTHESIZE_FACTS"}
+                if op.kind in {"IDENTITY","DESCRIBE_ENTITY","SYNTHESIZE_FACTS"}
             }
             if not neural_render_kinds:
                 return self.deterministic_renderer.render(prompt,direct_result)
