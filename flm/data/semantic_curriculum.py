@@ -722,38 +722,34 @@ def _knowledge_answer_case(i:int,tr:bool,names):
     a=names[i%len(names)]
     if tr:
         user=(
-            f"Elimde şu bilgiler var: {a} bir kedidir ve memelidir. "
-            f"{a} hakkında kısa bir cevap ver; kaynak cümleleri aynen yazma."
+            f"Yeni bilgi olarak {a}'nın bir kedi ve memeli olduğunu hafızana ekle. "
+            f"Ardından {a} hakkında bildiklerini kaynak cümleyi kopyalamadan anlat."
         )
-        facts=[
-            {"subject":a,"predicate":"type","object":"kedi"},
-            {"subject":a,"predicate":"class","object":"memeli"},
-        ]
         variants=(
             f"{a}, memeliler sınıfına ait bir kedidir.",
-            f"Kısaca {a}, hem kedi türünde hem de bir memelidir.",
-            f"{a}'nın sınıflandırması onu memeli bir kedi olarak gösteriyor.",
+            f"Hafızamdaki doğrulanmış bilgilere göre {a} hem kedi hem de memelidir.",
+            f"{a} için kayıtlı sınıflandırma onu memeli bir kedi olarak gösteriyor.",
+            f"Özetle {a}, kedi türünde ve memeliler grubunda yer alıyor.",
+            f"{a} hakkındaki semantik kayıtlarda kedi ve memeli sınıflandırmaları birlikte bulunuyor.",
         )
     else:
         user=(
-            f"I have these facts: {a} is a cat and a mammal. "
-            f"Give a short answer about {a} without repeating the source sentences."
+            f"Store the new facts that {a} is a cat and a mammal. Then describe what "
+            f"you know about {a} without copying the source sentence."
         )
-        facts=[
-            {"subject":a,"predicate":"type","object":"cat"},
-            {"subject":a,"predicate":"class","object":"mammal"},
-        ]
         variants=(
-            f"{a} is a cat belonging to the mammal class.",
-            f"In short, {a} is both a cat and a mammal.",
-            f"The classification describes {a} as a mammalian cat.",
+            f"{a} is a cat that belongs to the mammal class.",
+            f"According to verified memory, {a} is both a cat and a mammal.",
+            f"The stored classification describes {a} as a mammalian cat.",
+            f"In short, {a} is recorded as a cat within the mammals.",
+            f"Semantic memory associates {a} with both the cat and mammal classes.",
         )
     prog=semantic_ir(
-        operations=[operation("SYNTHESIZE_FACTS",facts=facts)],
+        facts=[atom("IsA",a,"Cat"),atom("IsA",a,"Mammal")],
+        operations=[operation("DESCRIBE_ENTITY",entity=a)],
         source="synthetic-semantic-curriculum-v5",
     )
     return user,prog,variants[(i//(SEMANTIC_MODES*2))%len(variants)]
-
 
 def messages_for(i:int):
     mode=i%SEMANTIC_MODES
