@@ -6,6 +6,7 @@ semantic_stream=dedicated
 semantic_sft=800000
 semantic_render_focus=one_third
 semantic_compile_render=two_thirds
+anti_copy_phrase_words=9
 en_sft=300000
 tr_knowledge=320000
 coder_code=250000
