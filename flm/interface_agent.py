@@ -110,6 +110,27 @@ def _candidate_preserves_core(candidate:str,prompt:str,program:Program,result,*,
             value=str(op_result.get("value"))
             if value not in text:
                 return False
+        if kind=="COMPARE_VALUES":
+            left=str(op_result.get("left"))
+            right=str(op_result.get("right"))
+            relation=str(op_result.get("relation") or "")
+            if left not in text or right not in text:
+                return False
+            relation_words={
+                "greater":("büyük","daha büyük","greater","larger","exceeds"),
+                "less":("küçük","daha küçük","less","smaller","below"),
+                "equal":("eşit","aynı","equal","same"),
+            }
+            if relation and not any(x in low for x in relation_words.get(relation,())):
+                return False
+        if kind=="SORT_VALUES":
+            ordered=[str(x) for x in (op_result.get("sorted") or [])]
+            if any(x not in text for x in ordered):
+                return False
+            # Require the values to appear in Core order, not merely somewhere in prose.
+            positions=[text.find(x) for x in ordered]
+            if any(p<0 for p in positions) or positions!=sorted(positions):
+                return False
         if kind=="SYNTHESIZE_FACTS":
             facts=op_result.get("facts") or []
             # Preserve entities and fact values, but not their serialized JSON wording.
@@ -333,8 +354,9 @@ class InterfaceAgent:
             "user's language/code request into executable FLM Semantic IR JSON inside "
             "<|semantic_ir|>...<|semantic_end|>. Do not solve logical, code, math, UI "
             "or planning steps yourself. FLM Core executes facts, rules, queries and "
-            "operations. Use ARITHMETIC, ANALYZE_CODE, STATE_PLAN, UI_PLAN, VERIFY, "
-            "IDENTITY, DESCRIBE_ENTITY, or SYNTHESIZE_FACTS when appropriate. IDENTITY is for "
+            "operations. Use ARITHMETIC, COMPARE_VALUES, SORT_VALUES, ANALYZE_CODE, STATE_PLAN, "
+            "UI_PLAN, VERIFY, IDENTITY, DESCRIBE_ENTITY, or SYNTHESIZE_FACTS when appropriate. "
+            "IDENTITY is for "
             "questions about who FLM is. SYNTHESIZE_FACTS is for turning supplied "
             "structured facts into a fresh answer without copying source wording."
         )
