@@ -49,7 +49,7 @@ def evaluate_interface_behavior(
     identity_prog=Program(operations=[Operation("IDENTITY",{})])
     identity=[]
     identity_neural=0
-    for _ in range(8):
+    for _ in range(10):
         result=core.execute(identity_prog)
         answer=agent.render_verified("Sen kimsin?",identity_prog,result)
         source=agent.last_render_source
@@ -62,9 +62,9 @@ def evaluate_interface_behavior(
     if not all(_clean(x) and "flm" in x.casefold() for x in identity):
         failures.append("identity_not_faithful")
     identity_unique=len(set(identity))
-    if identity_unique<6:
+    if identity_unique<8:
         failures.append("identity_not_diverse")
-    if identity_neural<6:
+    if identity_neural<8:
         failures.append("identity_neural_renderer_too_weak")
 
     synth_prompt=(
@@ -80,7 +80,7 @@ def evaluate_interface_behavior(
     synth_result=core.execute(synth_prog)
     synth_answers=[]
     synth_neural=0
-    for _ in range(8):
+    for _ in range(10):
         synth_answer=agent.render_verified(synth_prompt,synth_prog,synth_result)
         synth_answers.append(synth_answer)
         synth_neural+=int(agent.last_render_source=="neural")
@@ -95,9 +95,9 @@ def evaluate_interface_behavior(
         if _has_long_verbatim_overlap(synth_prompt,synth_answer,9):
             failures.append("fact_synthesis_verbatim_copy")
     synth_unique=len(set(synth_answers))
-    if synth_unique<3:
+    if synth_unique<6:
         failures.append("fact_synthesis_not_diverse")
-    if synth_neural<3:
+    if synth_neural<8:
         failures.append("fact_synthesis_neural_renderer_too_weak")
 
     # Memory-grounded synthesis: the renderer receives structured Core facts,
@@ -114,7 +114,7 @@ def evaluate_interface_behavior(
     describe_answers=[]
     describe_neural=0
     describe_prompt="Ada hakkında ne biliyorsun?"
-    for _ in range(4):
+    for _ in range(6):
         answer=agent.render_verified(describe_prompt,describe_prog,describe_result)
         describe_answers.append(answer)
         describe_neural+=int(agent.last_render_source=="neural")
@@ -129,9 +129,9 @@ def evaluate_interface_behavior(
         if not _clean(answer):
             failures.append("memory_description_protocol_leak")
     describe_unique=len(set(describe_answers))
-    if describe_unique<3:
+    if describe_unique<4:
         failures.append("memory_description_not_diverse")
-    if describe_neural<3:
+    if describe_neural<5:
         failures.append("memory_description_neural_renderer_too_weak")
 
     math_prompt=(
