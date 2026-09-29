@@ -297,7 +297,7 @@ jobs:
           assert 'train_text_pretrain' not in trainer
           assert '"transformer_count":1' in trainer
           assert 'semantic_data' in trainer and 'semantic_mask' in trainer
-          assert '"semantic":0.50' in trainer
+          assert '"semantic":0.60' in trainer
           assert 'mixed_sft-r7' in trainer
           assert 'evaluate_interface_behavior' in trainer
           assert 'behavior_quality.json' in trainer
