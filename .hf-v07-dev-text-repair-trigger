@@ -1,4 +1,4 @@
-FLM v0.7 r7 semantic synthesis rebuild
+FLM v0.7 r7 semantic synthesis rebuild FINAL
 architecture=single-interface-transformer
 semantic_core=training-free
 semantic_modes=20
@@ -12,9 +12,11 @@ memory_answer_path=SemanticMemory->DESCRIBE_ENTITY->renderer
 anti_copy_phrase_words=9
 semantic_near_repeat_guard=0.84
 coder_agent_menv_requested=6000
-coder_agent_nebius_requested=5000
+coder_agent_swe_hero_requested=5000
+swe_hero_teacher_provenance=Qwen3-Coder-480B-A35B-Instruct-training-data-only
 agentic_plan_and_final_variation=true
 dataset=flm-v07-semantic-text-r7
 data_revision=7
 vocab=32768
-rebuild_after_full_ci=36576563180
+stale_nebius_gate_removed=true
+final_build_generation=2
