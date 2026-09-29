@@ -375,6 +375,28 @@ jobs:
           graph=CodeEngine().analyze_python('import os\ndef f(x):\n    return print(x)\n')
           assert any(x.name=='f' for x in graph.symbols)
           assert ('f','print') in graph.calls
+          java=CodeEngine().analyze_text(
+              'import java.util.List;\nclass Demo {\n  static int twice(int x) { return Math.abs(x)*2; }\n}\n',
+              'java'
+          )
+          assert 'java.util.List' in java.imports,java.imports
+          assert any(x.name=='Demo' and x.kind=='class' for x in java.symbols),java.symbols
+          assert any(x.name=='twice' for x in java.symbols),java.symbols
+          assert any(dst=='abs' for _,dst in java.calls),java.calls
+
+          js=CodeEngine().analyze_text(
+              'import fs from "fs";\nfunction greet(name) { console.log(name); }\n',
+              'javascript'
+          )
+          assert 'fs' in js.imports,js.imports
+          assert any(x.name=='greet' for x in js.symbols),js.symbols
+          assert any(dst=='log' for _,dst in js.calls),js.calls
+
+          java_prog=compiler.operation_canonical(
+              'Bu Java kodunu analiz et:\n```java\nclass A { int f(){ return g(); } }\n```'
+          )
+          assert java_prog.operations[0].kind=='ANALYZE_CODE'
+          assert java_prog.operations[0].args['language']=='java'
 
           from flm.core.ui_engine import UIGraph,UIElement,UIPlanner
           ui=UIGraph('editor',[UIElement('save','button','Save',x=.9,y=.1)])
