@@ -1,4 +1,4 @@
-FLM v0.7 r6 semantic response synthesis build
+FLM v0.7 r6 semantic response synthesis build FINAL
 architecture=single-interface-transformer
 semantic_core=training-free
 semantic_curriculum=v4-diverse-faithful
@@ -18,4 +18,6 @@ data_revision=6
 anti_copy=required
 core_faithfulness=required
 short_term_repeat_guard=required
+disk_peak=deferred-semantic
+post_training_behavior_gate=required
 vocab=32768
