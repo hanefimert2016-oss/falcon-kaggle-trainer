@@ -66,18 +66,22 @@ jobs:
           assert int((s.get('main_sft') or {}).get('supervised_tokens',0))>=350_000_000
           assert int((s.get('coder_sft') or {}).get('supervised_tokens',0))>=75_000_000
           sem=s.get('semantic_interface_sft') or {}
-          assert int(sem.get('rows',0))>=800_000
-          assert int(sem.get('rows',0))>=550_000
+          assert int(sem.get('rows',0))>=1_000_000
           assert sem.get('anti_copy_verified') is True
           assert int(sem.get('anti_copy_phrase_words',0))==9
           assert sem.get('source')=='synthetic:flm-semantic-curriculum-v4'
-          assert int(sem.get('render_focused_rows',0))>=250_000
+          assert int(sem.get('render_focused_rows',0))>=330_000
           assert sem.get('ir_supervision_policy')=='2/3 compiler+render, 1/3 render-only'
-          assert int((s.get('semantic_sft') or {}).get('supervised_tokens',0))>=120_000_000
+          assert int((s.get('semantic_sft') or {}).get('supervised_tokens',0))>=140_000_000
           langs=sem.get('language_counts') or {}
-          assert int(langs.get('tr',0))>=290_000 and int(langs.get('en',0))>=290_000
+          assert int(langs.get('tr',0))>=490_000 and int(langs.get('en',0))>=490_000
           modes=sem.get('mode_counts') or {}
-          assert len(modes)>=16 and min(map(int,modes.values()))>=35_000
+          assert len(modes)>=16 and min(map(int,modes.values()))>=62_000
+          agentic=s.get('coder_sft_agentic') or {}
+          assert int(agentic.get('rows',0))>=6000
+          assert int(agentic.get('real_rows',0))>=3800
+          assert int(agentic.get('synthetic_rows',0))>=1500
+          assert int(agentic.get('plan_turns',0))>=12000
           assert int((s.get('tokenizer') or {}).get('vocab_size',0))>=30_000
           print('SEMANTIC_FLM_TEXT_R6_READY',s.get('main'),s.get('coder'),s.get('semantic_interface_sft'))
           PY
