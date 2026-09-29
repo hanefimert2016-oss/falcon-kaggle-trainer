@@ -62,7 +62,7 @@ DEV_SOURCES = {
         "repo": "nvidia/SWE-Hero-openhands-trajectories",
         "license": "cc-by-4.0; source repositories restricted to permissive SPDX licenses",
         "role": "OpenHands software-engineering trajectories with assistant/tool observations and tested patches",
-        "notes": "trajectory provenance is retained; generated teacher text is training data only, never a runtime model dependency",
+        "notes": "trajectory provenance is retained; trajectories were generated with Qwen3-Coder-480B-A35B-Instruct; teacher text is training data only and is never loaded as a runtime model dependency",
     },
 }
 
