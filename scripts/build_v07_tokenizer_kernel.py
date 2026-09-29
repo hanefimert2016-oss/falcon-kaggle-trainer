@@ -20,7 +20,7 @@ SPECIAL=[
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("--owner",required=True)
-    ap.add_argument("--dataset",default="flm-v07-semantic-text-r8")
+    ap.add_argument("--dataset",default="flm-v07-zero-train-data-r1")
     ap.add_argument("--out",default="kernel_v07_tokenizer_only")
     ap.add_argument("--vocab-size",type=int,default=32768)
     args=ap.parse_args()
