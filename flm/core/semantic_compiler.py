@@ -120,6 +120,15 @@ class SemanticCompiler:
             r"who are you",
             r"what are you",
             r"introduce yourself",
+            r"nasıl çalışıyorsun",
+            r"nasil calisiyorsun",
+            r"cevaplarını nasıl oluşturuyorsun",
+            r"cevaplarini nasil olusturuyorsun",
+            r"cevaplarını nasıl üretiyorsun",
+            r"cevaplarini nasil uretiyorsun",
+            r"how do you work",
+            r"how do you form your answers",
+            r"how do you generate your answers",
         )
         if any(re.fullmatch(p,text,re.I) for p in patterns):
             return Program(operations=[Operation("IDENTITY",{})])
