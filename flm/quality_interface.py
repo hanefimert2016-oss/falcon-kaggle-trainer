@@ -100,6 +100,40 @@ def evaluate_interface_behavior(
     if synth_neural<3:
         failures.append("fact_synthesis_neural_renderer_too_weak")
 
+    # Memory-grounded synthesis: the renderer receives structured Core facts,
+    # not the original prose that taught them.
+    memory_core=FLMCore()
+    memory_core.execute(Program.from_dict({
+        "facts":[
+            {"predicate":"IsA","args":["Ada","Cat"]},
+            {"predicate":"IsA","args":["Ada","Mammal"]},
+        ]
+    }))
+    describe_prog=Program(operations=[Operation("DESCRIBE_ENTITY",{"entity":"Ada"})])
+    describe_result=memory_core.execute(describe_prog)
+    describe_answers=[]
+    describe_neural=0
+    describe_prompt="Ada hakkında ne biliyorsun?"
+    for _ in range(4):
+        answer=agent.render_verified(describe_prompt,describe_prog,describe_result)
+        describe_answers.append(answer)
+        describe_neural+=int(agent.last_render_source=="neural")
+        cases.append({
+            "case":"memory_description","answer":answer,
+            "source":agent.last_render_source,"attempts":agent.last_render_attempts,
+        })
+        if not _candidate_preserves_core(
+            answer,describe_prompt,describe_prog,describe_result,verbatim=False
+        ):
+            failures.append("memory_description_core_drift")
+        if not _clean(answer):
+            failures.append("memory_description_protocol_leak")
+    describe_unique=len(set(describe_answers))
+    if describe_unique<3:
+        failures.append("memory_description_not_diverse")
+    if describe_neural<3:
+        failures.append("memory_description_neural_renderer_too_weak")
+
     math_prompt=(
         "Çekirdek 27 ile 14'ün çarpımını hesapladı. "
         "Doğrulanmış sonucu doğal bir Türkçe cümleyle açıkla."
@@ -146,6 +180,8 @@ def evaluate_interface_behavior(
         "identity_neural":identity_neural,
         "fact_synthesis_unique":synth_unique,
         "fact_synthesis_neural":synth_neural,
+        "memory_description_unique":describe_unique,
+        "memory_description_neural":describe_neural,
         "neural_cases":neural,
         "total_cases":len(cases),
     }
