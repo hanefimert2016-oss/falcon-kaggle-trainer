@@ -298,19 +298,47 @@ def _synthetic_agentic_coder_messages(i: int) -> list[dict]:
     inspect_call=compact_json({"name":"inspect_file","arguments":{"path":case["file"],"symbol":case["symbol"]}})
     patch_call=compact_json({"name":"apply_patch","arguments":{"path":case["file"],"replacement":case["patch"]}})
     test_call=compact_json({"name":"run_test","arguments":{"test":case["test"]}})
+
+    plan1=(
+        "Önce ilgili sembolü ve hata bağlamını inceleyip varsayımı kanıtlayacağım.",
+        "İlk adımda hata mesajını kaynak kodla karşılaştırıp gerçek nedeni belirleyeceğim.",
+        "Önce mevcut uygulamayı okuyup hatanın hangi koşulda oluştuğunu doğrulayacağım.",
+        "Tahmin yürütmeden önce ilgili fonksiyonu inceleyerek kanıt toplayacağım.",
+    )[variant%4]
+    plan2=(
+        "Kanıt sorunun kaynağını doğruluyor; davranışın geri kalanını koruyan küçük bir düzeltme uygulayacağım.",
+        "Neden netleşti. Şimdi yalnız problemli yolu değiştiren en dar patch'i uygulayacağım.",
+        "Hata doğrulandı; yan etkileri sınırlamak için minimum kapsamlı bir değişiklik yapacağım.",
+        "Mevcut davranışı mümkün olduğunca koruyup yalnız hatalı durumu ele alan düzeltmeye geçiyorum.",
+    )[(variant//4)%4]
+    plan3=(
+        "Düzeltmeden sonra ilgili regresyon testini çalıştırıp sonucu doğrulayacağım.",
+        "Şimdi odaklı testi çalıştırarak patch'in gerçekten sorunu çözdüğünü kontrol edeceğim.",
+        "Patch uygulandı; aynı hatayı kapsayan testi çalıştırıp yeni bir bozulma olmadığını kontrol edeceğim.",
+        "Son adımda hedef testi çalıştırıp beklenen davranışın geri geldiğini doğrulayacağım.",
+    )[(variant//16)%4]
+    finals=(
+        f"{case['symbol']} için hatanın nedeni doğrulandı; dar kapsamlı düzeltme uygulandı ve hedef test geçti.",
+        f"Sorun {case['file']} içindeki {case['symbol']} yolunda giderildi. İlgili regresyon testi başarıyla tamamlandı.",
+        f"Kaynak hata doğrulandı, yalnız gerekli bölüm değiştirildi ve {case['test']} testi geçti.",
+        f"Düzeltme tamamlandı: {case['symbol']} üzerindeki problem çözüldü ve odaklı test başarısızlık göstermedi.",
+        "İnceleme, küçük patch ve doğrulama adımları tamamlandı; hedeflenen hata artık testte yeniden oluşmuyor.",
+        "Hata nedeni kanıtlandı, minimal değişiklik uygulandı ve regresyon kontrolü temiz geçti.",
+    )
+    final=finals[variant%len(finals)]
     return [
         {"role":"system","content":"Use evidence-driven debugging. Plan, inspect, patch minimally, test, verify, then summarize without copying tool output."},
         {"role":"user","content":user},
-        {"role":"assistant","content":"<|plan|>\nÖnce hata ile ilgili sembolün mevcut uygulamasını inceleyip nedenini doğrulayacağım.\n<|plan_end|>"},
+        {"role":"assistant","content":"<|plan|>\n"+plan1+"\n<|plan_end|>"},
         {"role":"assistant","content":"<|tool_call|>"+inspect_call+"<|tool_end|>"},
         {"role":"tool","content":"<|tool_result|>"+compact_json({"path":case["file"],"content":case["inspect"],"error":case["error"]})+"<|tool_end|>"},
-        {"role":"assistant","content":"<|plan|>\nHata mevcut uygulamayla uyumlu. Davranışı gereksiz yere değiştirmeden yalnız hatalı durumu ele alan küçük bir patch uygulayacağım.\n<|plan_end|>"},
+        {"role":"assistant","content":"<|plan|>\n"+plan2+"\n<|plan_end|>"},
         {"role":"assistant","content":"<|tool_call|>"+patch_call+"<|tool_end|>"},
         {"role":"tool","content":"<|tool_result|>"+compact_json({"applied":True,"path":case["file"],"variant":variant})+"<|tool_end|>"},
-        {"role":"assistant","content":"<|plan|>\nPatch uygulandı. Şimdi doğrudan bu davranışı kapsayan odaklı testi çalıştırıp sonucu doğrulayacağım.\n<|plan_end|>"},
+        {"role":"assistant","content":"<|plan|>\n"+plan3+"\n<|plan_end|>"},
         {"role":"assistant","content":"<|tool_call|>"+test_call+"<|tool_end|>"},
         {"role":"tool","content":"<|tool_result|>"+compact_json({"test":case["test"],"passed":True,"failures":0})+"<|tool_end|>"},
-        {"role":"assistant","content":"<|final|>\nSorunun kaynağı doğrulandı, küçük kapsamlı düzeltme uygulandı ve ilgili regresyon testi başarıyla geçti."},
+        {"role":"assistant","content":"<|final|>\n"+final},
     ]
 
 
