@@ -451,7 +451,7 @@ class InterfaceAgent:
             faithful=_candidate_preserves_core(
                 candidate,prompt,program,result,verbatim=verbatim
             )
-            duplicate=candidate in self._recent_answers[-4:]
+            duplicate=candidate in self._recent_answers[-8:]
             near_repeat=any(
                 _copy_similarity(candidate,previous)>=0.84
                 for previous in semantic_history[-8:]
