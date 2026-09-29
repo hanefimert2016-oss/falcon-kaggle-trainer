@@ -1004,7 +1004,7 @@ def append_semantic_curriculum(path:Path,rows:int=2_400_000,seed:int=7071)->dict
             messages=messages_for(i)
             fh.write(json.dumps({
                 "messages":messages,
-                "source":"synthetic:flm-semantic-curriculum-v5",
+                "source":"synthetic:flm-semantic-curriculum-v6",
             },ensure_ascii=False)+"\n")
             mode_counts[str(i%SEMANTIC_MODES)]+=1
             language_counts["tr" if ((i//SEMANTIC_MODES)%2==0) else "en"]+=1
@@ -1015,7 +1015,7 @@ def append_semantic_curriculum(path:Path,rows:int=2_400_000,seed:int=7071)->dict
         "modes":SEMANTIC_MODES,
         "mode_counts":mode_counts,
         "language_counts":language_counts,
-        "source":"synthetic:flm-semantic-curriculum-v5",
+        "source":"synthetic:flm-semantic-curriculum-v6",
         "core_executed":True,
         "anti_copy_verified":True,
         "anti_copy_phrase_words":9,
