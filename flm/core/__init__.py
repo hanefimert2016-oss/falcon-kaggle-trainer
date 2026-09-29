@@ -8,6 +8,7 @@ from .verifier import Verifier, Verification
 from .code_engine import CodeEngine, CodeGraph, CodeSymbol
 from .ui_engine import UIPlanner, UIGraph, UIElement, UIAction
 from .renderer import DeterministicRenderer
+from .knowledge_compiler import SemanticKnowledgeCompiler, IngestStats
 
 __all__ = [
     "Atom","Rule","Query","Operation","Program",
@@ -16,4 +17,5 @@ __all__ = [
     "ActionSchema","StatePlanner","PlanResult","ArithmeticSolver",
     "Verifier","Verification","CodeEngine","CodeGraph","CodeSymbol",
     "UIPlanner","UIGraph","UIElement","UIAction","DeterministicRenderer",
+    "SemanticKnowledgeCompiler","IngestStats",
 ]
