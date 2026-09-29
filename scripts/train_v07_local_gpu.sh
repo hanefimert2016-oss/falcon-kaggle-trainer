@@ -97,6 +97,7 @@ fi
 
 python - "$TEXT_DIR/sources.json" <<'PY'
 import json,sys
+from pathlib import Path
 x=json.load(open(sys.argv[1],encoding="utf-8"))
 s=x.get("stats") or {}
 assert x.get("pipeline_version")=="v0.7-dev-text"
