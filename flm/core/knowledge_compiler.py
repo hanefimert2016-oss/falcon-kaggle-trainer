@@ -100,15 +100,36 @@ class SemanticKnowledgeCompiler:
         return stats
 
     def ingest_jsonl(self, memory: SemanticMemory, path: str | Path) -> IngestStats:
+        """Stream JSONL/text into memory without materializing the full corpus."""
         p=Path(path)
-        records=[]
-        with p.open("r",encoding="utf-8") as fh:
+        stats=IngestStats()
+        before=memory.stats()
+        with p.open("r",encoding="utf-8",errors="ignore") as fh:
             for line in fh:
                 line=line.strip()
                 if not line:
                     continue
                 try:
-                    records.append(json.loads(line))
+                    record=json.loads(line)
                 except json.JSONDecodeError:
-                    records.append(line)
-        return self.ingest(memory,records)
+                    record=line
+                try:
+                    if isinstance(record,dict) and all(record.get(k) for k in ("s_id","r_id","e_id")):
+                        sid=str(record["s_id"]); rid=str(record["r_id"]); eid=str(record["e_id"])
+                        slabel=str(record.get("s_label") or sid).strip()
+                        rlabel=str(record.get("r_label") or rid).strip()
+                        elabel=str(record.get("e_label") or eid).strip()
+                        memory.add_entity_alias(slabel,sid,display=slabel)
+                        memory.add_entity_alias(eid,eid,display=elabel)
+                        if elabel:
+                            memory.add_entity_alias(elabel,eid,display=elabel)
+                        memory.set_predicate_label(rid,rlabel)
+                    program,_=self.compile_record(record)
+                    memory.ingest(program)
+                    stats.accepted+=1
+                except (ValueError,TypeError,KeyError):
+                    stats.rejected+=1
+        after=memory.stats()
+        stats.facts_added=after.facts-before.facts
+        stats.rules_added=after.rules-before.rules
+        return stats
