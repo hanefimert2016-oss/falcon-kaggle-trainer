@@ -64,8 +64,13 @@ def _candidate_preserves_core(candidate:str,prompt:str,program:Program,result,*,
         if not op_result.get("ok",False):
             continue
         kind=op_result.get("kind")
-        if kind=="IDENTITY" and "flm" not in low:
-            return False
+        if kind=="IDENTITY":
+            if "flm" not in low:
+                return False
+            if not any(x in low for x in ("yapay zek", "ai ", "ai.", "assistant", "asistan")):
+                return False
+            if any(x in low for x in ("ben insan", "i am human", "i'm human", "insanım", "insanim")):
+                return False
         if kind=="ARITHMETIC":
             value=str(op_result.get("value"))
             if value not in text:
@@ -80,6 +85,9 @@ def _candidate_preserves_core(candidate:str,prompt:str,program:Program,result,*,
             if any(x not in low for x in set(required)):
                 return False
             if any(k in low for k in ('"subject"','"predicate"','"object"')):
+                return False
+            # Positive structured facts must not be flipped by the renderer.
+            if any(x in low for x in (" değildir", " degildir", " değil", " degil", " is not ", " isn't ")):
                 return False
         if kind=="ANALYZE_CODE":
             symbols=[str(x.get("name") or "") for x in (op_result.get("symbols") or [])]
@@ -175,6 +183,7 @@ class InterfaceAgent:
         self.render_top_p=float(render_top_p)
         self.repetition_penalty=float(repetition_penalty)
         self._recent_answers: list[str] = []
+        self._recent_by_semantic: dict[str,list[str]] = {}
         self.last_render_source="none"
         self.last_render_attempts=0
         self.semantic_compiler=SemanticCompiler()
@@ -294,6 +303,16 @@ class InterfaceAgent:
         core_result="<|core_result|>"+json.dumps(
             payload,ensure_ascii=False,separators=(",",":")
         )+"<|core_end|>"
+        # Track wording per verified meaning, not just globally. This makes repeated
+        # questions converge to the same facts while discouraging near-identical prose.
+        semantic_key=json.dumps(
+            {
+                "results":[{"answer":x.get("answer"),"query":x.get("query")} for x in payload["results"]],
+                "ops":payload["operation_results"],
+            },
+            ensure_ascii=False,sort_keys=True,separators=(",",":"),
+        )
+        semantic_history=self._recent_by_semantic.get(semantic_key,[])
         render_messages=[
             {
                 "role":"system",
@@ -330,9 +349,13 @@ class InterfaceAgent:
                 candidate,prompt,program,result,verbatim=verbatim
             )
             duplicate=candidate in self._recent_answers[-4:]
-            if faithful and not duplicate and (best is None or score<best[0]):
+            near_repeat=any(
+                _copy_similarity(candidate,previous)>=0.84
+                for previous in semantic_history[-8:]
+            )
+            if faithful and not duplicate and not near_repeat and (best is None or score<best[0]):
                 best=(score,candidate)
-            if faithful and not duplicate:
+            if faithful and not duplicate and not near_repeat:
                 answer=candidate
                 self.last_render_source="neural"
                 break
@@ -347,6 +370,9 @@ class InterfaceAgent:
         if answer:
             self._recent_answers.append(answer)
             self._recent_answers=self._recent_answers[-8:]
+            history=self._recent_by_semantic.setdefault(semantic_key,[])
+            history.append(answer)
+            self._recent_by_semantic[semantic_key]=history[-12:]
         return answer
 
 
