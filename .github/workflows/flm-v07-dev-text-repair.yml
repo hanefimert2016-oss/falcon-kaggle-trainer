@@ -87,7 +87,7 @@ jobs:
           p=Path('prepared_v07_dev_text/sources.json')
           x=json.loads(p.read_text())
           assert x['pipeline_version']=='v0.7-dev-text'
-          assert int(x.get('data_revision',0)) >= 6, x.get('data_revision')
+          assert int(x.get('data_revision',0)) >= 7, x.get('data_revision')
           s=x['stats']
           assert s['main_raw']['bytes'] >= 3_000_000_000, s['main_raw']
           assert s['main_raw']['bytes_total_with_knowledge'] >= 4_400_000_000, s['main_raw']
