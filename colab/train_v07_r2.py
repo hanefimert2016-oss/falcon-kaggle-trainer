@@ -22,7 +22,7 @@ def valid_revision(path:Path)->bool:
         obj=json.loads(meta.read_text(encoding="utf-8"))
     except Exception:
         return False
-    return obj.get("pipeline_version")=="v0.7-dev-text" and int(obj.get("data_revision",0))>=7
+    return obj.get("pipeline_version")=="v0.7-dev-text" and int(obj.get("data_revision",0))>=8
 
 
 def ensure_text_dataset(ref:str,dest:Path)->None:
@@ -30,14 +30,14 @@ def ensure_text_dataset(ref:str,dest:Path)->None:
         print("dataset_ready",ref,dest,flush=True)
         return
     if not (os.environ.get("KAGGLE_API_TOKEN") or Path.home().joinpath(".kaggle/kaggle.json").is_file()):
-        raise SystemExit("KAGGLE_API_TOKEN or ~/.kaggle/kaggle.json is required to download FLM r7 semantic text data.")
+        raise SystemExit("KAGGLE_API_TOKEN or ~/.kaggle/kaggle.json is required to download FLM r8 semantic text data.")
     if dest.exists():
         import shutil
         shutil.rmtree(dest)
     dest.mkdir(parents=True,exist_ok=True)
     run(sys.executable,"-m","kaggle","datasets","download","-d",ref,"-p",str(dest),"--unzip")
     if not valid_revision(dest):
-        raise RuntimeError(f"downloaded dataset is not FLM semantic r7: {ref}")
+        raise RuntimeError(f"downloaded dataset is not FLM semantic r8: {ref}")
 
 
 def gpu_profile():
@@ -57,7 +57,7 @@ def gpu_profile():
 def main()->int:
     ap=argparse.ArgumentParser()
     ap.add_argument("--drive-root",default="/content/drive/MyDrive/FalconFLM")
-    ap.add_argument("--data-root",default="/content/flm-v07-r7-data")
+    ap.add_argument("--data-root",default="/content/flm-v07-r8-data")
     ap.add_argument("--owner",default=os.environ.get("KAGGLE_OWNER","mertsigma"))
     ap.add_argument("--skip-drive-mount",action="store_true")
     args=ap.parse_args()
@@ -78,7 +78,7 @@ def main()->int:
 
     data_root=Path(args.data_root)
     text_dir=data_root/"text"
-    ensure_text_dataset(f"{args.owner}/flm-v07-semantic-text-r7",text_dir)
+    ensure_text_dataset(f"{args.owner}/flm-v07-semantic-text-r8",text_dir)
 
     batch,accum=gpu_profile()
     out=Path(args.drive_root)/"runs"/"flm-v0.7-semantic"
