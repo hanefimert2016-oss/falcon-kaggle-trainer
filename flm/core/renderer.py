@@ -228,6 +228,65 @@ class DeterministicRenderer:
             if kind=="ARITHMETIC":
                 return (f"Sonuç: {item.get('value')}." if tr else f"Result: {item.get('value')}.")
 
+            if kind=="COMPARE_VALUES":
+                left=item.get("left"); right=item.get("right"); relation=item.get("relation")
+                if tr:
+                    variants={
+                        "greater":(
+                            f"{left}, {right}'den büyüktür.",
+                            f"Karşılaştırmada büyük olan değer {left}; diğer değer {right}.",
+                            f"{left} değeri {right} değerini aşıyor.",
+                        ),
+                        "less":(
+                            f"{left}, {right}'den küçüktür.",
+                            f"Karşılaştırmada {right} daha büyük; {left} daha küçük kalıyor.",
+                            f"{left} değeri {right} değerinin altında.",
+                        ),
+                        "equal":(
+                            f"{left} ile {right} eşittir.",
+                            f"İki değer de aynı: {left}.",
+                            f"Karşılaştırma eşitlik veriyor; her ikisi de {left}.",
+                        ),
+                    }
+                    return self._choose_nonrepeating(f"compare-tr:{left}:{right}",variants.get(relation,variants["equal"]))
+                variants={
+                    "greater":(
+                        f"{left} is greater than {right}.",
+                        f"The larger value is {left}; the other value is {right}.",
+                        f"{left} exceeds {right}.",
+                    ),
+                    "less":(
+                        f"{left} is less than {right}.",
+                        f"{right} is the larger value, while {left} is smaller.",
+                        f"{left} falls below {right}.",
+                    ),
+                    "equal":(
+                        f"{left} and {right} are equal.",
+                        f"Both values are the same: {left}.",
+                        f"The comparison is equal; each side is {left}.",
+                    ),
+                }
+                return self._choose_nonrepeating(f"compare-en:{left}:{right}",variants.get(relation,variants["equal"]))
+
+            if kind=="SORT_VALUES":
+                ordered=item.get("sorted") or []
+                rendered=", ".join(str(x) for x in ordered)
+                if tr:
+                    direction="büyükten küçüğe" if item.get("descending") else "küçükten büyüğe"
+                    variants=(
+                        f"{direction.capitalize()} sıralama: {rendered}.",
+                        f"Değerleri {direction} dizince sonuç {rendered}.",
+                        f"Sıralanmış liste ({direction}): {rendered}.",
+                    )
+                    return self._choose_nonrepeating(f"sort-tr:{rendered}:{direction}",variants)
+                direction="descending" if item.get("descending") else "ascending"
+                variants=(
+                    f"{direction.capitalize()} order: {rendered}.",
+                    f"Sorting the values in {direction} order gives {rendered}.",
+                    f"The {direction} sequence is {rendered}.",
+                )
+                return self._choose_nonrepeating(f"sort-en:{rendered}:{direction}",variants)
+
             if kind=="ANALYZE_CODE":
                 diagnostics=item.get("diagnostics") or []
                 if diagnostics:
