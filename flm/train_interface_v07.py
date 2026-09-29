@@ -47,9 +47,9 @@ def resolve_text_root(version: str = "v0.7-dev-text") -> Path:
             obj=json.loads(manifest.read_text(encoding="utf-8"))
         except Exception:
             continue
-        if obj.get("pipeline_version")==version and int(obj.get("data_revision",0))>=5:
+        if obj.get("pipeline_version")==version and int(obj.get("data_revision",0))>=6:
             return manifest.parent
-    raise SystemExit(f"could not locate {version} data revision 5+")
+    raise SystemExit(f"could not locate {version} data revision 6+")
 
 
 def config(vocab_size:int)->InterfaceConfig:
@@ -258,6 +258,8 @@ def train_mixed_sft(
     *,
     main_data,
     main_mask,
+    semantic_data,
+    semantic_mask,
     coder_data,
     coder_mask,
     cfg,
@@ -269,15 +271,30 @@ def train_mixed_sft(
     epochs,
 ):
     md,me=split_train_eval_stream(main_data,seq,eval_fraction=0.02)
+    sd,se=split_train_eval_stream(semantic_data,seq,eval_fraction=0.02)
     cd,ce=split_train_eval_stream(coder_data,seq,eval_fraction=0.02)
+
     mm=main_mask[:len(md)]; mem=main_mask[len(md):]
+    sm=semantic_mask[:len(sd)]; sem=semantic_mask[len(sd):]
     cm=coder_mask[:len(cd)]; cem=coder_mask[len(cd):]
+
     ms=eligible_sft_starts(mm,seq,min_supervised=8)
+    ss=eligible_sft_starts(sm,seq,min_supervised=8)
     cs=eligible_sft_starts(cm,seq,min_supervised=8)
+    if not len(ms) or not len(ss) or not len(cs):
+        raise RuntimeError(
+            f"empty SFT stream main={len(ms)} semantic={len(ss)} coder={len(cs)}"
+        )
+
     mp=ShuffledStartPool(ms,8111)
+    sp=ShuffledStartPool(ss,8166)
     cp=ShuffledStartPool(cs,8222)
-    # 2:1 main/general+semantic to coding/tool traces.
-    virtual=len(ms)+max(1,len(cs))
+
+    # Explicit curriculum: 50% semantic reasoning/response synthesis,
+    # 25% ordinary conversation/instruction, 25% coding/tool traces.
+    # This prevents the high-value anti-copy/faithfulness data from being
+    # diluted by the much larger generic instruction stream.
+    virtual=len(ms)+len(ss)+len(cs)
     steps=max(1,math.ceil(virtual*epochs/max(1,batch*accum)))
     peak=float(os.environ.get("FLM_INTERFACE_SFT_LR","6e-5"))
     floor=float(os.environ.get("FLM_INTERFACE_SFT_MIN_LR","6e-6"))
@@ -287,12 +304,13 @@ def train_mixed_sft(
     wrapped=model
     if runtime.kind=="gpu" and torch.cuda.device_count()>1 and batch>=2:
         wrapped=torch.nn.DataParallel(model)
+
     resume=out/"stages"/"mixed_sft_resume.pt"
     best_path=out/"stages"/"mixed_sft_best.pt"
     final=out/"stages"/"mixed_sft.pt"
     start_step=0
     best=float("inf")
-    main_seen=coder_seen=0
+    main_seen=semantic_seen=coder_seen=0
     eval_rng=np.random.default_rng(8333)
     ckpt_interval=int(os.environ.get("FLM_INTERFACE_CKPT_INTERVAL","500"))
     eval_interval=int(os.environ.get("FLM_INTERFACE_SFT_EVAL_INTERVAL","250"))
@@ -305,44 +323,59 @@ def train_mixed_sft(
 
     if resume_enabled() and resume.is_file():
         ck=torch.load(resume,map_location=runtime.device,weights_only=False)
-        if ck.get("config")!=cfg.__dict__:
-            raise RuntimeError("mixed SFT resume config mismatch")
+        if ck.get("config")!=cfg.__dict__ or ck.get("stage")!="mixed_sft-r6":
+            raise RuntimeError("mixed SFT r6 resume config/stage mismatch")
         model.load_state_dict(ck["model"])
         opt.load_state_dict(ck["optimizer"]); optimizer_to_device(opt,runtime.device)
         if scaler.is_enabled() and ck.get("scaler"):
             scaler.load_state_dict(ck["scaler"])
-        mp.load_state_dict(ck["main_sampler"]); cp.load_state_dict(ck["coder_sampler"])
+        mp.load_state_dict(ck["main_sampler"])
+        sp.load_state_dict(ck["semantic_sampler"])
+        cp.load_state_dict(ck["coder_sampler"])
         start_step=int(ck["next_step"])
         main_seen=int(ck.get("main_supervised",0))
+        semantic_seen=int(ck.get("semantic_supervised",0))
         coder_seen=int(ck.get("coder_supervised",0))
         best=float(ck.get("best_eval",best))
 
     started=time.time()
     for step in range(start_step,steps):
         lr=_lr(step,steps,peak,floor,warmup)
-        for group in opt.param_groups: group["lr"]=lr
+        for group in opt.param_groups:
+            group["lr"]=lr
         opt.zero_grad(set_to_none=True)
         total=0.0
+
         for micro in range(accum):
-            use_coder=((step*accum+micro)%3)==2
-            if use_coder:
-                starts=cp.take(batch)
-                x,y,sup=make_sft_batch_at_starts(cd,cm,starts,seq,runtime.device)
-                coder_seen+=sup
-            else:
+            lane=(step*accum+micro)%4
+            if lane in (0,2):
+                starts=sp.take(batch)
+                x,y,sup=make_sft_batch_at_starts(sd,sm,starts,seq,runtime.device)
+                semantic_seen+=sup
+            elif lane==1:
                 starts=mp.take(batch)
                 x,y,sup=make_sft_batch_at_starts(md,mm,starts,seq,runtime.device)
                 main_seen+=sup
+            else:
+                starts=cp.take(batch)
+                x,y,sup=make_sft_batch_at_starts(cd,cm,starts,seq,runtime.device)
+                coder_seen+=sup
+
             with runtime.autocast():
                 _,loss=wrapped(x,y)
-                if loss.ndim: loss=loss.mean()
+                if loss.ndim:
+                    loss=loss.mean()
                 loss=loss/accum
             if not torch.isfinite(loss):
                 raise RuntimeError(f"non-finite mixed SFT loss step={step}")
-            if scaler.is_enabled(): scaler.scale(loss).backward()
-            else: loss.backward()
+            if scaler.is_enabled():
+                scaler.scale(loss).backward()
+            else:
+                loss.backward()
             total+=float(loss.detach())
-        if scaler.is_enabled(): scaler.unscale_(opt)
+
+        if scaler.is_enabled():
+            scaler.unscale_(opt)
         grad=torch.nn.utils.clip_grad_norm_(model.parameters(),1.0)
         if not torch.isfinite(torch.as_tensor(grad)):
             raise RuntimeError(f"non-finite mixed SFT gradient step={step}")
@@ -350,8 +383,9 @@ def train_mixed_sft(
 
         if (step+1)%eval_interval==0 or step==steps-1:
             em=eval_sft(model,me,mem,seq,runtime.device,eval_rng,8)
+            es=eval_sft(model,se,sem,seq,runtime.device,eval_rng,8)
             ec=eval_sft(model,ce,cem,seq,runtime.device,eval_rng,8)
-            score=0.65*em+0.35*ec
+            score=0.30*em+0.45*es+0.25*ec
             if score < best:
                 best=score
                 atomic_torch_save({
@@ -361,21 +395,25 @@ def train_mixed_sft(
                     "step":step+1,
                 },best_path)
             print(
-                f"interface mixed_sft step={step+1}/{steps} loss={total:.4f} "
-                f"main_eval={em:.4f} coder_eval={ec:.4f} score={score:.4f}",
+                f"interface mixed_sft-r6 step={step+1}/{steps} loss={total:.4f} "
+                f"main_eval={em:.4f} semantic_eval={es:.4f} "
+                f"coder_eval={ec:.4f} score={score:.4f}",
                 flush=True,
             )
+
         if ckpt_interval>0 and (step+1)%ckpt_interval==0:
             atomic_torch_save({
                 "format":"flm-interface-v07-resume",
-                "stage":"mixed_sft",
+                "stage":"mixed_sft-r6",
                 "model":model.state_dict(),
                 "optimizer":opt.state_dict(),
                 "scaler":scaler.state_dict() if scaler.is_enabled() else None,
                 "main_sampler":mp.state_dict(),
+                "semantic_sampler":sp.state_dict(),
                 "coder_sampler":cp.state_dict(),
                 "next_step":step+1,
                 "main_supervised":main_seen,
+                "semantic_supervised":semantic_seen,
                 "coder_supervised":coder_seen,
                 "best_eval":best,
                 "config":cfg.__dict__,
@@ -384,23 +422,28 @@ def train_mixed_sft(
     if best_path.is_file():
         best_ck=torch.load(best_path,map_location=runtime.device,weights_only=False)
         model.load_state_dict(best_ck["model"])
+
     em=eval_sft(model,me,mem,seq,runtime.device,eval_rng,12)
+    es=eval_sft(model,se,sem,seq,runtime.device,eval_rng,12)
     ec=eval_sft(model,ce,cem,seq,runtime.device,eval_rng,12)
     metrics={
-        "stage":"mixed_sft",
+        "stage":"mixed_sft-r6",
         "steps":steps,
         "training_seq_len":seq,
+        "sampling_ratio":{"main":0.25,"semantic":0.50,"coder":0.25},
         "main_supervised_seen":main_seen,
+        "semantic_supervised_seen":semantic_seen,
         "coder_supervised_seen":coder_seen,
         "main_eval_loss":em,
+        "semantic_eval_loss":es,
         "coder_eval_loss":ec,
-        "combined_eval_loss":0.65*em+0.35*ec,
+        "combined_eval_loss":0.30*em+0.45*es+0.25*ec,
         "best_combined_eval_loss":best,
         "elapsed_s":time.time()-started,
     }
     atomic_torch_save({
         "format":"flm-interface-v07-stage",
-        "stage":"mixed_sft",
+        "stage":"mixed_sft-r6",
         "model":model.state_dict(),
         "config":cfg.__dict__,
         "steps":steps,
@@ -417,10 +460,10 @@ def main()->int:
 
     root=resolve_text_root(os.environ.get("FLM_V07_TEXT_VERSION","v0.7-dev-text"))
     manifest=json.loads((root/"sources.json").read_text(encoding="utf-8"))
-    if int(manifest.get("data_revision",0))<5:
-        raise RuntimeError("single-transformer FLM requires text data revision 5+")
+    if int(manifest.get("data_revision",0))<6:
+        raise RuntimeError("single-transformer FLM requires text data revision 6+")
     semantic_rows=int(((manifest.get("stats") or {}).get("semantic_interface_sft") or {}).get("rows",0))
-    if semantic_rows<200_000:
+    if semantic_rows<800_000:
         raise RuntimeError(f"semantic interface curriculum too small: {semantic_rows}")
 
     tok=Tokenizer.from_file(str(root/"tokenizer.json"))
@@ -455,6 +498,8 @@ def main()->int:
     coder=mmap_tokens(root/"coder_train.u16")
     main_sft=mmap_tokens(root/"main_sft_tokens.u16")
     main_mask=mmap_mask(root/"main_sft_mask.u8")
+    semantic_sft=mmap_tokens(root/"semantic_sft_tokens.u16")
+    semantic_mask=mmap_mask(root/"semantic_sft_mask.u8")
     coder_sft=mmap_tokens(root/"coder_sft_tokens.u16")
     coder_mask=mmap_mask(root/"coder_sft_mask.u8")
 
@@ -501,6 +546,7 @@ def main()->int:
     summary["stages"]["mixed_sft"]=train_mixed_sft(
         model,
         main_data=main_sft,main_mask=main_mask,
+        semantic_data=semantic_sft,semantic_mask=semantic_mask,
         coder_data=coder_sft,coder_mask=coder_mask,
         cfg=cfg,runtime=runtime,out=out,
         seq=int(os.environ.get("FLM_INTERFACE_SFT_SEQ","4096")),
