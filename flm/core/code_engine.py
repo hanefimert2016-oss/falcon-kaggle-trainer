@@ -63,17 +63,96 @@ class CodeEngine:
         return graph
 
     def analyze_text(self,source:str,language:str)->CodeGraph:
-        lang=language.lower()
-        if lang in {"py","python"}:
+        aliases={
+            "py":"python","js":"javascript","ts":"typescript","c++":"cpp",
+            "cxx":"cpp","rs":"rust","golang":"go",
+        }
+        lang=aliases.get(language.lower().strip(),language.lower().strip())
+        if lang=="python":
             return self.analyze_python(source)
+
         graph=CodeGraph(language=lang)
-        # Deterministic fallback symbol extraction for C-like languages.
-        pattern=re.compile(
-            r"(?m)^\s*(?:public|private|protected|static|final|async|export|func|fn|def|class|struct|interface|void|int|string|bool|[A-Z][\w<>]*)"
-            r"(?:\s+[\w<>\[\],?]+)*\s+([A-Za-z_]\w*)\s*(?:\(|\{)"
+        lines=source.splitlines()
+
+        import_patterns={
+            "java":[r"^\s*import\s+([\w.]+)\s*;"],
+            "javascript":[
+                r"^\s*import(?:.+?from\s+)?[\"']([^\"']+)[\"']",
+                r"require\(\s*[\"']([^\"']+)[\"']\s*\)",
+            ],
+            "typescript":[
+                r"^\s*import(?:.+?from\s+)?[\"']([^\"']+)[\"']",
+                r"require\(\s*[\"']([^\"']+)[\"']\s*\)",
+            ],
+            "go":[r"^\s*import\s+[\"']([^\"']+)[\"']"],
+            "rust":[r"^\s*use\s+([^;]+)\s*;"],
+            "c":[r"^\s*#\s*include\s*[<\"]([^>\"]+)[>\"]"],
+            "cpp":[r"^\s*#\s*include\s*[<\"]([^>\"]+)[>\"]"],
+        }
+        for line in lines:
+            for pat in import_patterns.get(lang,[]):
+                m=re.search(pat,line)
+                if m:
+                    graph.imports.add(m.group(1).strip())
+
+        class_pat=re.compile(
+            r"\b(class|struct|interface|enum)\s+([A-Za-z_]\w*)"
         )
-        for i,line in enumerate(source.splitlines(),1):
-            m=pattern.search(line)
-            if m:
-                graph.symbols.append(CodeSymbol(m.group(1),"symbol",i))
+        function_patterns=[
+            re.compile(r"\b(?:function|func|fn)\s+([A-Za-z_]\w*)\s*\("),
+            re.compile(
+                r"^\s*(?:(?:public|private|protected|static|final|virtual|inline|"
+                r"constexpr|async|export|extern|synchronized)\s+)*"
+                r"(?:[A-Za-z_]\w*(?:\s*<[^;{}()]+>)?(?:\[\])?[&*]?\s+)+"
+                r"([A-Za-z_]\w*)\s*\([^;{}]*\)\s*(?:\{|throws\b|$)"
+            ),
+            re.compile(
+                r"^\s*(?:const|let|var)\s+([A-Za-z_]\w*)\s*=\s*"
+                r"(?:async\s*)?(?:\([^)]*\)|[A-Za-z_]\w*)\s*=>"
+            ),
+        ]
+
+        function_lines:dict[int,str]={}
+        for lineno,line in enumerate(lines,1):
+            cm=class_pat.search(line)
+            if cm:
+                graph.symbols.append(CodeSymbol(cm.group(2),cm.group(1),lineno))
+            for pat in function_patterns:
+                m=pat.search(line)
+                if m:
+                    name=m.group(1)
+                    if name not in {"if","for","while","switch","catch"}:
+                        graph.symbols.append(CodeSymbol(name,"function",lineno))
+                        function_lines[lineno]=name
+                        break
+
+        call_pat=re.compile(r"\b([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*\(")
+        keywords={
+            "if","for","while","switch","catch","return","sizeof","typeof",
+            "new","throw","synchronized","function","func","fn",
+        }
+        current_scope="<module>"
+        for lineno,line in enumerate(lines,1):
+            if lineno in function_lines:
+                current_scope=function_lines[lineno]
+            declared=function_lines.get(lineno)
+            for match in call_pat.finditer(line):
+                raw=match.group(1)
+                target=raw.rsplit(".",1)[-1]
+                if target in keywords or (declared and target==declared):
+                    continue
+                graph.calls.add((current_scope,target))
+
+        if lang in {"java","javascript","typescript","go","rust","c","cpp"}:
+            # Cheap structural diagnostic only; it deliberately does not pretend
+            # to replace a real compiler.
+            delta=source.count("{")-source.count("}")
+            if delta:
+                graph.diagnostics.append(f"UnbalancedBraces delta={delta}")
+
+        # Preserve deterministic order and avoid duplicate symbol rows.
+        unique={}
+        for sym in graph.symbols:
+            unique[(sym.name,sym.kind,sym.line)]=sym
+        graph.symbols=list(unique.values())
         return graph
