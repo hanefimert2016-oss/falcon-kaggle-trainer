@@ -1,18 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-OUT_ROOT="${FLM_LOCAL_OUTPUT_ROOT:-$ROOT/local-runs/flm-v0.7-semantic}"
-LOG="$OUT_ROOT/logs/latest.log"
+MEMORY="${FLM_SEMANTIC_MEMORY:-$ROOT/local-runs/flm-v0.7-zero-train/semantic_memory.json}"
 
-echo "=== GPU ==="
-nvidia-smi || true
+echo "=== FLM v0.7 strict zero-train ==="
+echo "neural_model_training=false"
+echo "checkpoint_required=false"
+echo "gpu_required=false"
 echo
-echo "=== Latest checkpoints ==="
-find "$OUT_ROOT" -maxdepth 2 -type f \( -name '*.pt' -o -name '*.json' \) -printf '%TY-%Tm-%Td %TH:%TM:%TS %10s %p\n' 2>/dev/null | sort | tail -30 || true
-echo
-echo "=== Latest training log ==="
-if [[ -e "$LOG" ]]; then
-  tail -80 "$LOG"
+echo "=== Semantic memory ==="
+if [[ -f "$MEMORY" ]]; then
+  ls -lh "$MEMORY"
 else
-  echo "Henuz log yok: $LOG"
+  echo "Henuz semantic memory dosyasi yok: $MEMORY"
 fi
+echo
+echo "=== Core smoke/eval ==="
+PYTHONPATH="$ROOT" python "$ROOT/scripts/eval_semantic_core.py"
