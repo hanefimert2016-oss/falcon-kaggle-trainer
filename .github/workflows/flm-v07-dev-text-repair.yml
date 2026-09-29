@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: flm-v07-semantic-text-r6
+  group: flm-v07-semantic-text-r7
   cancel-in-progress: true
 
 jobs:
@@ -130,9 +130,9 @@ jobs:
       - name: Upload private DEV text dataset
         run: |
           set -euo pipefail
-          REF="$KAGGLE_OWNER/flm-v07-semantic-text-r6"
-          if kaggle datasets list --mine -s flm-v07-semantic-text-r6 -v | grep -Fq "$REF"; then
-            kaggle datasets version -p prepared_v07_dev_text -m "FLM v0.7 r6 dedicated semantic synthesis data" -q -t -r skip
+          REF="$KAGGLE_OWNER/flm-v07-semantic-text-r7"
+          if kaggle datasets list --mine -s flm-v07-semantic-text-r7 -v | grep -Fq "$REF"; then
+            kaggle datasets version -p prepared_v07_dev_text -m "FLM v0.7 r7 dedicated semantic synthesis data" -q -t -r skip
           else
             kaggle datasets create -p prepared_v07_dev_text -q -t -r skip
           fi
@@ -147,7 +147,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: flm-v07-semantic-text-r6-manifest-repaired
+          name: flm-v07-semantic-text-r7-manifest-repaired
           path: |
             prepared_v07_dev_text/sources.json
             prepared_v07_dev_text/tokenizer_meta.json
