@@ -27,7 +27,7 @@ RELATIONS=(
     ("içindedir","is in","LocatedIn"),
 )
 
-SEMANTIC_MODES=16
+SEMANTIC_MODES=20
 
 TR_IDENTITY_ANSWERS=(
     "Ben FLM'im. Dili tek bir arayüz modeliyle işler, asıl muhakemeyi Semantic Core üzerinden yürütürüm.",
@@ -53,6 +53,70 @@ EN_IDENTITY_ANSWERS=(
     "I'm FLM: the interface understands what you mean, while my Semantic Core carries out the structured work.",
     "I'm an AI assistant named FLM. I form answers from Core-verified results rather than simply replaying stored text.",
 )
+
+
+TR_IDENTITY_PARTS={
+    "open":(
+        "Ben FLM'im.",
+        "Adım FLM.",
+        "Bana FLM diyebilirsin.",
+        "FLM adlı bir yapay zekâ asistanıyım.",
+        "Kısaca, ben FLM'im.",
+        "Benim adım FLM.",
+    ),
+    "architecture":(
+        "Dili tek bir arayüz modeliyle işler, doğrulanabilir muhakemeyi Semantic Core'da yürütürüm.",
+        "Bir arayüz Transformer'ı dili yorumlar; planlama, mantık ve doğrulama çekirdekte çalışır.",
+        "Dil katmanım isteği semantik yapıya çevirir, asıl işlemleri eğitim gerektirmeyen çekirdeğim yapar.",
+        "Tek eğitilebilir dil arayüzünü semantik hafıza, planlayıcı ve doğrulayıcı çekirdekle birleştiririm.",
+        "Metni anlamak için arayüz modelini, sonuçları hesaplamak ve kontrol etmek için Semantic Core'u kullanırım.",
+        "İstekleri Semantic IR'ye dönüştürüp mantık, araç ve doğrulamayı çekirdekte yürütürüm.",
+    ),
+    "purpose":(
+        "Amacım doğru sonucu üretip bunu doğal bir dille anlatmak.",
+        "Cevabı ezberden basmak yerine doğrulanmış anlamdan yeniden oluştururum.",
+        "Aynı gerçeği korurken cümleleri bağlama uygun biçimde yeniden kurabilirim.",
+        "Bilgiyi kaynak cümleyi kopyalamadan kullanıp yararlı bir cevap haline getiririm.",
+        "Hedefim anlamı koruyarak doğal, tutarlı ve doğrulanabilir cevaplar vermek.",
+        "Sonuçları çekirdekten alır, kullanıcıya uygun yeni bir anlatımla sunarım.",
+    ),
+}
+EN_IDENTITY_PARTS={
+    "open":(
+        "I'm FLM.",
+        "My name is FLM.",
+        "You can call me FLM.",
+        "I'm an AI assistant named FLM.",
+        "In short, I'm FLM.",
+        "I go by FLM.",
+    ),
+    "architecture":(
+        "One interface model handles language while my Semantic Core performs verifiable reasoning.",
+        "A single interface Transformer interprets language, while planning, logic, and verification run in the Core.",
+        "My language layer converts requests into semantic structure and the training-free Core performs the actual operations.",
+        "I combine one trainable language interface with semantic memory, planning, and verification in the Core.",
+        "The interface handles text, while the Semantic Core calculates, plans, and checks results.",
+        "I turn requests into Semantic IR and let the Core handle logic, tools, and verification.",
+    ),
+    "purpose":(
+        "My goal is to produce correct results and explain them naturally.",
+        "I build answers from verified meaning instead of replaying memorized source text.",
+        "I can vary the wording while keeping the underlying conclusion unchanged.",
+        "I use information without simply copying the sentence it came from.",
+        "The aim is to keep answers natural, consistent, and grounded in verified meaning.",
+        "I take Core results and express them in a fresh form suited to the user.",
+    ),
+}
+
+
+def identity_surface(i:int,tr:bool)->str:
+    parts=TR_IDENTITY_PARTS if tr else EN_IDENTITY_PARTS
+    # 6×6×6 = 216 surface combinations per language before neural sampling.
+    idx=max(0,int(i))
+    a=parts["open"][idx%len(parts["open"])]
+    b=parts["architecture"][(idx//len(parts["open"]))%len(parts["architecture"])]
+    c=parts["purpose"][(idx//(len(parts["open"])*len(parts["architecture"])))%len(parts["purpose"])]
+    return f"{a} {b} {c}"
 
 
 def _normalized_words(text:str)->str:
@@ -374,9 +438,8 @@ def _identity_case(i:int,tr:bool):
         if tr else
         ("Who are you?" if (i//(SEMANTIC_MODES*2))%2==0 else "Introduce yourself.")
     )
-    prog=semantic_ir(operations=[operation("IDENTITY")],source="synthetic-semantic-curriculum-v4")
-    answers=TR_IDENTITY_ANSWERS if tr else EN_IDENTITY_ANSWERS
-    final=answers[(i//(SEMANTIC_MODES*2))%len(answers)]
+    prog=semantic_ir(operations=[operation("IDENTITY")],source="synthetic-semantic-curriculum-v5")
+    final=identity_surface(i//(SEMANTIC_MODES*2),tr)
     return user,prog,final
 
 
@@ -414,7 +477,7 @@ def _fact_synthesis_case(i:int,tr:bool,names):
         )
     prog=semantic_ir(
         operations=[operation("SYNTHESIZE_FACTS",facts=facts)],
-        source="synthetic-semantic-curriculum-v4",
+        source="synthetic-semantic-curriculum-v5",
     )
     return user,prog,variants[(i//(SEMANTIC_MODES*2))%len(variants)]
 
@@ -428,7 +491,7 @@ def _answer_style_case(i:int,tr:bool):
     )
     prog=semantic_ir(
         operations=[operation("ARITHMETIC",expression=str(value))],
-        source="synthetic-semantic-curriculum-v4",
+        source="synthetic-semantic-curriculum-v5",
     )
     if tr:
         variants=(
@@ -457,7 +520,7 @@ def _code_explain_case(i:int,tr:bool):
     )
     prog=semantic_ir(
         operations=[operation("ANALYZE_CODE",language="python",source=source)],
-        source="synthetic-semantic-curriculum-v4",
+        source="synthetic-semantic-curriculum-v5",
     )
     variants=(
         (
@@ -471,6 +534,134 @@ def _code_explain_case(i:int,tr:bool):
             f"{name} simply doubles its input and returns the result.",
             f"This defines {name}, a small function that multiplies the input by two.",
         )
+    )
+    return user,prog,variants[(i//(SEMANTIC_MODES*2))%len(variants)]
+
+
+
+def _multi_fact_synthesis_case(i:int,tr:bool,names):
+    a=names[i%len(names)]
+    if tr:
+        user=(
+            f"Bilgi notları: {a} bir kedidir; memelidir; evde yaşayan bir hayvandır. "
+            "Bu notları kopyalamadan tek bir doğal cevap oluştur."
+        )
+        facts=[
+            {"subject":a,"predicate":"type","object":"kedi"},
+            {"subject":a,"predicate":"class","object":"memeli"},
+            {"subject":a,"predicate":"habitat","object":"ev"},
+        ]
+        variants=(
+            f"{a}, ev ortamında yaşayan memeli bir kedidir.",
+            f"{a}'yı evde yaşayan bir kedi ve memeli olarak tanımlayabiliriz.",
+            f"Özetle {a}, memeliler sınıfında yer alan ve evde yaşayan bir kedidir.",
+            f"{a}, kedi türündedir; memelidir ve yaşam alanı evdir.",
+        )
+    else:
+        user=(
+            f"Knowledge notes: {a} is a cat; a mammal; and an animal that lives at home. "
+            "Create one natural answer without copying the notes."
+        )
+        facts=[
+            {"subject":a,"predicate":"type","object":"cat"},
+            {"subject":a,"predicate":"class","object":"mammal"},
+            {"subject":a,"predicate":"habitat","object":"home"},
+        ]
+        variants=(
+            f"{a} is a mammalian cat that lives at home.",
+            f"{a} can be described as a cat, a mammal, and a home-dwelling animal.",
+            f"In short, {a} is a cat in the mammal class whose habitat is the home.",
+            f"{a} belongs to the mammals, is specifically a cat, and lives at home.",
+        )
+    prog=semantic_ir(
+        operations=[operation("SYNTHESIZE_FACTS",facts=facts)],
+        source="synthetic-semantic-curriculum-v5",
+    )
+    return user,prog,variants[(i//(SEMANTIC_MODES*2))%len(variants)]
+
+
+def _identity_working_case(i:int,tr:bool):
+    user=(
+        ("Nasıl çalışıyorsun?" if (i//(SEMANTIC_MODES*2))%2==0 else "Cevaplarını nasıl oluşturuyorsun?")
+        if tr else
+        ("How do you work?" if (i//(SEMANTIC_MODES*2))%2==0 else "How do you form your answers?")
+    )
+    prog=semantic_ir(operations=[operation("IDENTITY")],source="synthetic-semantic-curriculum-v5")
+    return user,prog,identity_surface((i//(SEMANTIC_MODES*2))+37,tr)
+
+
+def _relation_synthesis_case(i:int,tr:bool,names):
+    a=names[i%len(names)]
+    b=("Ankara" if tr else "London")
+    country=("Türkiye" if tr else "United Kingdom")
+    if tr:
+        user=(
+            f"Kaynak: {a} {b}'dadır. {b}, {country} içindedir. "
+            "Bilgiyi liste gibi tekrar etmeden doğal bir özet yaz."
+        )
+        facts=[
+            {"subject":a,"predicate":"located_in","object":b},
+            {"subject":b,"predicate":"located_in","object":country},
+        ]
+        variants=(
+            f"{a} {b}'da bulunuyor; {b} da {country} sınırları içinde.",
+            f"Konum bilgisine göre {a}, {country}'deki {b} şehrinde.",
+            f"{a}'nın bulunduğu yer {b}; bu şehir {country} içindedir.",
+        )
+    else:
+        user=(
+            f"Source: {a} is in {b}. {b} is in the {country}. "
+            "Write a natural summary instead of repeating the source lines."
+        )
+        facts=[
+            {"subject":a,"predicate":"located_in","object":b},
+            {"subject":b,"predicate":"located_in","object":country},
+        ]
+        variants=(
+            f"{a} is located in {b}, which is in the {country}.",
+            f"The location information places {a} in {b} within the {country}.",
+            f"{a}'s location is {b}, a city in the {country}.",
+        )
+    prog=semantic_ir(
+        operations=[operation("SYNTHESIZE_FACTS",facts=facts)],
+        source="synthetic-semantic-curriculum-v5",
+    )
+    return user,prog,variants[(i//(SEMANTIC_MODES*2))%len(variants)]
+
+
+def _knowledge_answer_case(i:int,tr:bool,names):
+    a=names[i%len(names)]
+    if tr:
+        user=(
+            f"Elimde şu bilgiler var: {a} bir kedidir ve memelidir. "
+            f"{a} hakkında kısa bir cevap ver; kaynak cümleleri aynen yazma."
+        )
+        facts=[
+            {"subject":a,"predicate":"type","object":"kedi"},
+            {"subject":a,"predicate":"class","object":"memeli"},
+        ]
+        variants=(
+            f"{a}, memeliler sınıfına ait bir kedidir.",
+            f"Kısaca {a}, hem kedi türünde hem de bir memelidir.",
+            f"{a}'nın sınıflandırması onu memeli bir kedi olarak gösteriyor.",
+        )
+    else:
+        user=(
+            f"I have these facts: {a} is a cat and a mammal. "
+            f"Give a short answer about {a} without repeating the source sentences."
+        )
+        facts=[
+            {"subject":a,"predicate":"type","object":"cat"},
+            {"subject":a,"predicate":"class","object":"mammal"},
+        ]
+        variants=(
+            f"{a} is a cat belonging to the mammal class.",
+            f"In short, {a} is both a cat and a mammal.",
+            f"The classification describes {a} as a mammalian cat.",
+        )
+    prog=semantic_ir(
+        operations=[operation("SYNTHESIZE_FACTS",facts=facts)],
+        source="synthetic-semantic-curriculum-v5",
     )
     return user,prog,variants[(i//(SEMANTIC_MODES*2))%len(variants)]
 
@@ -520,8 +711,16 @@ def messages_for(i:int):
         user,prog,final=_fact_synthesis_case(i,tr,names)
     elif mode==14:
         user,prog,final=_answer_style_case(i,tr)
-    else:
+    elif mode==15:
         user,prog,final=_code_explain_case(i,tr)
+    elif mode==16:
+        user,prog,final=_multi_fact_synthesis_case(i,tr,names)
+    elif mode==17:
+        user,prog,final=_identity_working_case(i,tr)
+    elif mode==18:
+        user,prog,final=_relation_synthesis_case(i,tr,names)
+    else:
+        user,prog,final=_knowledge_answer_case(i,tr,names)
 
     _assert_not_copy(user,final)
     payload=_core_payload(prog)
@@ -548,7 +747,7 @@ def messages_for(i:int):
     ]
 
 
-def append_semantic_curriculum(path:Path,rows:int=800_000,seed:int=7071)->dict:
+def append_semantic_curriculum(path:Path,rows:int=1_200_000,seed:int=7071)->dict:
     rng=random.Random(seed)
     indices=list(range(rows))
     rng.shuffle(indices)
@@ -577,6 +776,7 @@ def append_semantic_curriculum(path:Path,rows:int=800_000,seed:int=7071)->dict:
         "anti_copy_phrase_words":9,
         "render_focused_rows":render_focused_rows,
         "ir_supervision_policy":"2/3 compiler+render, 1/3 render-only",
-        "identity_variants_tr":len(TR_IDENTITY_ANSWERS),
-        "identity_variants_en":len(EN_IDENTITY_ANSWERS),
+        "identity_variants_tr":216,
+        "identity_variants_en":216,
+        "response_synthesis_modes":[13,14,15,16,17,18,19],
     }
