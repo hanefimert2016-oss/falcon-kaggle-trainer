@@ -144,7 +144,10 @@ class SemanticCompiler:
                 return Program(operations=[Operation("ARITHMETIC",{"expression":expr})])
 
         # Canonical code-analysis requests keep source formatting intact.
-        fenced=re.search(r"```(?P<lang>python|py)?\s*\n(?P<src>.*?)```",raw,re.I|re.S)
+        fenced=re.search(
+            r"```(?P<lang>python|py|java|javascript|js|typescript|ts|go|rust|rs|c|cpp|c\+\+)?\s*\n(?P<src>.*?)```",
+            raw,re.I|re.S,
+        )
         wants_code=bool(re.search(
             r"(python|kod|code).*(analiz|incele|ne yapıyor|ne yapiyor|analyze|inspect|what does)",
             normalized,re.I,
