@@ -25,6 +25,7 @@ class SemanticMemory:
     def __init__(self):
         self._facts: set[Atom] = set()
         self._facts_by_predicate: dict[str, set[Atom]] = defaultdict(set)
+        self._facts_by_subject: dict[str, set[Atom]] = defaultdict(set)
         self._rules: list[Rule] = []
         self._rules_by_head: dict[str, list[Rule]] = defaultdict(list)
 
@@ -33,6 +34,8 @@ class SemanticMemory:
             return False
         self._facts.add(atom)
         self._facts_by_predicate[atom.predicate].add(atom)
+        if atom.args:
+            self._facts_by_subject[str(atom.args[0])].add(atom)
         return True
 
     def add_rule(self, rule: Rule) -> None:
@@ -50,6 +53,9 @@ class SemanticMemory:
         if predicate is None:
             return tuple(sorted(self._facts))
         return tuple(sorted(self._facts_by_predicate.get(predicate, ())))
+
+    def facts_about(self, subject: str):
+        return tuple(sorted(self._facts_by_subject.get(str(subject), ())))
 
     def rules(self, head_predicate: str | None = None):
         if head_predicate is None:
