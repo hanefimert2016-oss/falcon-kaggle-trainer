@@ -27,7 +27,7 @@ jobs:
     env:
       KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
       KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
-      TEXT_REF: ${{ vars.KAGGLE_OWNER }}/flm-v07-semantic-text-r7
+      TEXT_REF: ${{ vars.KAGGLE_OWNER }}/flm-v07-semantic-text-r8
       GPU_REF: ${{ vars.KAGGLE_OWNER }}/falcon-flm-v07-semantic-interface-gpu
     steps:
       - uses: actions/checkout@v4
@@ -40,7 +40,7 @@ jobs:
 
       - run: python -m pip install "kaggle>=2.2.1"
 
-      - name: Verify Semantic FLM text r7 dataset
+      - name: Verify Semantic FLM text r8 dataset
         shell: bash
         run: |
           set -euo pipefail
@@ -59,25 +59,25 @@ jobs:
           p=Path('/tmp/v07-gate-data/text/sources.json')
           t=json.loads(p.read_text(encoding='utf-8'))
           assert t.get('pipeline_version')=='v0.7-dev-text'
-          assert int(t.get('data_revision',0))>=7,t.get('data_revision')
+          assert int(t.get('data_revision',0))>=8,t.get('data_revision')
           s=t.get('stats') or {}
           assert int((s.get('main') or {}).get('tokens',0))>=1_000_000_000
           assert int((s.get('coder') or {}).get('tokens',0))>=175_000_000
           assert int((s.get('main_sft') or {}).get('supervised_tokens',0))>=350_000_000
           assert int((s.get('coder_sft') or {}).get('supervised_tokens',0))>=75_000_000
           sem=s.get('semantic_interface_sft') or {}
-          assert int(sem.get('rows',0))>=1_200_000
+          assert int(sem.get('rows',0))>=2_400_000
           assert sem.get('anti_copy_verified') is True
           assert int(sem.get('anti_copy_phrase_words',0))==9
-          assert sem.get('source')=='synthetic:flm-semantic-curriculum-v5'
-          assert int(sem.get('render_focused_rows',0))>=590_000
+          assert sem.get('source')=='synthetic:flm-semantic-curriculum-v6'
+          assert int(sem.get('render_focused_rows',0))>=1_190_000
           assert sem.get('ir_supervision_policy')=='1/2 compiler+render, 1/2 source-hidden render-only'
           assert sem.get('source_hidden_rendering') is True
-          assert int((s.get('semantic_sft') or {}).get('supervised_tokens',0))>=150_000_000
+          assert int((s.get('semantic_sft') or {}).get('supervised_tokens',0))>=280_000_000
           langs=sem.get('language_counts') or {}
-          assert int(langs.get('tr',0))>=590_000 and int(langs.get('en',0))>=590_000
+          assert int(langs.get('tr',0))>=1_190_000 and int(langs.get('en',0))>=1_190_000
           modes=sem.get('mode_counts') or {}
-          assert len(modes)>=20 and min(map(int,modes.values()))>=59_000
+          assert len(modes)>=24 and min(map(int,modes.values()))>=99_000
           agentic=s.get('coder_sft_agentic') or {}
           assert int(agentic.get('rows',0))>=6000
           assert int(agentic.get('real_rows',0))>=3800
@@ -109,7 +109,7 @@ jobs:
           owner=m['id'].split('/')[0]
           assert m['id']==f'{owner}/falcon-flm-v07-semantic-interface-gpu',m
           assert m['title']=='Falcon FLM v07 Semantic Interface Transformer',m
-          assert m['dataset_sources']==[f'{owner}/flm-v07-semantic-text-r7'],m
+          assert m['dataset_sources']==[f'{owner}/flm-v07-semantic-text-r8'],m
           assert m['kernel_sources']==[],m
           assert m['enable_gpu'] is True
           assert m['enable_internet'] is False
@@ -132,6 +132,8 @@ jobs:
               '0.12',
               'FLM_INTERFACE_SFT_SEQ',
               '4096',
+              'FLM_INTERFACE_SFT_EPOCHS',
+              '0.65',
           ):
               assert expected in src,expected
           print('V07_SINGLE_INTERFACE_GPU_BUNDLE_VERIFIED')
