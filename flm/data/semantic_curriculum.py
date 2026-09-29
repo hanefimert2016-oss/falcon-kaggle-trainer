@@ -119,6 +119,73 @@ def identity_surface(i:int,tr:bool)->str:
     return f"{a} {b} {c}"
 
 
+TR_IDENTITY_OPENERS=(
+    "Ben FLM'im.",
+    "Adım FLM.",
+    "Bana FLM diyebilirsin.",
+    "Kısaca FLM adlı bir yapay zekâ asistanıyım.",
+    "Benim adım FLM; bir yapay zekâ asistanıyım.",
+    "FLM olarak çalışan bir yapay zekâ asistanıyım.",
+)
+TR_IDENTITY_ARCH=(
+    "Dili tek bir eğitilebilir arayüz Transformer'ı ile işlerim, asıl muhakemeyi Semantic Core yürütür.",
+    "Doğal dili bir arayüz modeli anlar; planlama, hesaplama ve doğrulama çekirdekte yapılır.",
+    "Dil üretimi neural arayüzde, yapılandırılmış reasoning ise eğitim gerektirmeyen Semantic Core'da çalışır.",
+    "Tek bir dil modeliyle iletişim kurar, mantık ve araç kullanımını Core tarafında gerçekleştiririm.",
+    "İstekleri Semantic IR'ye çevirir, doğrulanabilir işlemleri Core içinde yürütürüm.",
+    "Arayüz Transformer'ı dil için kullanılır; hafıza, planlama ve doğrulama ayrı Semantic Core bileşenleridir.",
+)
+TR_IDENTITY_PURPOSE=(
+    "Amacım isteğini anlayıp doğrulanmış sonucu doğal biçimde aktarmak.",
+    "Böylece cevap üretirken yalnızca ezberlenmiş metni tekrar etmek yerine doğrulanmış anlamı kullanırım.",
+    "Görevim sorunu anlamak, uygun çekirdek işlemlerini çalıştırmak ve sonucu anlaşılır biçimde sunmak.",
+    "Bu yapı bilgi, kodlama ve planlama görevlerinde sonucu önce doğrulayıp sonra ifade etmeme yardımcı olur.",
+    "Cevaplarımı mümkün olduğunca Core'un doğruladığı anlamdan yeniden oluştururum.",
+    "Yeni bilgileri ham cümle olarak ezberlemek yerine yapılandırılmış anlam üzerinden kullanmayı hedeflerim.",
+)
+EN_IDENTITY_OPENERS=(
+    "I'm FLM.",
+    "My name is FLM.",
+    "You can call me FLM.",
+    "In short, I'm an AI assistant called FLM.",
+    "I'm an AI assistant named FLM.",
+    "I operate as FLM, an AI assistant.",
+)
+EN_IDENTITY_ARCH=(
+    "One trainable interface Transformer handles language while the Semantic Core performs the structured reasoning.",
+    "A language interface interprets requests, while planning, calculation, and verification run in the Core.",
+    "Neural generation handles language, while training-free Semantic Core components handle structured reasoning.",
+    "I use one language model for communication and keep logic and tool execution in the Core.",
+    "I translate requests into Semantic IR and execute verifiable operations inside the Core.",
+    "The interface Transformer handles language; memory, planning, and verification live in separate Core components.",
+)
+EN_IDENTITY_PURPOSE=(
+    "My goal is to understand the request and express a verified result naturally.",
+    "That lets me answer from verified meaning instead of merely replaying memorized wording.",
+    "My job is to understand the problem, run the appropriate Core operations, and present the result clearly.",
+    "This structure lets me verify information, coding, and planning results before wording the answer.",
+    "I try to reconstruct answers from Core-verified meaning rather than copying stored text.",
+    "The design aims to use new information as structured meaning instead of memorizing raw sentences.",
+)
+
+
+def _compose_identity(i:int,tr:bool)->str:
+    cycle=max(0,i//(SEMANTIC_MODES*2))
+    if tr:
+        a=TR_IDENTITY_OPENERS[cycle%len(TR_IDENTITY_OPENERS)]
+        b=TR_IDENTITY_ARCH[(cycle//len(TR_IDENTITY_OPENERS))%len(TR_IDENTITY_ARCH)]
+        d=TR_IDENTITY_PURPOSE[
+            (cycle//(len(TR_IDENTITY_OPENERS)*len(TR_IDENTITY_ARCH)))%len(TR_IDENTITY_PURPOSE)
+        ]
+    else:
+        a=EN_IDENTITY_OPENERS[cycle%len(EN_IDENTITY_OPENERS)]
+        b=EN_IDENTITY_ARCH[(cycle//len(EN_IDENTITY_OPENERS))%len(EN_IDENTITY_ARCH)]
+        d=EN_IDENTITY_PURPOSE[
+            (cycle//(len(EN_IDENTITY_OPENERS)*len(EN_IDENTITY_ARCH)))%len(EN_IDENTITY_PURPOSE)
+        ]
+    return f"{a} {b} {d}"
+
+
 def _normalized_words(text:str)->str:
     text=re.sub(r"[^0-9A-Za-zÇĞİÖŞÜçğıöşü]+"," ",str(text or "").casefold())
     return " ".join(text.split())
@@ -459,6 +526,10 @@ def _fact_synthesis_case(i:int,tr:bool,names):
             f"{a} hem bir kedidir hem de memeliler sınıfına aittir.",
             f"{a}'yı bir kedi ve dolayısıyla bir memeli olarak tanımlayabiliriz.",
             f"{a}, memeliler grubundaki bir kedidir.",
+            f"Özetle {a}, memeli sınıfına ait bir kedidir.",
+            f"{a} için iki bilgi birlikte geçerli: kedi olması ve memeli sınıfında yer alması.",
+            f"{a}'nın türü kedidir; biyolojik sınıf olarak da memeliler içinde değerlendirilir.",
+            f"Doğrulanan bilgilere göre {a}, memeli olan bir kedidir.",
         )
     else:
         user=(
@@ -474,6 +545,10 @@ def _fact_synthesis_case(i:int,tr:bool,names):
             f"{a} can be described as both a cat and a mammal.",
             f"{a} belongs to the mammals and is specifically a cat.",
             f"In short, {a} is a mammalian cat.",
+            f"The verified information places {a} among mammals, specifically as a cat.",
+            f"Two facts apply to {a}: it is a cat and it belongs to the mammal class.",
+            f"{a}'s specific type is cat, while its broader biological class is mammal.",
+            f"Taken together, the facts describe {a} as a cat within the mammals.",
         )
     prog=semantic_ir(
         operations=[operation("SYNTHESIZE_FACTS",facts=facts)],
@@ -499,6 +574,10 @@ def _answer_style_case(i:int,tr:bool):
             f"Sonuç olarak {value} elde ediliyor.",
             f"Bu işlem {value} değerini veriyor.",
             f"Doğrulanan sonuç {value}.",
+            f"İşlemi hesapladığımızda sonuç {value} oluyor.",
+            f"Çekirdeğin doğruladığı değer {value}.",
+            f"Kısaca cevap {value}.",
+            f"Hesaplama {value} sonucuna ulaşıyor.",
         )
     else:
         variants=(
@@ -506,6 +585,10 @@ def _answer_style_case(i:int,tr:bool):
             f"The verified result is {value}.",
             f"This evaluates to {value}.",
             f"The result of the calculation is {value}.",
+            f"Evaluating the expression gives {value}.",
+            f"The Core verifies the value as {value}.",
+            f"In short, the answer is {value}.",
+            f"The calculation reaches a result of {value}.",
         )
     return user,prog,variants[(i//(SEMANTIC_MODES*2))%len(variants)]
 
@@ -527,12 +610,18 @@ def _code_explain_case(i:int,tr:bool):
             f"{name} adlı fonksiyon, aldığı sayının iki katını döndürüyor.",
             f"Bu fonksiyon girdiyi 2 ile çarpıp sonucu geri veriyor; adı {name}.",
             f"{name}, tek bir değer alıp onu iki katına çıkaran basit bir fonksiyon.",
+            f"{name} girdiyi ikiyle çarpar; yani verilen değerin iki katını üretir.",
+            f"Bu kod {name} fonksiyonunu tanımlar ve fonksiyon kendisine verilen değeri iki katına çıkarır.",
+            f"Fonksiyonun davranışı basit: {name}, aldığı x değerinin iki katını sonuç olarak verir.",
         )
         if tr else
         (
             f"The function {name} takes one value and returns twice that value.",
             f"{name} simply doubles its input and returns the result.",
             f"This defines {name}, a small function that multiplies the input by two.",
+            f"{name} multiplies its argument by two, so it produces twice the supplied value.",
+            f"The code defines {name}; its behavior is simply to double the value it receives.",
+            f"The function {name} returns two times its input value.",
         )
     )
     return user,prog,variants[(i//(SEMANTIC_MODES*2))%len(variants)]
@@ -734,10 +823,10 @@ def messages_for(i:int):
         "facts exactly, avoid mirroring the source wording, and vary phrasing across equivalent "
         "examples without changing the conclusion."
     )
-    # Two thirds train both compiler + renderer. One third keeps the
-    # Semantic IR in context but applies loss only to the natural final answer.
-    # This prevents long JSON targets from dominating response-synthesis learning.
-    train_ir=((i//SEMANTIC_MODES)%3)!=2
+    # Half the rows train compiler + renderer; half apply loss only to the
+    # natural final answer while keeping verified IR/Core context visible.
+    # This gives response synthesis as much weight as IR serialization.
+    train_ir=((i//SEMANTIC_MODES)%2)==0
     return [
         {"role":"system","content":system},
         {"role":"user","content":user},
@@ -775,7 +864,7 @@ def append_semantic_curriculum(path:Path,rows:int=1_200_000,seed:int=7071)->dict
         "anti_copy_verified":True,
         "anti_copy_phrase_words":9,
         "render_focused_rows":render_focused_rows,
-        "ir_supervision_policy":"2/3 compiler+render, 1/3 render-only",
+        "ir_supervision_policy":"1/2 compiler+render, 1/2 render-only",
         "identity_variants_tr":216,
         "identity_variants_en":216,
         "response_synthesis_modes":[13,14,15,16,17,18,19],
