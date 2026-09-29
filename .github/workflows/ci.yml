@@ -45,7 +45,7 @@ jobs:
           assert 'flm.train_interface_v07' in launcher
           assert 'python -u -m flm.train_v07' not in launcher
           assert 'flm-v07-dev-computer' not in launcher
-          assert 'flm-v07-semantic-text-r6' in launcher
+          assert 'flm-v07-semantic-text-r7' in launcher
           from flm.train_v07 import ShuffledStartPool, BalancedSampler
 
           starts=np.arange(100,dtype=np.int64)
@@ -257,7 +257,7 @@ jobs:
           assert gpu['id']=='test-owner/falcon-flm-v07-semantic-interface-gpu',gpu
           assert gpu['title']=='Falcon FLM v07 Semantic Interface Transformer',gpu
           assert gpu['enable_gpu'] is True
-          assert gpu['dataset_sources']==['test-owner/flm-v07-semantic-text-r6'],gpu
+          assert gpu['dataset_sources']==['test-owner/flm-v07-semantic-text-r7'],gpu
           assert 'flm-v07-dev-computer' not in json.dumps(gpu)
 
           wrapper=Path('/tmp/v07-semantic-interface/train_interface_v07.py').read_text()
@@ -487,7 +487,7 @@ jobs:
           assert 'falcon-flm-v07-semantic-interface-gpu' in gate
           assert 'FLM v0.7 DEV Text Repair' in gate
           assert 'flm-v07-dev-computer' not in gate
-          assert 'flm-v07-semantic-text-r6' in gate
+          assert 'flm-v07-semantic-text-r7' in gate
           assert "data_revision',0))>=6" in gate
           assert 'if: ${{ false }}' not in gate
           print('SEMANTIC_FLM_SINGLE_TRANSFORMER_PIPELINE_OK')
