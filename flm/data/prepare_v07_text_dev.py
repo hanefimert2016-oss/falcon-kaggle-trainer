@@ -58,6 +58,12 @@ DEV_SOURCES = {
         "license": "apache-2.0",
         "role": "validated multi-step software-engineering planning and tool trajectories",
     },
+    "coder_agent_nebius": {
+        "repo": "nebius/SWE-agent-trajectories",
+        "license": "cc-by-4.0",
+        "role": "successful SWE-agent issue-resolution trajectories with reasoning, actions and observations",
+        "notes": "generated model outputs may carry upstream model terms; preserve provenance",
+    },
 }
 
 
@@ -362,6 +368,133 @@ def append_coder_agent_trajectories(path: Path, limit: int) -> dict:
     }
 
 
+
+def _agent_event_text(event:dict,*keys:str)->str:
+    for key in keys:
+        value=event.get(key)
+        if isinstance(value,str) and value.strip():
+            return clean_text(value)
+        if isinstance(value,(dict,list)) and value:
+            return clean_text(json.dumps(value,ensure_ascii=False))
+    return ""
+
+
+def normalize_nebius_swe_messages(row:dict):
+    raw=row.get("trajectory")
+    if isinstance(raw,str):
+        try:
+            raw=json.loads(raw)
+        except Exception:
+            return []
+    if not isinstance(raw,list):
+        return []
+
+    out=[]
+    for event in raw:
+        if not isinstance(event,dict):
+            continue
+        role=str(event.get("role") or "").strip().lower()
+        if role=="system":
+            content=_agent_event_text(event,"content","system_prompt","text","message")
+            if content:
+                out.append({"role":"system","content":content[:2200]})
+            continue
+
+        if role=="user":
+            content=_agent_event_text(event,"content","observation","message","text")
+            if not content:
+                continue
+            content=content[:2600]
+            if out and out[-1]["role"]=="assistant" and "<|tool_call|>" in out[-1]["content"]:
+                out.append({
+                    "role":"tool",
+                    "content":"<|tool_result|>"+content+"<|tool_end|>",
+                })
+            else:
+                out.append({"role":"user","content":content})
+            continue
+
+        if role not in {"ai","assistant"}:
+            continue
+
+        thought=_agent_event_text(event,"thought","reasoning","analysis","content","message")
+        if thought:
+            out.append({
+                "role":"assistant",
+                "content":"<|plan|>\n"+thought[:2400]+"\n<|plan_end|>",
+            })
+
+        action=event.get("action")
+        if action is None:
+            action=event.get("command")
+        if action is not None and str(action).strip():
+            if isinstance(action,dict):
+                name=str(action.get("name") or action.get("type") or "swe_agent_action")
+                arguments=action.get("arguments")
+                if not isinstance(arguments,dict):
+                    arguments={"action":action}
+            else:
+                name="swe_agent_action"
+                arguments={"action":str(action)[:2400]}
+            out.append({
+                "role":"assistant",
+                "content":"<|tool_call|>"+compact_json({
+                    "name":name,"arguments":arguments,
+                })+"<|tool_end|>",
+            })
+
+    if not any(m["role"]=="user" for m in out):
+        return []
+    if bool(row.get("target")):
+        instance=str(row.get("instance_id") or "software issue")
+        out.append({
+            "role":"assistant",
+            "content":"<|final|>\n"
+                f"The issue {instance} was resolved and the submitted patch passed its task evaluation.",
+        })
+    return out
+
+
+def append_nebius_agent_trajectories(path:Path,limit:int)->dict:
+    source=DEV_SOURCES["coder_agent_nebius"]
+    ds=load_dataset(source["repo"],split="train",streaming=True)
+    added=0
+    plan_turns=tool_turns=final_turns=0
+    with path.open("a",encoding="utf-8") as fh:
+        for row in ds:
+            if not bool(row.get("target")):
+                continue
+            msgs=compact_agentic_for_context(normalize_nebius_swe_messages(row))
+            if len(msgs)<6:
+                continue
+            plans=sum("<|plan|>" in m["content"] for m in msgs if m["role"]=="assistant")
+            tools=sum("<|tool_call|>" in m["content"] for m in msgs if m["role"]=="assistant")
+            finals=sum("<|final|>" in m["content"] for m in msgs if m["role"]=="assistant")
+            if plans<2 or tools<1 or finals<1:
+                continue
+            fh.write(json.dumps({
+                "messages":msgs,
+                "source":source["repo"],
+                "resolved":True,
+            },ensure_ascii=False)+"\n")
+            added+=1
+            plan_turns+=plans
+            tool_turns+=tools
+            final_turns+=finals
+            if added>=limit:
+                break
+    if added < int(limit*0.90):
+        raise RuntimeError(f"Nebius agentic trajectories underfilled {added}/{limit}")
+    return {
+        "rows":added,
+        "plan_turns":plan_turns,
+        "tool_turns":tool_turns,
+        "final_turns":final_turns,
+        "resolved_only":True,
+        "source":source["repo"],
+    }
+
+
 def append_turkish_knowledge(path: Path, limit: int) -> dict:
     added=0
     ds=load_dataset(DEV_SOURCES["main_sft_tr_knowledge"]["repo"],split="train",streaming=True)
@@ -422,7 +555,8 @@ def main():
     ap.add_argument("--coder-code-rows",type=int,default=250_000)
     ap.add_argument("--xlam-tool-rows",type=int,default=100_000)
     ap.add_argument("--tool100k-rows",type=int,default=100_000)
-    ap.add_argument("--coder-agent-rows",type=int,default=6_000)
+    ap.add_argument("--coder-agent-rows",type=int,default=4_000)
+    ap.add_argument("--coder-agent-extra-rows",type=int,default=5_000)
     ap.add_argument("--semantic-sft-rows",type=int,default=1_000_000)
     args=ap.parse_args()
 
@@ -491,6 +625,9 @@ def main():
     stats["coder_sft_base"]=prepare_coder_sft(out,args.coder_code_rows,args.xlam_tool_rows,6_000)
     stats["coder_sft_tool100k"]=append_tool_100k(out/"coder_sft.jsonl",args.tool100k_rows)
     stats["coder_sft_agentic"]=append_coder_agent_trajectories(out/"coder_sft.jsonl",args.coder_agent_rows)
+    stats["coder_sft_agentic_nebius"]=append_nebius_agent_trajectories(
+        out/"coder_sft.jsonl",args.coder_agent_extra_rows
+    )
     stats["coder_sft_raw"]={
         "file":"coder_sft.jsonl",
         "rows":count_jsonl(out/"coder_sft.jsonl"),
@@ -541,7 +678,7 @@ def main():
 
     manifest={
         "pipeline_version":"v0.7-dev-text",
-        "data_revision":6,
+        "data_revision":7,
         "training_pipeline":"v0.7",
         "owner":args.owner,
         "sources":{**SOURCES,**DEV_SOURCES},
@@ -558,8 +695,8 @@ def main():
     }
     (out/"sources.json").write_text(json.dumps(manifest,indent=2,ensure_ascii=False),encoding="utf-8")
     meta={
-        "title":"FLM v0.7 Semantic Interface Text r6",
-        "id":f"{args.owner}/flm-v07-semantic-text-r6",
+        "title":"FLM v0.7 Semantic Interface Text r7",
+        "id":f"{args.owner}/flm-v07-semantic-text-r7",
         "licenses":[{"name":"other"}],
     }
     (out/"dataset-metadata.json").write_text(json.dumps(meta,indent=2),encoding="utf-8")
