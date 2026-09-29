@@ -45,6 +45,33 @@ def _verbatim_requested(prompt:str)->bool:
     ))
 
 
+def _core_source_texts(program:Program,result)->list[str]:
+    """Text-like evidence that may inform an answer but should not be replayed verbatim."""
+    texts=[]
+    for op in program.operations:
+        args=dict(op.args or {})
+        for key in ("source","source_text","text","document","content"):
+            value=args.get(key)
+            if isinstance(value,str) and value.strip():
+                texts.append(value.strip())
+        facts=args.get("facts")
+        if isinstance(facts,list):
+            for fact in facts:
+                if not isinstance(fact,dict):
+                    continue
+                for key in ("text","source_text","evidence","description"):
+                    value=fact.get(key)
+                    if isinstance(value,str) and value.strip():
+                        texts.append(value.strip())
+    # Semantic-memory facts/rules are structured, but may contain longer literal
+    # arguments in future datasets. Include them only when they look like prose.
+    for atom in list(getattr(result,"memory_facts",[]) or []):
+        raw=json.dumps(atom,ensure_ascii=False) if not isinstance(atom,str) else atom
+        if len(_normalized_for_copy(raw).split())>=9:
+            texts.append(raw)
+    return texts
+
+
 
 def _candidate_preserves_core(candidate:str,prompt:str,program:Program,result,*,verbatim:bool=False)->bool:
     text=str(candidate or "").strip()
@@ -59,6 +86,13 @@ def _candidate_preserves_core(candidate:str,prompt:str,program:Program,result,*,
             return False
         if _has_long_verbatim_overlap(prompt,text,min_words=9):
             return False
+        # Core data is semantic evidence, not answer wording. Reject candidates
+        # that simply replay long spans from source/code/document fields.
+        for source in _core_source_texts(program,result):
+            if _has_long_verbatim_overlap(source,text,min_words=9):
+                return False
+            if len(_normalized_for_copy(source).split())>=12 and _copy_similarity(source,text)>=0.90:
+                return False
 
     for op_result in result.operation_results:
         if not op_result.get("ok",False):
