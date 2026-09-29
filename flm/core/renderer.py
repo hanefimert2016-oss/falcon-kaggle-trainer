@@ -26,11 +26,14 @@ class DeterministicRenderer:
 
     def _choose_nonrepeating(self, key:str, variants:tuple[str,...])->str:
         history=self._recent.get(key,[])
-        recent=set(history[-min(4,max(1,len(variants)-1)):])
+        # Avoid short-cycle repetition. For large response banks this keeps
+        # the last eight phrasings out of the candidate set; for small banks it
+        # uses every alternative before allowing a repeat.
+        recent=set(history[-min(8,max(1,len(variants)-1)):])
         choices=[x for x in variants if x not in recent] or list(variants)
         answer=random.SystemRandom().choice(choices)
         history.append(answer)
-        self._recent[key]=history[-8:]
+        self._recent[key]=history[-16:]
         return answer
 
     def render(self, prompt: str, response: CoreResponse) -> str:
