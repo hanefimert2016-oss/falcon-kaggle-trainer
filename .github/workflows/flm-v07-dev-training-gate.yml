@@ -3,7 +3,7 @@ name: FLM v0.7 Tokenizer-Only Gate
 on:
   workflow_run:
     workflows:
-      - "FLM v0.7 DEV Text Repair"
+      - "FLM v0.7 Zero-Train Data"
     types:
       - completed
   push:
@@ -28,7 +28,7 @@ jobs:
     env:
       KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
       KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
-      TEXT_REF: ${{ vars.KAGGLE_OWNER }}/flm-v07-semantic-text-r8
+      TEXT_REF: ${{ vars.KAGGLE_OWNER }}/flm-v07-zero-train-data-r1
       TOKENIZER_REF: ${{ vars.KAGGLE_OWNER }}/falcon-flm-v07-tokenizer-only
     steps:
       - uses: actions/checkout@v4
@@ -48,13 +48,15 @@ jobs:
           kaggle datasets files "$TEXT_REF" --page-size 100 | tee /tmp/flm-files.txt
           grep -Fq "main.raw.txt" /tmp/flm-files.txt
           grep -Fq "coder_pretrain.jsonl" /tmp/flm-files.txt
+          grep -Fq "semantic_wikidata.jsonl" /tmp/flm-files.txt
+          grep -Fq "turkish_lexicon.jsonl" /tmp/flm-files.txt
           echo "FLM_ZERO_TRAIN_SOURCE_READY"
 
       - name: Build tokenizer-only Kaggle bundle
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/build_v07_tokenizer_kernel.py             --owner "$KAGGLE_OWNER"             --dataset flm-v07-semantic-text-r8             --vocab-size 32768             --out kernel_v07_tokenizer_only
+          python scripts/build_v07_tokenizer_kernel.py             --owner "$KAGGLE_OWNER"             --dataset flm-v07-zero-train-data-r1             --vocab-size 32768             --out kernel_v07_tokenizer_only
           python -m py_compile kernel_v07_tokenizer_only/train_tokenizer.py
           python - <<'PY'
           import json
