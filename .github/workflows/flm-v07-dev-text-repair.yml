@@ -119,6 +119,11 @@ jobs:
           assert s['coder_sft_agentic']['real_rows'] >= 3800, s['coder_sft_agentic']
           assert s['coder_sft_agentic']['synthetic_rows'] >= 1500, s['coder_sft_agentic']
           assert s['coder_sft_agentic']['plan_turns'] >= 12000, s['coder_sft_agentic']
+          extra=s['coder_sft_agentic_swe_hero']
+          assert extra['rows'] >= 4500, extra
+          assert extra['plan_turns'] >= 4500, extra
+          assert extra['tool_turns'] >= 4500, extra
+          assert extra.get('permissive_repo_license_filter') is True, extra
           nebius=s['coder_sft_agentic_nebius']
           assert nebius['rows'] >= 4500, nebius
           assert nebius.get('resolved_only') is True, nebius
