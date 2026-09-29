@@ -14,6 +14,21 @@ def _is_turkish(text: str) -> bool:
     )) or any(ch in low for ch in "çğıöşü")
 
 
+def _tr_ablative(value) -> str:
+    text=str(value)
+    last=None
+    for ch in reversed(text.casefold()):
+        if ch in "aeıioöuü":
+            last=ch
+            break
+    suffix="dan" if last in "aıou" else "den"
+    if text and text[-1].isdigit():
+        # Spoken-number harmony for the most common final digits.
+        digit=text[-1]
+        suffix="dan" if digit in "469" else "den"
+    return f"{text}'{suffix}"
+
+
 class DeterministicRenderer:
     """Training-free renderer for verified FLM Core results.
 
@@ -42,11 +57,11 @@ class DeterministicRenderer:
     def _identity_variants(tr: bool) -> tuple[str,...]:
         if tr:
             openers=(
-                "Ben FLM'im.",
-                "Adım FLM.",
-                "Bana FLM diyebilirsin.",
+                "Ben FLM adlı bir yapay zekâ asistanıyım.",
+                "Adım FLM; bir yapay zekâ asistanı olarak çalışıyorum.",
+                "Bana FLM diyebilirsin; ben bir yapay zekâ asistanıyım.",
                 "Kısaca, ben FLM adlı bir yapay zekâ asistanıyım.",
-                "Benim adım FLM.",
+                "Benim adım FLM ve bir yapay zekâ asistanıyım.",
                 "FLM olarak çalışan bir yapay zekâ asistanıyım.",
             )
             architecture=(
@@ -67,11 +82,11 @@ class DeterministicRenderer:
             )
         else:
             openers=(
-                "I'm FLM.",
-                "My name is FLM.",
-                "You can call me FLM.",
+                "I'm FLM, an AI assistant.",
+                "My name is FLM, and I work as an AI assistant.",
+                "You can call me FLM; I'm an AI assistant.",
                 "In short, I'm an AI assistant called FLM.",
-                "I go by FLM.",
+                "I go by FLM, an AI assistant.",
                 "I operate as FLM, an AI assistant.",
             )
             architecture=(
@@ -258,12 +273,12 @@ class DeterministicRenderer:
                 if tr:
                     variants={
                         "greater":(
-                            f"{left}, {right}'den büyüktür.",
+                            f"{left}, {_tr_ablative(right)} büyüktür.",
                             f"Karşılaştırmada büyük olan değer {left}; diğer değer {right}.",
                             f"{left} değeri {right} değerini aşıyor.",
                         ),
                         "less":(
-                            f"{left}, {right}'den küçüktür.",
+                            f"{left}, {_tr_ablative(right)} küçüktür.",
                             f"Karşılaştırmada {right} daha büyük; {left} daha küçük kalıyor.",
                             f"{left} değeri {right} değerinin altında.",
                         ),
