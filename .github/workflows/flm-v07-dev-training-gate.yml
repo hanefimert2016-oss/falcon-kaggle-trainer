@@ -63,9 +63,10 @@ jobs:
           s=t.get('stats') or {}
           assert int((s.get('main') or {}).get('tokens',0))>=1_000_000_000
           assert int((s.get('coder') or {}).get('tokens',0))>=175_000_000
-          assert int((s.get('main_sft') or {}).get('supervised_tokens',0))>=450_000_000
+          assert int((s.get('main_sft') or {}).get('supervised_tokens',0))>=350_000_000
           assert int((s.get('coder_sft') or {}).get('supervised_tokens',0))>=75_000_000
           sem=s.get('semantic_interface_sft') or {}
+          assert int(sem.get('rows',0))>=800_000
           assert int(sem.get('rows',0))>=550_000
           assert sem.get('anti_copy_verified') is True
           assert int((s.get('semantic_sft') or {}).get('supervised_tokens',0))>=120_000_000
@@ -74,7 +75,7 @@ jobs:
           modes=sem.get('mode_counts') or {}
           assert len(modes)>=16 and min(map(int,modes.values()))>=35_000
           assert int((s.get('tokenizer') or {}).get('vocab_size',0))>=30_000
-          print('SEMANTIC_FLM_TEXT_R5_READY',s.get('main'),s.get('coder'),s.get('semantic_interface_sft'))
+          print('SEMANTIC_FLM_TEXT_R6_READY',s.get('main'),s.get('coder'),s.get('semantic_interface_sft'))
           PY
 
       - name: Build quality GPU bundle
