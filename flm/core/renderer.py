@@ -22,13 +22,15 @@ class DeterministicRenderer:
     """
 
     def __init__(self):
-        self._last_identity: dict[str,str] = {}
+        self._recent: dict[str,list[str]] = {}
 
     def _choose_nonrepeating(self, key:str, variants:tuple[str,...])->str:
-        last=self._last_identity.get(key)
-        choices=[x for x in variants if x!=last] or list(variants)
+        history=self._recent.get(key,[])
+        recent=set(history[-min(4,max(1,len(variants)-1)):])
+        choices=[x for x in variants if x not in recent] or list(variants)
         answer=random.SystemRandom().choice(choices)
-        self._last_identity[key]=answer
+        history.append(answer)
+        self._recent[key]=history[-8:]
         return answer
 
     def render(self, prompt: str, response: CoreResponse) -> str:
