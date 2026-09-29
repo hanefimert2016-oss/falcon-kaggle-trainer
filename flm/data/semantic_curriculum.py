@@ -68,11 +68,24 @@ def copy_similarity(source:str,answer:str)->float:
     return difflib.SequenceMatcher(None,a,b).ratio()
 
 
+def has_long_verbatim_overlap(source:str,answer:str,min_words:int=9)->bool:
+    a=_normalized_words(source).split()
+    b=_normalized_words(answer).split()
+    if len(a)<min_words or len(b)<min_words:
+        return False
+    grams={tuple(a[i:i+min_words]) for i in range(len(a)-min_words+1)}
+    return any(tuple(b[i:i+min_words]) in grams for i in range(len(b)-min_words+1))
+
+
 def _assert_not_copy(user:str,final:str)->None:
     # Tiny answers such as "Evet." are semantic labels rather than copied prose.
     if len(_normalized_words(final))<18:
         return
     score=copy_similarity(user,final)
+    if has_long_verbatim_overlap(user,final):
+        raise RuntimeError(
+            f"semantic curriculum contains long verbatim span user={user!r} final={final!r}"
+        )
     if score>=0.88:
         raise RuntimeError(
             f"semantic curriculum answer copies input too closely score={score:.3f} "
