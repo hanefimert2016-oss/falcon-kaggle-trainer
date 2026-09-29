@@ -437,6 +437,11 @@ jobs:
           assert first_ir==second_ir,(first_ir,second_ir)
           assert first_final!=second_final,(first_final,second_final)
 
+          render_focus=messages_for(SEMANTIC_MODES*2+13)
+          assert render_focus[2]['role']=='assistant'
+          assert render_focus[2].get('train') is False
+          assert render_focus[-1].get('train') is True
+
           assert len(language_seen)==SEMANTIC_MODES*2,language_seen
           assert SEMANTIC_MODES>=16
           assert seen_ops=={
@@ -585,7 +590,7 @@ jobs:
           messages=[
               {'role':'system','content':'add aracını kullan'},
               {'role':'user','content':'2+3'},
-              {'role':'assistant','content':'<|tool_call|>{"name":"add","arguments":{"a":2,"b":3}}<|tool_end|>'},
+              {'role':'assistant','content':'<|tool_call|>{"name":"add","arguments":{"a":2,"b":3}}<|tool_end|>','train':False},
               {'role':'tool','content':'<|tool_result|>{"name":"add","result":5}<|tool_end|>'},
           ]
           ids=encode_history(tok,messages)
@@ -731,7 +736,7 @@ jobs:
           m=np.fromfile(root/'m.u8',dtype=np.uint8)
           assert len(t)==len(m)==st['tokens']
           assert 0<m.sum()<len(m)
-          assert st['assistant_turns']==2
+          assert st['assistant_turns']==1
           for special in ('<|tool_call|>','<|tool_result|>','<|tool_end|>'):
               assert tok.token_to_id(special) is not None
           print('v0.7 tool/chat SFT mask OK',st)
