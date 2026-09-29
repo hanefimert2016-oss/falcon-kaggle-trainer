@@ -82,6 +82,7 @@ if [[ "${FLM_LOCAL_SKIP_DOWNLOAD:-0}" != "1" ]]; then
   if [[ -s "$TEXT_DIR/sources.json" ]]; then
     if python - "$TEXT_DIR/sources.json" <<'PY'
 import json,sys
+from pathlib import Path
 x=json.load(open(sys.argv[1],encoding="utf-8"))
 raise SystemExit(0 if x.get("pipeline_version")=="v0.7-dev-text" and int(x.get("data_revision",0))>=6 else 1)
 PY
@@ -102,7 +103,10 @@ assert x.get("pipeline_version")=="v0.7-dev-text"
 assert int(x.get("data_revision",0))>=6
 assert int((s.get("main") or {}).get("tokens",0))>=1_000_000_000
 assert int((s.get("coder") or {}).get("tokens",0))>=175_000_000
-assert int((s.get("semantic_interface_sft") or {}).get("rows",0))>=200_000
+assert int((s.get("semantic_interface_sft") or {}).get("rows",0))>=800_000
+assert int((s.get("semantic_sft") or {}).get("supervised_tokens",0))>=120_000_000
+for name in ("semantic_sft_tokens.u16","semantic_sft_mask.u8"):
+    assert (Path(sys.argv[1]).parent/name).is_file(), name
 assert int((s.get("tokenizer") or {}).get("vocab_size",0))>=30_000
 print("SEMANTIC_FLM_R6_LOCAL_DATA_OK")
 PY
