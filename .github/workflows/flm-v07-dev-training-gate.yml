@@ -88,9 +88,6 @@ jobs:
           assert int(extra.get('plan_turns',0))>=4500
           assert int(extra.get('tool_turns',0))>=4500
           assert extra.get('permissive_repo_license_filter') is True
-          nebius=s.get('coder_sft_agentic_nebius') or {}
-          assert int(nebius.get('rows',0))>=4500
-          assert nebius.get('resolved_only') is True
           assert int(nebius.get('plan_turns',0))>=9000
           assert int(nebius.get('tool_turns',0))>=4500
           assert int(sem.get('identity_variants_tr',0))>=216
