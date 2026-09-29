@@ -374,7 +374,7 @@ def _identity_case(i:int,tr:bool):
         if tr else
         ("Who are you?" if (i//(SEMANTIC_MODES*2))%2==0 else "Introduce yourself.")
     )
-    prog=semantic_ir(operations=[operation("IDENTITY")],source="synthetic-semantic-curriculum-v3")
+    prog=semantic_ir(operations=[operation("IDENTITY")],source="synthetic-semantic-curriculum-v4")
     answers=TR_IDENTITY_ANSWERS if tr else EN_IDENTITY_ANSWERS
     final=answers[(i//(SEMANTIC_MODES*2))%len(answers)]
     return user,prog,final
@@ -414,7 +414,7 @@ def _fact_synthesis_case(i:int,tr:bool,names):
         )
     prog=semantic_ir(
         operations=[operation("SYNTHESIZE_FACTS",facts=facts)],
-        source="synthetic-semantic-curriculum-v3",
+        source="synthetic-semantic-curriculum-v4",
     )
     return user,prog,variants[(i//(SEMANTIC_MODES*2))%len(variants)]
 
@@ -428,7 +428,7 @@ def _answer_style_case(i:int,tr:bool):
     )
     prog=semantic_ir(
         operations=[operation("ARITHMETIC",expression=str(value))],
-        source="synthetic-semantic-curriculum-v3",
+        source="synthetic-semantic-curriculum-v4",
     )
     if tr:
         variants=(
@@ -457,7 +457,7 @@ def _code_explain_case(i:int,tr:bool):
     )
     prog=semantic_ir(
         operations=[operation("ANALYZE_CODE",language="python",source=source)],
-        source="synthetic-semantic-curriculum-v3",
+        source="synthetic-semantic-curriculum-v4",
     )
     variants=(
         (
