@@ -1,16 +1,17 @@
-FLM v0.7 r5 Semantic Interface build
+FLM v0.7 r6 semantic response synthesis build
 architecture=single-interface-transformer
 semantic_core=training-free
-semantic_curriculum=v3-executable-16-modes-bilingual
-semantic_anti_copy=true
-semantic_identity_stable_diverse=true
-semantic_sft=600000
-semantic_language_target=300000_tr_300000_en
-en_sft=260000
-tr_knowledge=260000
-coder_code=200000
-xlam_tools=80000
-coder_agent=5000
-dataset=flm-v07-semantic-text-r5
-data_revision=5
+semantic_curriculum=v4-diverse-faithful
+semantic_stream=dedicated
+semantic_sft=800000
+en_sft=300000
+tr_knowledge=320000
+coder_code=250000
+xlam_tools=100000
+tool100k=100000
+coder_agent=6000
+dataset=flm-v07-semantic-text-r6
+data_revision=6
+anti_copy=required
+core_faithfulness=required
 vocab=32768
