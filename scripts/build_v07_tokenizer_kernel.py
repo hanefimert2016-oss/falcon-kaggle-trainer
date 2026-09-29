@@ -43,7 +43,12 @@ SPECIAL={SPECIAL!r}
 VOCAB={int(args.vocab_size)}
 root=Path("/kaggle/input")
 candidates=[]
-for name in ("main.raw.txt","coder_pretrain.jsonl","main_sft.jsonl","coder_sft.jsonl"):
+for name in (
+    "main.raw.txt",
+    "coder_pretrain.jsonl",
+    "semantic_wikidata.jsonl",
+    "turkish_lexicon.jsonl",
+):
     candidates.extend(root.rglob(name))
 paths=[]
 seen=set()
