@@ -149,6 +149,7 @@ class DeterministicRenderer:
                 pieces=[]
                 for fact in facts:
                     pred=str(fact.get("predicate") or "")
+                    pred_label=str(fact.get("predicate_label") or pred).strip()
                     args=[str(x) for x in (fact.get("args") or [])]
                     if pred=="IsA" and len(args)>=2:
                         value=args[1]
@@ -175,7 +176,11 @@ class DeterministicRenderer:
                             f"{entity}, {args[1]}'den uzundur" if tr else f"{entity} is taller than {args[1]}"
                         )
                     elif len(args)>=2:
-                        pieces.append(f"{pred}({', '.join(args)})")
+                        pieces.append(
+                            f"{entity} için {pred_label} bilgisi {args[1]}"
+                            if tr else
+                            f"{entity}'s {pred_label} is {args[1]}"
+                        )
                 if not pieces:
                     return (
                         f"{entity} hakkında {len(facts)} doğrulanmış kayıt var."
