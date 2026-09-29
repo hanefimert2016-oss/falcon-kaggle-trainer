@@ -33,6 +33,11 @@ class SemanticKnowledgeCompiler:
 
     @staticmethod
     def _structured_record(obj: dict) -> Program | None:
+        if all(obj.get(k) for k in ("s_id","r_id","e_id")):
+            return Program(facts=[Atom(
+                str(obj["r_id"]),
+                (str(obj["s_id"]),str(obj["e_id"])),
+            )])
         if any(k in obj for k in ("facts","rules")):
             return Program.from_dict({
                 "facts":obj.get("facts") or [],
@@ -74,6 +79,16 @@ class SemanticKnowledgeCompiler:
         before=memory.stats()
         for record in records:
             try:
+                if isinstance(record,dict) and all(record.get(k) for k in ("s_id","r_id","e_id")):
+                    sid=str(record["s_id"]); rid=str(record["r_id"]); eid=str(record["e_id"])
+                    slabel=str(record.get("s_label") or sid).strip()
+                    rlabel=str(record.get("r_label") or rid).strip()
+                    elabel=str(record.get("e_label") or eid).strip()
+                    memory.add_entity_alias(slabel,sid,display=slabel)
+                    memory.add_entity_alias(eid,eid,display=elabel)
+                    if elabel:
+                        memory.add_entity_alias(elabel,eid,display=elabel)
+                    memory.set_predicate_label(rid,rlabel)
                 program,_=self.compile_record(record)
                 memory.ingest(program)
                 stats.accepted+=1
