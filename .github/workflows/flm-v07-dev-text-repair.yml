@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: flm-v07-semantic-text-r5
+  group: flm-v07-semantic-text-r6
   cancel-in-progress: true
 
 jobs:
@@ -70,13 +70,13 @@ jobs:
             --wiki-en-bytes 768000000 \
             --coder-bytes 768000000 \
             --vocab-size 32768 \
-            --en-sft-rows 260000 \
-            --tr-knowledge-rows 260000 \
-            --coder-code-rows 200000 \
-            --xlam-tool-rows 80000 \
+            --en-sft-rows 300000 \
+            --tr-knowledge-rows 320000 \
+            --coder-code-rows 250000 \
+            --xlam-tool-rows 100000 \
             --tool100k-rows 100000 \
-            --coder-agent-rows 5000 \
-            --semantic-sft-rows 600000
+            --coder-agent-rows 6000 \
+            --semantic-sft-rows 800000
 
       - name: Verify massive text scale
         run: |
@@ -87,7 +87,7 @@ jobs:
           p=Path('prepared_v07_dev_text/sources.json')
           x=json.loads(p.read_text())
           assert x['pipeline_version']=='v0.7-dev-text'
-          assert int(x.get('data_revision',0)) >= 5, x.get('data_revision')
+          assert int(x.get('data_revision',0)) >= 6, x.get('data_revision')
           s=x['stats']
           assert s['main_raw']['bytes'] >= 3_000_000_000, s['main_raw']
           assert s['main_raw']['bytes_total_with_knowledge'] >= 4_400_000_000, s['main_raw']
@@ -100,6 +100,7 @@ jobs:
           sem=s['semantic_interface_sft']
           assert sem['rows'] >= 550_000, sem
           assert sem.get('anti_copy_verified') is True, sem
+          assert s['semantic_sft']['supervised_tokens'] >= 120_000_000, s['semantic_sft']
           langs=sem.get('language_counts') or {}
           assert int(langs.get('tr',0)) >= 290_000, langs
           assert int(langs.get('en',0)) >= 290_000, langs
@@ -123,9 +124,9 @@ jobs:
       - name: Upload private DEV text dataset
         run: |
           set -euo pipefail
-          REF="$KAGGLE_OWNER/flm-v07-semantic-text-r5"
-          if kaggle datasets list --mine -s flm-v07-semantic-text-r5 -v | grep -Fq "$REF"; then
-            kaggle datasets version -p prepared_v07_dev_text -m "FLM v0.7 r5 anti-copy diverse Semantic Core data" -q -t -r skip
+          REF="$KAGGLE_OWNER/flm-v07-semantic-text-r6"
+          if kaggle datasets list --mine -s flm-v07-semantic-text-r6 -v | grep -Fq "$REF"; then
+            kaggle datasets version -p prepared_v07_dev_text -m "FLM v0.7 r6 dedicated semantic synthesis data" -q -t -r skip
           else
             kaggle datasets create -p prepared_v07_dev_text -q -t -r skip
           fi
@@ -140,7 +141,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: flm-v07-semantic-text-r5-manifest-repaired
+          name: flm-v07-semantic-text-r6-manifest-repaired
           path: |
             prepared_v07_dev_text/sources.json
             prepared_v07_dev_text/tokenizer_meta.json
