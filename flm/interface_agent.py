@@ -117,8 +117,8 @@ def _candidate_preserves_core(candidate:str,prompt:str,program:Program,result,*,
             if left not in text or right not in text:
                 return False
             relation_words={
-                "greater":("büyük","daha büyük","greater","larger","exceeds"),
-                "less":("küçük","daha küçük","less","smaller","below"),
+                "greater":("büyük","daha büyük","aşıyor","aşar","üstünde","greater","larger","exceeds"),
+                "less":("küçük","daha küçük","altında","less","smaller","below"),
                 "equal":("eşit","aynı","equal","same"),
             }
             if relation and not any(x in low for x in relation_words.get(relation,())):
