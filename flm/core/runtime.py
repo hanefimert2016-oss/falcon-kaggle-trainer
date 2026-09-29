@@ -92,6 +92,34 @@ class FLMCore:
             expression=str(args["expression"])
             return {"kind":kind,"ok":True,"value":self.solve_arithmetic(expression)}
 
+        if kind=="COMPARE_VALUES":
+            left=args.get("left")
+            right=args.get("right")
+            if not isinstance(left,(int,float)) or not isinstance(right,(int,float)):
+                raise ValueError("COMPARE_VALUES requires numeric left/right")
+            relation="equal" if left==right else ("greater" if left>right else "less")
+            return {
+                "kind":kind,"ok":True,
+                "left":left,"right":right,
+                "relation":relation,
+                "difference":left-right,
+            }
+
+        if kind=="SORT_VALUES":
+            values=args.get("values")
+            if not isinstance(values,list) or not values:
+                raise ValueError("SORT_VALUES requires a non-empty values list")
+            if not all(isinstance(x,(int,float)) for x in values):
+                raise ValueError("SORT_VALUES only accepts numeric values")
+            descending=bool(args.get("descending",False))
+            ordered=sorted(values,reverse=descending)
+            return {
+                "kind":kind,"ok":True,
+                "values":list(values),
+                "descending":descending,
+                "sorted":ordered,
+            }
+
         if kind=="ANALYZE_CODE":
             language=str(args.get("language") or "python")
             source=str(args.get("source") or "")
