@@ -20,7 +20,7 @@ TEXT_DIR="$DATA_ROOT/text"
 OUT_ROOT="${FLM_LOCAL_OUTPUT_ROOT:-$ROOT/local-runs/flm-v0.7-semantic}"
 LOG_DIR="$OUT_ROOT/logs"
 VENV="${FLM_LOCAL_VENV:-$ROOT/.venv-flm-v07-interface}"
-TEXT_REF="${FLM_V07_TEXT_DATASET:-mertsigma/flm-v07-semantic-text-r7}"
+TEXT_REF="${FLM_V07_TEXT_DATASET:-mertsigma/flm-v07-semantic-text-r8}"
 
 mkdir -p "$DATA_ROOT" "$OUT_ROOT" "$LOG_DIR"
 
@@ -84,7 +84,7 @@ if [[ "${FLM_LOCAL_SKIP_DOWNLOAD:-0}" != "1" ]]; then
 import json,sys
 from pathlib import Path
 x=json.load(open(sys.argv[1],encoding="utf-8"))
-raise SystemExit(0 if x.get("pipeline_version")=="v0.7-dev-text" and int(x.get("data_revision",0))>=7 else 1)
+raise SystemExit(0 if x.get("pipeline_version")=="v0.7-dev-text" and int(x.get("data_revision",0))>=8 else 1)
 PY
     then READY=1; fi
   fi
@@ -101,11 +101,11 @@ from pathlib import Path
 x=json.load(open(sys.argv[1],encoding="utf-8"))
 s=x.get("stats") or {}
 assert x.get("pipeline_version")=="v0.7-dev-text"
-assert int(x.get("data_revision",0))>=7
+assert int(x.get("data_revision",0))>=8
 assert int((s.get("main") or {}).get("tokens",0))>=1_000_000_000
 assert int((s.get("coder") or {}).get("tokens",0))>=175_000_000
-assert int((s.get("semantic_interface_sft") or {}).get("rows",0))>=1_200_000
-assert int((s.get("semantic_sft") or {}).get("supervised_tokens",0))>=150_000_000
+assert int((s.get("semantic_interface_sft") or {}).get("rows",0))>=2_400_000
+assert int((s.get("semantic_sft") or {}).get("supervised_tokens",0))>=280_000_000
 for name in ("semantic_sft_tokens.u16","semantic_sft_mask.u8"):
     assert (Path(sys.argv[1]).parent/name).is_file(), name
 assert int((s.get("tokenizer") or {}).get("vocab_size",0))>=30_000
