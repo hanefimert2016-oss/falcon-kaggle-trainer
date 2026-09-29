@@ -373,16 +373,35 @@ class InterfaceAgent:
         )
         if verbatim:
             render_request=prompt
-        elif turkish:
-            render_request=(
-                "Doğrulanmış çekirdek anlamını doğal Türkçe ile, kendi cümlelerinle ve "
-                "gereksiz alıntı yapmadan açıkla. Ham kaynak metin özellikle verilmemiştir."
-            )
         else:
-            render_request=(
-                "Express the verified Core meaning in fresh natural English. Do not reconstruct "
-                "or quote the hidden source wording; the raw source text is intentionally omitted."
-            )
+            if turkish:
+                style_hints=(
+                    "Kısa ve doğrudan bir cümle yapısı kullan.",
+                    "Doğal sohbet diliyle ifade et.",
+                    "Biraz açıklayıcı ama özlü ol.",
+                    "Net ve profesyonel bir üslup kullan.",
+                    "Teknik jargonu gereksiz yere artırmadan anlat.",
+                    "Önceki yanıtlardan farklı bir cümle yapısı seç.",
+                )
+                render_request=(
+                    "Doğrulanmış çekirdek anlamını doğal Türkçe ile, kendi cümlelerinle ve "
+                    "gereksiz alıntı yapmadan açıkla. Ham kaynak metin özellikle verilmemiştir. "
+                    +style_hints[len(semantic_history)%len(style_hints)]
+                )
+            else:
+                style_hints=(
+                    "Use a short, direct sentence structure.",
+                    "Use natural conversational wording.",
+                    "Be slightly explanatory but concise.",
+                    "Use a clear professional tone.",
+                    "Avoid unnecessary jargon.",
+                    "Choose a sentence structure different from recent answers.",
+                )
+                render_request=(
+                    "Express the verified Core meaning in fresh natural English. Do not reconstruct "
+                    "or quote the hidden source wording; the raw source text is intentionally omitted. "
+                    +style_hints[len(semantic_history)%len(style_hints)]
+                )
         render_messages=[
             {
                 "role":"system",
