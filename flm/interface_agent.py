@@ -319,7 +319,7 @@ class InterfaceAgent:
             self.last_render_attempts=attempt+1
             candidate=self.generate(
                 render_messages,
-                max_new=384,
+                max_new=min(384,self.max_new),
                 temperature=self.render_temperature*(1.0+0.08*attempt),
                 top_k=self.render_top_k,
                 top_p=self.render_top_p,
