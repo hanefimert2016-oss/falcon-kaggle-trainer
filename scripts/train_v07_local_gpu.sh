@@ -109,7 +109,7 @@ assert int((s.get("semantic_sft") or {}).get("supervised_tokens",0))>=150_000_00
 for name in ("semantic_sft_tokens.u16","semantic_sft_mask.u8"):
     assert (Path(sys.argv[1]).parent/name).is_file(), name
 assert int((s.get("tokenizer") or {}).get("vocab_size",0))>=30_000
-print("SEMANTIC_FLM_R6_LOCAL_DATA_OK")
+print("SEMANTIC_FLM_R7_LOCAL_DATA_OK")
 PY
 
 export PYTHONPATH="$ROOT"
