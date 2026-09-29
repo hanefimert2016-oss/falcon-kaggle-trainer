@@ -20,7 +20,7 @@ TEXT_DIR="$DATA_ROOT/text"
 OUT_ROOT="${FLM_LOCAL_OUTPUT_ROOT:-$ROOT/local-runs/flm-v0.7-semantic}"
 LOG_DIR="$OUT_ROOT/logs"
 VENV="${FLM_LOCAL_VENV:-$ROOT/.venv-flm-v07-interface}"
-TEXT_REF="${FLM_V07_TEXT_DATASET:-mertsigma/flm-v07-semantic-text-r6}"
+TEXT_REF="${FLM_V07_TEXT_DATASET:-mertsigma/flm-v07-semantic-text-r7}"
 
 mkdir -p "$DATA_ROOT" "$OUT_ROOT" "$LOG_DIR"
 
