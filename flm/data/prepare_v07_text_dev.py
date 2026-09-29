@@ -58,11 +58,11 @@ DEV_SOURCES = {
         "license": "apache-2.0",
         "role": "validated multi-step software-engineering planning and tool trajectories",
     },
-    "coder_agent_nebius": {
-        "repo": "nebius/SWE-agent-trajectories",
-        "license": "cc-by-4.0",
-        "role": "successful SWE-agent issue-resolution trajectories with reasoning, actions and observations",
-        "notes": "generated model outputs may carry upstream model terms; preserve provenance",
+    "coder_agent_swe_hero": {
+        "repo": "nvidia/SWE-Hero-openhands-trajectories",
+        "license": "cc-by-4.0; source repositories restricted to permissive SPDX licenses",
+        "role": "OpenHands software-engineering trajectories with assistant/tool observations and tested patches",
+        "notes": "trajectory provenance is retained; generated teacher text is training data only, never a runtime model dependency",
     },
 }
 
@@ -397,18 +397,7 @@ def append_coder_agent_trajectories(path: Path, limit: int) -> dict:
 
 
 
-def _agent_event_text(event:dict,*keys:str)->str:
-    for key in keys:
-        value=event.get(key)
-        if isinstance(value,str) and value.strip():
-            return clean_text(value)
-        if isinstance(value,(dict,list)) and value:
-            return clean_text(json.dumps(value,ensure_ascii=False))
-    return ""
-
-
-def normalize_nebius_swe_messages(row:dict):
-    raw=row.get("trajectory")
+def normalize_swe_hero_messages(raw):
     if isinstance(raw,str):
         try:
             raw=json.loads(raw)
@@ -418,92 +407,121 @@ def normalize_nebius_swe_messages(row:dict):
         return []
 
     out=[]
-    for event in raw:
+    assistant_positions=[
+        i for i,m in enumerate(raw)
+        if isinstance(m,dict) and str(m.get("role") or "").strip().lower()=="assistant"
+    ]
+    last_assistant=assistant_positions[-1] if assistant_positions else -1
+
+    for i,event in enumerate(raw):
         if not isinstance(event,dict):
             continue
         role=str(event.get("role") or "").strip().lower()
-        if role=="system":
-            content=_agent_event_text(event,"content","system_prompt","text","message")
+        content=clean_text(event.get("content") or event.get("text") or "")
+        if role in {"system","user"}:
             if content:
-                out.append({"role":"system","content":content[:2200]})
+                out.append({"role":role,"content":content[:2400]})
             continue
 
-        if role=="user":
-            content=_agent_event_text(event,"content","observation","message","text")
-            if not content:
-                continue
-            content=content[:2600]
-            if out and out[-1]["role"]=="assistant" and "<|tool_call|>" in out[-1]["content"]:
+        if role=="tool":
+            if content:
                 out.append({
                     "role":"tool",
-                    "content":"<|tool_result|>"+content+"<|tool_end|>",
+                    "content":"<|tool_result|>"+content[:3000]+"<|tool_end|>",
                 })
-            else:
-                out.append({"role":"user","content":content})
             continue
 
-        if role not in {"ai","assistant"}:
+        if role!="assistant":
             continue
 
-        thought=_agent_event_text(event,"thought","reasoning","analysis","content","message")
-        if thought:
+        tool_calls=event.get("tool_calls") or []
+        if tool_calls:
+            calls=[]
+            for tc in tool_calls:
+                fn=tc.get("function") if isinstance(tc,dict) else None
+                if not isinstance(fn,dict):
+                    continue
+                name=str(fn.get("name") or "openhands_action")
+                args=fn.get("arguments",{})
+                if isinstance(args,str):
+                    try:
+                        args=json.loads(args)
+                    except Exception:
+                        args={"raw":args[:2400]}
+                if not isinstance(args,dict):
+                    args={"value":args}
+                calls.append(
+                    "<|tool_call|>"+compact_json({"name":name,"arguments":args})+"<|tool_end|>"
+                )
+            if content:
+                out.append({
+                    "role":"assistant",
+                    "content":"<|plan|>\n"+content[:2200]+"\n<|plan_end|>",
+                })
+            for call in calls:
+                out.append({"role":"assistant","content":call})
+            continue
+
+        if not content:
+            continue
+        next_role=""
+        if i+1<len(raw) and isinstance(raw[i+1],dict):
+            next_role=str(raw[i+1].get("role") or "").strip().lower()
+
+        if i==last_assistant:
+            out.append({"role":"assistant","content":"<|final|>\n"+content[:2200]})
+        elif next_role=="tool":
+            # Some OpenHands exports serialize the action as assistant text rather
+            # than tool_calls. Preserve the reasoning and expose a generic action
+            # marker so the interface learns plan -> action -> observation.
             out.append({
                 "role":"assistant",
-                "content":"<|plan|>\n"+thought[:2400]+"\n<|plan_end|>",
+                "content":"<|plan|>\n"+content[:1800]+"\n<|plan_end|>",
             })
-
-        action=event.get("action")
-        if action is None:
-            action=event.get("command")
-        if action is not None and str(action).strip():
-            if isinstance(action,dict):
-                name=str(action.get("name") or action.get("type") or "swe_agent_action")
-                arguments=action.get("arguments")
-                if not isinstance(arguments,dict):
-                    arguments={"action":action}
-            else:
-                name="swe_agent_action"
-                arguments={"action":str(action)[:2400]}
             out.append({
                 "role":"assistant",
                 "content":"<|tool_call|>"+compact_json({
-                    "name":name,"arguments":arguments,
+                    "name":"openhands_action",
+                    "arguments":{"instruction":content[:1800]},
                 })+"<|tool_end|>",
             })
-
-    if not any(m["role"]=="user" for m in out):
-        return []
-    if bool(row.get("target")):
-        instance=str(row.get("instance_id") or "software issue")
-        out.append({
-            "role":"assistant",
-            "content":"<|final|>\n"
-                f"The issue {instance} was resolved and the submitted patch passed its task evaluation.",
-        })
+        else:
+            out.append({
+                "role":"assistant",
+                "content":"<|plan|>\n"+content[:2200]+"\n<|plan_end|>",
+            })
     return out
 
 
-def append_nebius_agent_trajectories(path:Path,limit:int)->dict:
-    source=DEV_SOURCES["coder_agent_nebius"]
+def append_swe_hero_agent_trajectories(path:Path,limit:int)->dict:
+    source=DEV_SOURCES["coder_agent_swe_hero"]
     ds=load_dataset(source["repo"],split="train",streaming=True)
     added=0
     plan_turns=tool_turns=final_turns=0
+    allowed_licenses={
+        "mit","apache-2.0","bsd-2-clause","bsd-3-clause","isc",
+    }
     with path.open("a",encoding="utf-8") as fh:
         for row in ds:
-            if not bool(row.get("target")):
+            license_id=str(row.get("license") or "").strip().lower()
+            if license_id and license_id not in allowed_licenses:
                 continue
-            msgs=compact_agentic_for_context(normalize_nebius_swe_messages(row))
+            msgs=compact_agentic_for_context(
+                normalize_swe_hero_messages(row.get("trajectory"))
+            )
             if len(msgs)<6:
                 continue
             plans=sum("<|plan|>" in m["content"] for m in msgs if m["role"]=="assistant")
             tools=sum("<|tool_call|>" in m["content"] for m in msgs if m["role"]=="assistant")
             finals=sum("<|final|>" in m["content"] for m in msgs if m["role"]=="assistant")
-            if plans<2 or tools<1 or finals<1:
+            if plans<1 or tools<1 or finals<1:
                 continue
             fh.write(json.dumps({
                 "messages":msgs,
                 "source":source["repo"],
-                "resolved":True,
+                "trajectory_id":str(row.get("trajectory_id") or ""),
+                "repo":str(row.get("repo") or ""),
+                "license":license_id,
             },ensure_ascii=False)+"\n")
             added+=1
             plan_turns+=plans
@@ -512,16 +530,15 @@ def append_nebius_agent_trajectories(path:Path,limit:int)->dict:
             if added>=limit:
                 break
     if added < int(limit*0.90):
-        raise RuntimeError(f"Nebius agentic trajectories underfilled {added}/{limit}")
+        raise RuntimeError(f"SWE-Hero agentic trajectories underfilled {added}/{limit}")
     return {
         "rows":added,
         "plan_turns":plan_turns,
         "tool_turns":tool_turns,
         "final_turns":final_turns,
-        "resolved_only":True,
         "source":source["repo"],
+        "permissive_repo_license_filter":True,
     }
-
 
 def append_turkish_knowledge(path: Path, limit: int) -> dict:
     added=0
@@ -653,7 +670,7 @@ def main():
     stats["coder_sft_base"]=prepare_coder_sft(out,args.coder_code_rows,args.xlam_tool_rows,6_000)
     stats["coder_sft_tool100k"]=append_tool_100k(out/"coder_sft.jsonl",args.tool100k_rows)
     stats["coder_sft_agentic"]=append_coder_agent_trajectories(out/"coder_sft.jsonl",args.coder_agent_rows)
-    stats["coder_sft_agentic_nebius"]=append_nebius_agent_trajectories(
+    stats["coder_sft_agentic_swe_hero"]=append_swe_hero_agent_trajectories(
         out/"coder_sft.jsonl",args.coder_agent_extra_rows
     )
     stats["coder_sft_raw"]={
