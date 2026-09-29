@@ -38,8 +38,8 @@ class FLMCore:
         self.identity={
             "name":"FLM",
             "entity_type":"AI assistant",
-            "architecture":"training-free Semantic Core with one trainable InterfaceTransformer",
-            "purpose":"understand requests, reason through the Core, use tools, and produce helpful answers",
+            "architecture":"training-free Semantic Core with a tokenizer-only text interface",
+            "purpose":"compile requests into semantic structure, reason through the Core, use tools, and compose fresh answers without neural model training",
         }
 
     def ingest(self, program: Program) -> None:
