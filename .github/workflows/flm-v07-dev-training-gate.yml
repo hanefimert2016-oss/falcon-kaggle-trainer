@@ -1,4 +1,4 @@
-name: FLM v0.7 Quality Training Gate
+name: FLM v0.7 Tokenizer-Only Gate
 
 on:
   workflow_run:
@@ -9,6 +9,7 @@ on:
   push:
     paths:
       - '.flm-v07-dev-gate-trigger'
+      - 'scripts/build_v07_tokenizer_kernel.py'
   workflow_dispatch:
 
 permissions:
@@ -16,11 +17,11 @@ permissions:
   actions: read
 
 concurrency:
-  group: flm-v07-quality-training-gate
+  group: flm-v07-tokenizer-only-gate
   cancel-in-progress: false
 
 jobs:
-  launch-quality-training:
+  launch-tokenizer:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 360
@@ -28,7 +29,7 @@ jobs:
       KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
       KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
       TEXT_REF: ${{ vars.KAGGLE_OWNER }}/flm-v07-semantic-text-r8
-      GPU_REF: ${{ vars.KAGGLE_OWNER }}/falcon-flm-v07-semantic-interface-gpu
+      TOKENIZER_REF: ${{ vars.KAGGLE_OWNER }}/falcon-flm-v07-tokenizer-only
     steps:
       - uses: actions/checkout@v4
         with:
@@ -38,169 +39,80 @@ jobs:
         with:
           python-version: '3.11'
 
-      - run: python -m pip install "kaggle>=2.2.1"
+      - run: python -m pip install "kaggle>=2.2.1" "tokenizers>=0.20"
 
-      - name: Verify Semantic FLM text r8 dataset
+      - name: Verify zero-train source dataset
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf /tmp/v07-gate-data
-          mkdir -p /tmp/v07-gate-data/text
+          kaggle datasets files "$TEXT_REF" --page-size 100 | tee /tmp/flm-files.txt
+          grep -Fq "main.raw.txt" /tmp/flm-files.txt
+          grep -Fq "coder_pretrain.jsonl" /tmp/flm-files.txt
+          echo "FLM_ZERO_TRAIN_SOURCE_READY"
 
-          kaggle datasets files "$TEXT_REF" --page-size 100 | tee /tmp/v07-text-files.txt
-          for F in tokenizer.json main_train.u16 coder_train.u16 main_sft_tokens.u16 main_sft_mask.u8 semantic_sft_tokens.u16 semantic_sft_mask.u8 coder_sft_tokens.u16 coder_sft_mask.u8 sources.json; do
-            grep -Fq "$F" /tmp/v07-text-files.txt
-          done
-          kaggle datasets download -d "$TEXT_REF" -f sources.json -p /tmp/v07-gate-data/text -q --force
-
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          p=Path('/tmp/v07-gate-data/text/sources.json')
-          t=json.loads(p.read_text(encoding='utf-8'))
-          assert t.get('pipeline_version')=='v0.7-dev-text'
-          assert int(t.get('data_revision',0))>=8,t.get('data_revision')
-          s=t.get('stats') or {}
-          assert int((s.get('main') or {}).get('tokens',0))>=1_000_000_000
-          assert int((s.get('coder') or {}).get('tokens',0))>=175_000_000
-          assert int((s.get('main_sft') or {}).get('supervised_tokens',0))>=350_000_000
-          assert int((s.get('coder_sft') or {}).get('supervised_tokens',0))>=75_000_000
-          sem=s.get('semantic_interface_sft') or {}
-          assert int(sem.get('rows',0))>=2_400_000
-          assert sem.get('anti_copy_verified') is True
-          assert int(sem.get('anti_copy_phrase_words',0))==9
-          assert sem.get('source')=='synthetic:flm-semantic-curriculum-v6'
-          assert int(sem.get('render_focused_rows',0))>=1_190_000
-          assert sem.get('ir_supervision_policy')=='1/2 compiler+render, 1/2 source-hidden render-only'
-          assert sem.get('source_hidden_rendering') is True
-          assert int((s.get('semantic_sft') or {}).get('supervised_tokens',0))>=280_000_000
-          langs=sem.get('language_counts') or {}
-          assert int(langs.get('tr',0))>=1_190_000 and int(langs.get('en',0))>=1_190_000
-          modes=sem.get('mode_counts') or {}
-          assert len(modes)>=24 and min(map(int,modes.values()))>=99_000
-          agentic=s.get('coder_sft_agentic') or {}
-          assert int(agentic.get('rows',0))>=6000
-          assert int(agentic.get('real_rows',0))>=3800
-          assert int(agentic.get('synthetic_rows',0))>=1500
-          assert int(agentic.get('plan_turns',0))>=12000
-          extra=s.get('coder_sft_agentic_swe_hero') or {}
-          assert int(extra.get('rows',0))>=4500
-          assert int(extra.get('plan_turns',0))>=4500
-          assert int(extra.get('tool_turns',0))>=4500
-          assert extra.get('permissive_repo_license_filter') is True
-          assert int(sem.get('identity_variants_tr',0))>=216
-          assert int(sem.get('identity_variants_en',0))>=216
-          assert int((s.get('tokenizer') or {}).get('vocab_size',0))>=30_000
-          print('SEMANTIC_FLM_TEXT_R8_READY',s.get('main'),s.get('coder'),s.get('semantic_interface_sft'))
-          PY
-
-      - name: Build quality GPU bundle
-        run: |
-          set -euo pipefail
-          python scripts/build_v07_dev_gpu_kernel.py \
-            --owner "$KAGGLE_OWNER" \
-            --out kernel_v07_semantic_interface
-          python -m py_compile kernel_v07_semantic_interface/train_interface_v07.py
-
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          m=json.loads(Path('kernel_v07_semantic_interface/kernel-metadata.json').read_text())
-          owner=m['id'].split('/')[0]
-          assert m['id']==f'{owner}/falcon-flm-v07-semantic-interface-gpu',m
-          assert m['title']=='Falcon FLM v07 Semantic Interface Transformer',m
-          assert m['dataset_sources']==[f'{owner}/flm-v07-semantic-text-r8'],m
-          assert m['kernel_sources']==[],m
-          assert m['enable_gpu'] is True
-          assert m['enable_internet'] is False
-          assert m['machine_shape']=='NvidiaTeslaT4'
-          src=Path('kernel_v07_semantic_interface/train_interface_v07.py').read_text()
-          for expected in (
-              'flm.train_interface_v07',
-              'FLM_INTERFACE_SEQ',
-              '4096',
-              'FLM_INTERFACE_LAYERS',
-              '16',
-              'FLM_INTERFACE_KV_HEADS',
-              '4',
-              'FLM_INTERFACE_GENERAL_SEQ',
-              '1024',
-              'FLM_INTERFACE_CODE_SEQ',
-              '2048',
-              'FLM_INTERFACE_REFRESH_SEQ',
-              'FLM_INTERFACE_REFRESH_EPOCHS',
-              '0.12',
-              'FLM_INTERFACE_SFT_SEQ',
-              '4096',
-              'FLM_INTERFACE_SFT_EPOCHS',
-              '0.65',
-          ):
-              assert expected in src,expected
-          print('V07_SINGLE_INTERFACE_GPU_BUNDLE_VERIFIED')
-          PY
-
-      - name: Avoid duplicate running quality job
-        id: duplicate
+      - name: Build tokenizer-only Kaggle bundle
         shell: bash
         run: |
           set -euo pipefail
-          STATUS="$(kaggle kernels status "$GPU_REF" 2>&1 || true)"
+          python scripts/build_v07_tokenizer_kernel.py             --owner "$KAGGLE_OWNER"             --dataset flm-v07-semantic-text-r8             --vocab-size 32768             --out kernel_v07_tokenizer_only
+          python -m py_compile kernel_v07_tokenizer_only/train_tokenizer.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path('kernel_v07_tokenizer_only/kernel-metadata.json').read_text())
+          assert m['id'].endswith('/falcon-flm-v07-tokenizer-only'),m
+          assert m['enable_gpu'] is False,m
+          assert m['model_sources']==[],m
+          src=Path('kernel_v07_tokenizer_only/train_tokenizer.py').read_text()
+          assert 'BpeTrainer' in src
+          assert 'InterfaceTransformer' not in src
+          assert 'torch' not in src
+          print('FLM_TOKENIZER_ONLY_BUNDLE_OK')
+          PY
+
+      - name: Launch tokenizer-only Kaggle job
+        shell: bash
+        run: |
+          set -euo pipefail
+          STATUS="$(kaggle kernels status "$TOKENIZER_REF" 2>&1 || true)"
           echo "$STATUS"
-          if echo "$STATUS" | grep -Eq '(KernelWorkerStatus\.)?(QUEUED|RUNNING)'; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "V07_INTERFACE_GPU_ALREADY_ACTIVE"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
+          if ! echo "$STATUS" | grep -Eq '(KernelWorkerStatus\.)?(QUEUED|RUNNING)'; then
+            kaggle kernels push -p kernel_v07_tokenizer_only --timeout 43200
           fi
 
-      - name: Launch quality model training
-        if: steps.duplicate.outputs.skip != 'true'
+      - name: Wait for tokenizer output
         shell: bash
         run: |
           set -euo pipefail
-          ok=0
-          for attempt in $(seq 1 300); do
-            STATUS="$(kaggle kernels status "$GPU_REF" 2>&1 || true)"
+          for attempt in $(seq 1 360); do
+            STATUS="$(kaggle kernels status "$TOKENIZER_REF" 2>&1 || true)"
             echo "$STATUS"
-            if echo "$STATUS" | grep -Eq '(KernelWorkerStatus\.)?(QUEUED|RUNNING)'; then
-              echo "V07_INTERFACE_GPU_STARTED_BY_ANOTHER_RUN"
-              exit 0
-            fi
-
-            OUTPUT="$(kaggle kernels push \
-              -p kernel_v07_semantic_interface \
-              --accelerator NvidiaTeslaT4 \
-              --timeout 43200 2>&1 || true)"
-            echo "$OUTPUT"
-
-            if echo "$OUTPUT" | grep -q 'successfully pushed'; then
-              ok=1
-              break
-            fi
-            if echo "$OUTPUT" | grep -Eqi \
-              'Maximum batch GPU session count|429|rate.?limit|temporar|timeout|502|503|504'; then
-              sleep 60
-              continue
-            fi
-            break
-          done
-          test "$ok" = "1"
-
-      - name: Verify quality training is live
-        shell: bash
-        run: |
-          set -euo pipefail
-          for attempt in $(seq 1 120); do
-            STATUS="$(kaggle kernels status "$GPU_REF" 2>&1 || true)"
-            echo "$STATUS"
-            if echo "$STATUS" | grep -Eq '(KernelWorkerStatus\.)?(QUEUED|RUNNING|COMPLETE)'; then
-              echo "V07_INTERFACE_TRAINING_LIVE"
+            if echo "$STATUS" | grep -Eq '(KernelWorkerStatus\.)?COMPLETE'; then
+              rm -rf /tmp/flm-tokenizer-output
+              mkdir -p /tmp/flm-tokenizer-output
+              kaggle kernels output "$TOKENIZER_REF" -p /tmp/flm-tokenizer-output -q
+              find /tmp/flm-tokenizer-output -type f -maxdepth 4 -print
+              TOK="$(find /tmp/flm-tokenizer-output -name tokenizer.json -type f | head -n1)"
+              META="$(find /tmp/flm-tokenizer-output -name tokenizer_meta.json -type f | head -n1)"
+              test -n "$TOK" -a -f "$TOK"
+              test -n "$META" -a -f "$META"
+              python - "$TOK" "$META" <<'PY'
+          import json,sys
+          from tokenizers import Tokenizer
+          tok=Tokenizer.from_file(sys.argv[1])
+          meta=json.load(open(sys.argv[2],encoding='utf-8'))
+          assert meta['training_kind']=='tokenizer-only-no-neural-model'
+          assert int(meta['vocab_size'])>=30000,meta
+          for token in ('<unk>','<|semantic_ir|>','<|core_result|>'):
+              assert tok.token_to_id(token) is not None,token
+          print('FLM_TOKENIZER_ONLY_VERIFIED',meta['vocab_size'])
+          PY
               exit 0
             fi
             if echo "$STATUS" | grep -Eq '(KernelWorkerStatus\.)?(ERROR|FAILED|CANCELLED)'; then
-              kaggle kernels logs "$GPU_REF" || true
+              kaggle kernels logs "$TOKENIZER_REF" || true
               exit 1
             fi
-            sleep 5
+            sleep 30
           done
           exit 1
