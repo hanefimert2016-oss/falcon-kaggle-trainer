@@ -378,19 +378,6 @@ def main():
     }
     print("V07_DEV_TEXT main_sft_done",json.dumps(stats["main_sft_raw"]),flush=True)
 
-    # Keep response-synthesis/IR training independent from ordinary instruction
-    # data so the single InterfaceTransformer can sample it at an explicit ratio.
-    semantic_raw=out/"semantic_sft.jsonl"
-    stats["semantic_interface_sft"]=append_semantic_curriculum(
-        semantic_raw,args.semantic_sft_rows
-    )
-    stats["semantic_sft_raw"]={
-        "file":"semantic_sft.jsonl",
-        "rows":count_jsonl(semantic_raw),
-        "file_bytes":semantic_raw.stat().st_size,
-    }
-    print("V07_DEV_TEXT semantic_sft_done",json.dumps(stats["semantic_sft_raw"]),flush=True)
-
     stats["coder_sft_base"]=prepare_coder_sft(out,args.coder_code_rows,args.xlam_tool_rows,6_000)
     stats["coder_sft_tool100k"]=append_tool_100k(out/"coder_sft.jsonl",args.tool100k_rows)
     stats["coder_sft_agentic"]=append_coder_agent_trajectories(out/"coder_sft.jsonl",args.coder_agent_rows)
@@ -420,8 +407,24 @@ def main():
     stats["main_sft"]=encode_chat_sft(tok,out/"main_sft.jsonl",out/"main_sft_tokens.u16",out/"main_sft_mask.u8")
     (out/"main_sft.jsonl").unlink(missing_ok=True)
 
-    stats["semantic_sft"]=encode_chat_sft(tok,out/"semantic_sft.jsonl",out/"semantic_sft_tokens.u16",out/"semantic_sft_mask.u8")
-    (out/"semantic_sft.jsonl").unlink(missing_ok=True)
+    # Generate the large semantic response curriculum only after the multi-GB
+    # raw pretraining corpora have been tokenized and removed. Encode it
+    # immediately, then delete JSONL to cap runner disk peak without reducing data.
+    semantic_raw=out/"semantic_sft.jsonl"
+    stats["semantic_interface_sft"]=append_semantic_curriculum(
+        semantic_raw,args.semantic_sft_rows
+    )
+    stats["semantic_sft_raw"]={
+        "file":"semantic_sft.jsonl",
+        "rows":count_jsonl(semantic_raw),
+        "file_bytes":semantic_raw.stat().st_size,
+    }
+    print("V07_DEV_TEXT semantic_sft_raw_done",json.dumps(stats["semantic_sft_raw"]),flush=True)
+    stats["semantic_sft"]=encode_chat_sft(
+        tok,semantic_raw,out/"semantic_sft_tokens.u16",out/"semantic_sft_mask.u8"
+    )
+    semantic_raw.unlink(missing_ok=True)
+    print("V07_DEV_TEXT semantic_sft_encoded",json.dumps(stats["semantic_sft"]),flush=True)
 
     stats["coder_sft"]=encode_chat_sft(tok,out/"coder_sft.jsonl",out/"coder_sft_tokens.u16",out/"coder_sft_mask.u8")
     (out/"coder_sft.jsonl").unlink(missing_ok=True)
