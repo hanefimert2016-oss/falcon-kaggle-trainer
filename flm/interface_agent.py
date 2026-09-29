@@ -266,26 +266,13 @@ class InterfaceAgent:
         ],temperature=0.0,top_k=1)
         return Program.from_json(self._extract_ir(raw))
 
-    def answer(self,prompt:str,core:FLMCore)->str:
-        # Canonical facts, queries, arithmetic and code-analysis requests are
-        # answered entirely by FLM Core; no Transformer generation is needed.
-        try:
-            direct_program=self.semantic_compiler.compile_any(prompt)
-        except ValueError:
-            direct_program=None
-        if direct_program is not None:
-            direct_result=core.execute(direct_program)
-            neural_render_kinds={
-                op.kind for op in direct_program.operations
-                if op.kind in {"IDENTITY","SYNTHESIZE_FACTS"}
-            }
-            if not neural_render_kinds:
-                return self.deterministic_renderer.render(prompt,direct_result)
-            program=direct_program
-            result=direct_result
-        else:
-            program=self.compile(prompt)
-            result=core.execute(program)
+    def render_verified(self,prompt:str,program:Program,result)->str:
+        """Render an already-executed Core result without re-compiling the request.
+
+        This is also the post-training quality-test entrypoint: the Transformer
+        must paraphrase verified meaning while anti-copy/Core-faithfulness guards
+        remain authoritative.
+        """
         payload={
             "results":[
                 {
@@ -353,3 +340,26 @@ class InterfaceAgent:
             self._recent_answers.append(answer)
             self._recent_answers=self._recent_answers[-8:]
         return answer
+
+
+    def answer(self,prompt:str,core:FLMCore)->str:
+        # Canonical facts, queries, arithmetic and code-analysis requests are
+        # answered entirely by FLM Core; no Transformer generation is needed.
+        try:
+            direct_program=self.semantic_compiler.compile_any(prompt)
+        except ValueError:
+            direct_program=None
+        if direct_program is not None:
+            direct_result=core.execute(direct_program)
+            neural_render_kinds={
+                op.kind for op in direct_program.operations
+                if op.kind in {"IDENTITY","SYNTHESIZE_FACTS"}
+            }
+            if not neural_render_kinds:
+                return self.deterministic_renderer.render(prompt,direct_result)
+            program=direct_program
+            result=direct_result
+        else:
+            program=self.compile(prompt)
+            result=core.execute(program)
+        return self.render_verified(prompt,program,result)
