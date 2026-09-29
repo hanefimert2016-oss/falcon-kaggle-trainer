@@ -735,7 +735,7 @@ jobs:
           src.write_text(json.dumps({'messages':[
               {'role':'system','content':'Available tool add.'},
               {'role':'user','content':'2+3'},
-              {'role':'assistant','content':'<|tool_call|>{"name":"add","arguments":{"a":2,"b":3}}<|tool_end|>'},
+              {'role':'assistant','content':'<|tool_call|>{"name":"add","arguments":{"a":2,"b":3}}<|tool_end|>','train':False},
               {'role':'tool','content':'<|tool_result|>{"name":"add","result":5}<|tool_end|>'},
               {'role':'assistant','content':'Sonuç 5.'},
           ]},ensure_ascii=False)+'\n')
