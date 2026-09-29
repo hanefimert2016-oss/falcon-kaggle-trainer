@@ -20,6 +20,15 @@ run("Mert bir bilgisayar mıdır?", "Evet")
 run("Her memeli sıcakkanlıdır.", "Bilgi kaydedildi")
 run("Ali bir memelidir.", "Bilgi kaydedildi")
 run("Ali sıcakkanlı mıdır?", "Evet")
+run("Ada bir kedidir.", "Bilgi kaydedildi")
+run("Ada bir memelidir.", "Bilgi kaydedildi")
+memory_answers=[agent.ask("Ada hakkında ne biliyorsun?") for _ in range(3)]
+rows.append({
+    "question":"Ada hakkında ne biliyorsun? (3 kez)",
+    "answer":" || ".join(memory_answers),
+    "ok":all("Ada" in x and "kedi" in x and "memeli" in x for x in memory_answers)
+        and len(set(memory_answers))>=2,
+})
 identity_answers=[agent.ask("Sen kimsin?") for _ in range(4)]
 rows.append({
     "question":"Sen kimsin? (4 kez)",
