@@ -526,14 +526,18 @@ def encode_chat_sft(tok: Tokenizer, src: Path, token_dst: Path, mask_dst: Path) 
                 mask.append(0)
                 content_ids = tok.encode(msg["content"], add_special_tokens=False).ids
                 seq.extend(content_ids)
-                supervise = role == "assistant"
+                supervise = role == "assistant" and bool(msg.get("train", True))
                 mask.extend([1 if supervise else 0] * len(content_ids))
-                if supervise:
+                if role == "assistant":
                     seq.append(ids["<|end|>"])
-                    mask.append(1)
-                    assistant_turns += 1
+                    mask.append(1 if supervise else 0)
+                    if supervise:
+                        assistant_turns += 1
             seq.append(ids["<eos>"])
-            mask.append(1 if row["messages"] and row["messages"][-1]["role"] == "assistant" else 0)
+            last=row["messages"][-1] if row["messages"] else {}
+            mask.append(
+                1 if last.get("role")=="assistant" and bool(last.get("train",True)) else 0
+            )
             if not any(mask):
                 continue
             np.asarray(seq, dtype=np.uint16).tofile(tf)
