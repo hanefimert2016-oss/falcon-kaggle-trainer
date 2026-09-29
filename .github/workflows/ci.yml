@@ -298,7 +298,7 @@ jobs:
           assert '"transformer_count":1' in trainer
           assert 'semantic_data' in trainer and 'semantic_mask' in trainer
           assert '"semantic":0.50' in trainer
-          assert 'mixed_sft-r6' in trainer
+          assert 'mixed_sft-r7' in trainer
           assert 'evaluate_interface_behavior' in trainer
           assert 'behavior_quality.json' in trainer
           assert 'trained InterfaceTransformer failed behavior gate' in trainer
@@ -488,7 +488,7 @@ jobs:
           assert 'FLM v0.7 DEV Text Repair' in gate
           assert 'flm-v07-dev-computer' not in gate
           assert 'flm-v07-semantic-text-r7' in gate
-          assert "data_revision',0))>=6" in gate
+          assert "data_revision',0))>=7" in gate
           assert 'if: ${{ false }}' not in gate
           print('SEMANTIC_FLM_SINGLE_TRANSFORMER_PIPELINE_OK')
           PY
