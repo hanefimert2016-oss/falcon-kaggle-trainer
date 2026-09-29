@@ -45,7 +45,7 @@ jobs:
           assert 'flm.train_interface_v07' in launcher
           assert 'python -u -m flm.train_v07' not in launcher
           assert 'flm-v07-dev-computer' not in launcher
-          assert 'flm-v07-semantic-text-r5' in launcher
+          assert 'flm-v07-semantic-text-r6' in launcher
           from flm.train_v07 import ShuffledStartPool, BalancedSampler
 
           starts=np.arange(100,dtype=np.int64)
@@ -257,7 +257,7 @@ jobs:
           assert gpu['id']=='test-owner/falcon-flm-v07-semantic-interface-gpu',gpu
           assert gpu['title']=='Falcon FLM v07 Semantic Interface Transformer',gpu
           assert gpu['enable_gpu'] is True
-          assert gpu['dataset_sources']==['test-owner/flm-v07-semantic-text-r5'],gpu
+          assert gpu['dataset_sources']==['test-owner/flm-v07-semantic-text-r6'],gpu
           assert 'flm-v07-dev-computer' not in json.dumps(gpu)
 
           wrapper=Path('/tmp/v07-semantic-interface/train_interface_v07.py').read_text()
@@ -275,7 +275,7 @@ jobs:
           ):
               assert key in wrapper and value in wrapper,(key,value)
 
-          from flm.interface_agent import _copy_similarity,_verbatim_requested
+          from flm.interface_agent import _copy_similarity,_verbatim_requested,_candidate_preserves_core
           assert _copy_similarity("aynı veri satırı","aynı veri satırı")>0.99
           assert _copy_similarity("kaynak veri","özgün biçimde üretilmiş cevap")<0.86
           assert _verbatim_requested("Bunu aynen kopyala") is True
@@ -288,6 +288,9 @@ jobs:
           assert 'train_computer_use' not in trainer
           assert 'train_text_pretrain' not in trainer
           assert '"transformer_count":1' in trainer
+          assert 'semantic_data' in trainer and 'semantic_mask' in trainer
+          assert '"semantic":0.50' in trainer
+          assert 'mixed_sft-r6' in trainer
 
           from flm.models.interface_transformer import InterfaceConfig,InterfaceTransformer
           cfg=InterfaceConfig(
@@ -348,6 +351,17 @@ jobs:
           })
           synth=FLMCore().execute(synthesis).operation_results[0]
           assert synth['ok'] and len(synth['facts'])==2
+          synth_response=FLMCore().execute(synthesis)
+          assert _candidate_preserves_core(
+              "Ada is a cat and a mammal.","Tell me about Ada",synthesis,synth_response
+          )
+          assert not _candidate_preserves_core(
+              '<|core_result|>{"subject":"Ada"}<|core_end|>',
+              "Tell me about Ada",synthesis,synth_response
+          )
+          assert not _candidate_preserves_core(
+              "Ada is a cat.","Tell me about Ada",synthesis,synth_response
+          )
 
           from flm.core.code_engine import CodeEngine
           graph=CodeEngine().analyze_python('import os\ndef f(x):\n    return print(x)\n')
@@ -424,6 +438,7 @@ jobs:
           assert first_final!=second_final,(first_final,second_final)
 
           assert len(language_seen)==SEMANTIC_MODES*2,language_seen
+          assert SEMANTIC_MODES>=16
           assert seen_ops=={
               'ARITHMETIC','ANALYZE_CODE','STATE_PLAN','UI_PLAN','VERIFY',
               'IDENTITY','SYNTHESIZE_FACTS'
@@ -434,8 +449,8 @@ jobs:
           assert 'falcon-flm-v07-semantic-interface-gpu' in gate
           assert 'FLM v0.7 DEV Text Repair' in gate
           assert 'flm-v07-dev-computer' not in gate
-          assert 'flm-v07-semantic-text-r5' in gate
-          assert "data_revision',0))>=5" in gate
+          assert 'flm-v07-semantic-text-r6' in gate
+          assert "data_revision',0))>=6" in gate
           assert 'if: ${{ false }}' not in gate
           print('SEMANTIC_FLM_SINGLE_TRANSFORMER_PIPELINE_OK')
           PY
