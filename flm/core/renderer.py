@@ -16,16 +16,15 @@ def _is_turkish(text: str) -> bool:
 
 def _tr_ablative(value) -> str:
     text=str(value)
-    last=None
-    for ch in reversed(text.casefold()):
-        if ch in "aeıioöuü":
-            last=ch
-            break
-    suffix="dan" if last in "aıou" else "den"
     if text and text[-1].isdigit():
-        # Spoken-number harmony for the most common final digits.
-        digit=text[-1]
-        suffix="dan" if digit in "469" else "den"
+        # Turkish suffix follows the spoken final digit: dokuzdan, üçten, yediden...
+        suffix={
+            "0":"dan","1":"den","2":"den","3":"ten","4":"ten",
+            "5":"ten","6":"dan","7":"den","8":"den","9":"dan",
+        }[text[-1]]
+        return f"{text}'{suffix}"
+    last=next((ch for ch in reversed(text.casefold()) if ch in "aeıioöuü"),None)
+    suffix="dan" if last in {"a","ı","o","u"} else "den"
     return f"{text}'{suffix}"
 
 
