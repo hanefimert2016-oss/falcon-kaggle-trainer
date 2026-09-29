@@ -128,12 +128,29 @@ def _candidate_preserves_core(candidate:str,prompt:str,program:Program,result,*,
             facts=op_result.get("facts") or []
             if entity and entity not in low:
                 return False
-            values=[]
+            type_aliases={
+                "cat":("cat","kedi"),"dog":("dog","köpek","kopek"),
+                "bird":("bird","kuş","kus"),"mammal":("mammal","memeli"),
+                "vehicle":("vehicle","araç","arac"),"computer":("computer","bilgisayar"),
+                "program":("program",),"file":("file","dosya"),
+                "human":("human","insan"),"animal":("animal","hayvan"),
+            }
             for fact in facts:
-                args=[str(x).casefold() for x in (fact.get("args") or [])]
-                values.extend(args[1:])
-            if values and not any(v and v in low for v in set(values)):
-                return False
+                pred=str(fact.get("predicate") or "")
+                args=[str(x) for x in (fact.get("args") or [])]
+                if pred=="IsA" and len(args)>=2:
+                    canonical=args[1].casefold()
+                    accepted=type_aliases.get(canonical,(canonical,))
+                    if not any(x in low for x in accepted):
+                        return False
+                elif pred=="WarmBlooded":
+                    if not any(x in low for x in ("sıcakkanlı","sicakkanli","warm-blooded","warm blooded")):
+                        return False
+                elif pred in {"LocatedIn","TallerThan"} and len(args)>=2:
+                    if args[1].casefold() not in low:
+                        return False
+                elif len(args)>=2 and args[1].casefold() not in low:
+                    return False
             if any(k in low for k in ('"subject"','"predicate"','"args"')):
                 return False
             # Positive structured facts must not be flipped by the renderer.
