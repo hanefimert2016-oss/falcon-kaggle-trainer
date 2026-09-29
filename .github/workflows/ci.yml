@@ -45,7 +45,7 @@ jobs:
           assert 'flm.train_interface_v07' in launcher
           assert 'python -u -m flm.train_v07' not in launcher
           assert 'flm-v07-dev-computer' not in launcher
-          assert 'flm-v07-semantic-text-r8' in launcher
+          assert 'flm-v07-zero-train-data-r1' in launcher
           from flm.train_v07 import ShuffledStartPool, BalancedSampler
 
           starts=np.arange(100,dtype=np.int64)
@@ -241,11 +241,12 @@ jobs:
             flm/core/ui_engine.py \
             flm/core_agent.py \
             flm/data/semantic_curriculum.py \
+            flm/data/prepare_zero_train_data.py \
             scripts/build_v07_tokenizer_kernel.py
 
           python scripts/build_v07_tokenizer_kernel.py \
             --owner test-owner \
-            --dataset flm-v07-semantic-text-r8 \
+            --dataset flm-v07-zero-train-data-r1 \
             --out /tmp/v07-tokenizer-only
           python -m py_compile /tmp/v07-tokenizer-only/train_tokenizer.py
 
@@ -257,7 +258,7 @@ jobs:
           assert meta['id']=='test-owner/falcon-flm-v07-tokenizer-only',meta
           assert meta['title']=='Falcon FLM v07 Tokenizer Only',meta
           assert meta['enable_gpu'] is False,meta
-          assert meta['dataset_sources']==['test-owner/flm-v07-semantic-text-r8'],meta
+          assert meta['dataset_sources']==['test-owner/flm-v07-zero-train-data-r1'],meta
           assert meta['model_sources']==[],meta
           wrapper=Path('/tmp/v07-tokenizer-only/train_tokenizer.py').read_text()
           assert 'BpeTrainer' in wrapper
@@ -398,6 +399,27 @@ jobs:
           memory_text=saved.read_text(encoding='utf-8')
           assert raw_source not in memory_text
           assert 'Ada' in memory_text and 'Cat' in memory_text and 'Mammal' in memory_text
+
+          triple={
+              's_id':'Q31','r_id':'P36','e_id':'Q239',
+              's_label':'Belgium','r_label':'capital','e_label':'City of Brussels',
+          }
+          kcompiler.ingest(kmem,[triple])
+          kmem.add_entity_alias('Belçika','Q31',display='Belgium')
+          assert kmem.resolve_entity('Belçika')=='Q31'
+          assert kmem.display_entity('Q239')=='City of Brussels'
+          triple_core=FLMCore(kmem)
+          triple_program=Program.from_dict({
+              'operations':[{'kind':'DESCRIBE_ENTITY','args':{'entity':'Belçika'}}]
+          })
+          triple_result=triple_core.execute(triple_program)
+          op=triple_result.operation_results[0]
+          assert op['ok'] and op['canonical_entity']=='Q31',op
+          assert any(
+              x.get('predicate_label')=='capital'
+              and 'City of Brussels' in (x.get('args') or [])
+              for x in op['facts']
+          ),op
 
           from flm.core.code_engine import CodeEngine
           graph=CodeEngine().analyze_python('import os\ndef f(x):\n    return print(x)\n')
@@ -540,11 +562,16 @@ jobs:
 
           gate=Path('.github/workflows/flm-v07-dev-training-gate.yml').read_text()
           assert 'falcon-flm-v07-tokenizer-only' in gate
-          assert 'FLM v0.7 DEV Text Repair' in gate
-          assert 'flm-v07-semantic-text-r8' in gate
+          assert 'FLM v0.7 Zero-Train Data' in gate
+          assert 'flm-v07-zero-train-data-r1' in gate
           assert 'build_v07_tokenizer_kernel.py' in gate
           assert 'falcon-flm-v07-semantic-interface-gpu' not in gate
           assert '--accelerator NvidiaTeslaT4' not in gate
+          data_builder=Path('flm/data/prepare_zero_train_data.py').read_text()
+          for forbidden in ('train_tokenizer(', 'InterfaceTransformer(', 'ByteCausalLM(', 'backward('):
+              assert forbidden not in data_builder,forbidden
+          assert 'tokenizer_trained_here":False' in data_builder
+          assert 'model_training":False' in data_builder
           print('SEMANTIC_FLM_ZERO_TRAIN_PIPELINE_OK')
           PY
 
