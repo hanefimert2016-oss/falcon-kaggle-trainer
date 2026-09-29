@@ -76,6 +76,7 @@ jobs:
             --xlam-tool-rows 100000 \
             --tool100k-rows 100000 \
             --coder-agent-rows 6000 \
+            --coder-agent-extra-rows 5000 \
             --semantic-sft-rows 1200000
 
       - name: Verify massive text scale
@@ -117,6 +118,13 @@ jobs:
           assert s['coder_sft_agentic']['real_rows'] >= 3800, s['coder_sft_agentic']
           assert s['coder_sft_agentic']['synthetic_rows'] >= 1500, s['coder_sft_agentic']
           assert s['coder_sft_agentic']['plan_turns'] >= 12000, s['coder_sft_agentic']
+          nebius=s['coder_sft_agentic_nebius']
+          assert nebius['rows'] >= 4500, nebius
+          assert nebius.get('resolved_only') is True, nebius
+          assert nebius['plan_turns'] >= 9000, nebius
+          assert nebius['tool_turns'] >= 4500, nebius
+          assert int(sem.get('identity_variants_tr',0)) >= 216, sem
+          assert int(sem.get('identity_variants_en',0)) >= 216, sem
           assert s['coder_sft']['supervised_tokens'] >= 75_000_000, s['coder_sft']
           assert s['tokenizer']['vocab_size'] >= 30000
           special=s['tokenizer']['special_ids']
