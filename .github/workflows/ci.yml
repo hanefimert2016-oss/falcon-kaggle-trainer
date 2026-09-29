@@ -354,6 +354,8 @@ jobs:
           identity_prog=compiler.identity_canonical('Sen kimsin?')
           identity=FLMCore().execute(identity_prog).operation_results[0]
           assert identity['kind']=='IDENTITY' and identity['name']=='FLM'
+          working_identity=compiler.identity_canonical('Nasıl çalışıyorsun?')
+          assert working_identity.operations[0].kind=='IDENTITY'
           synthesis=Program.from_dict({
               'operations':[{'kind':'SYNTHESIZE_FACTS','args':{'facts':[
                   {'subject':'Ada','predicate':'type','object':'cat'},
@@ -372,6 +374,38 @@ jobs:
           )
           assert not _candidate_preserves_core(
               "Ada is a cat.","Tell me about Ada",synthesis,synth_response
+          )
+          assert not _candidate_preserves_core(
+              "Ada bir kedi değildir ve memelidir.","Ada hakkında bilgi ver",
+              synthesis,synth_response
+          )
+
+          # Regression: CoreResponse.memory_facts is an integer count, so
+          # anti-copy inspection must never try to iterate it.
+          from flm.interface_agent import _core_source_texts
+          assert isinstance(synth_response.memory_facts,int)
+          assert isinstance(_core_source_texts(synthesis,synth_response),list)
+
+          # Regression: canonical memory values may be rendered through natural
+          # Turkish aliases without being rejected as semantic drift.
+          memory_core=FLMCore()
+          memory_core.execute(Program.from_dict({
+              'facts':[
+                  {'predicate':'IsA','args':['Ada','Cat']},
+                  {'predicate':'IsA','args':['Ada','Mammal']},
+              ]
+          }))
+          describe=Program.from_dict({
+              'operations':[{'kind':'DESCRIBE_ENTITY','args':{'entity':'Ada'}}]
+          })
+          describe_result=memory_core.execute(describe)
+          assert _candidate_preserves_core(
+              "Ada memeliler sınıfında yer alan bir kedidir.",
+              "Ada hakkında ne biliyorsun?",describe,describe_result
+          )
+          assert not _candidate_preserves_core(
+              "Ada bir kedi değildir.",
+              "Ada hakkında ne biliyorsun?",describe,describe_result
           )
 
           from flm.core.code_engine import CodeEngine
