@@ -32,7 +32,7 @@ jobs:
       - name: Unit tests
         run: pytest -q
 
-      - name: FLM v0.7 local GPU launcher and resume regression
+      - name: FLM v0.7 zero-train launcher and legacy component regression
         run: |
           set -euo pipefail
           bash -n train-v07-local.sh
@@ -42,10 +42,13 @@ jobs:
           import numpy as np
           from pathlib import Path
           launcher=Path('scripts/train_v07_local_gpu.sh').read_text()
-          assert 'flm.train_interface_v07' in launcher
+          assert 'flm.train_interface_v07' not in launcher
           assert 'python -u -m flm.train_v07' not in launcher
-          assert 'flm-v07-dev-computer' not in launcher
-          assert 'flm-v07-zero-train-data-r1' in launcher
+          assert 'torch' not in launcher
+          assert 'gpu_profile' not in launcher
+          assert 'scripts/eval_semantic_core.py' in launcher
+          assert 'neural_model_training=false' in launcher
+          assert 'checkpoint_required=false' in launcher
           from flm.train_v07 import ShuffledStartPool, BalancedSampler
 
           starts=np.arange(100,dtype=np.int64)
