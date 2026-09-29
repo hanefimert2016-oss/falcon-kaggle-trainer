@@ -62,6 +62,27 @@ class DeterministicRenderer:
                     )
                 return self._choose_nonrepeating("tr" if tr else "en",variants)
 
+            if kind=="SYNTHESIZE_FACTS":
+                facts=item.get("facts") or []
+                if not facts:
+                    return "Kullanılabilir bilgi yok." if tr else "No usable facts."
+                subject=str(facts[0].get("subject") or "Bu varlık")
+                values=[str(x.get("object") or "") for x in facts if x.get("object")]
+                values=list(dict.fromkeys(values))
+                if tr:
+                    variants=(
+                        f"{subject} hakkında doğrulanan bilgiler: {', '.join(values)}.",
+                        f"{subject}, {', '.join(values)} özellikleriyle tanımlanıyor.",
+                        f"Özetle {subject} için geçerli bilgiler {', '.join(values)}.",
+                    )
+                    return self._choose_nonrepeating("synth-tr:"+subject,variants)
+                variants=(
+                    f"The verified facts about {subject} are: {', '.join(values)}.",
+                    f"{subject} is described by these verified facts: {', '.join(values)}.",
+                    f"In short, the Core associates {subject} with {', '.join(values)}.",
+                )
+                return self._choose_nonrepeating("synth-en:"+subject,variants)
+
             if kind=="ARITHMETIC":
                 return (f"Sonuç: {item.get('value')}." if tr else f"Result: {item.get('value')}.")
 
