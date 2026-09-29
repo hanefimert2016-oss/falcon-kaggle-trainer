@@ -466,9 +466,11 @@ jobs:
           second_ir=next(x['content'] for x in second if x['role']=='assistant' and '<|semantic_ir|>' in x['content'])
           first_final=next(x['content'] for x in first if x['role']=='assistant' and '<|final|>' in x['content'])
           second_final=next(x['content'] for x in second if x['role']=='assistant' and '<|final|>' in x['content'])
-          assert first_user==second_user,(first_user,second_user)
+          # Renderer-only rows deliberately hide/rewrite the user source wording.
+          # Equality belongs to semantic IR/Core meaning, not the surface prompt.
           assert first_ir==second_ir,(first_ir,second_ir)
           assert first_final!=second_final,(first_final,second_final)
+          assert first_user!=second_user,(first_user,second_user)
 
           # Both TR and EN receive compiler-supervised and source-hidden
           # renderer-only rows; render-only context never exposes raw source wording.
