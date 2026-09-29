@@ -27,7 +27,7 @@ jobs:
     env:
       KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
       KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
-      TEXT_REF: ${{ vars.KAGGLE_OWNER }}/flm-v07-semantic-text-r5
+      TEXT_REF: ${{ vars.KAGGLE_OWNER }}/flm-v07-semantic-text-r6
       GPU_REF: ${{ vars.KAGGLE_OWNER }}/falcon-flm-v07-semantic-interface-gpu
     steps:
       - uses: actions/checkout@v4
@@ -40,7 +40,7 @@ jobs:
 
       - run: python -m pip install "kaggle>=2.2.1"
 
-      - name: Verify Semantic FLM text r5 dataset
+      - name: Verify Semantic FLM text r6 dataset
         shell: bash
         run: |
           set -euo pipefail
@@ -48,7 +48,7 @@ jobs:
           mkdir -p /tmp/v07-gate-data/text
 
           kaggle datasets files "$TEXT_REF" --page-size 100 | tee /tmp/v07-text-files.txt
-          for F in tokenizer.json main_train.u16 coder_train.u16 main_sft_tokens.u16 main_sft_mask.u8 coder_sft_tokens.u16 coder_sft_mask.u8 sources.json; do
+          for F in tokenizer.json main_train.u16 coder_train.u16 main_sft_tokens.u16 main_sft_mask.u8 semantic_sft_tokens.u16 semantic_sft_mask.u8 coder_sft_tokens.u16 coder_sft_mask.u8 sources.json; do
             grep -Fq "$F" /tmp/v07-text-files.txt
           done
           kaggle datasets download -d "$TEXT_REF" -f sources.json -p /tmp/v07-gate-data/text -q --force
@@ -59,7 +59,7 @@ jobs:
           p=Path('/tmp/v07-gate-data/text/sources.json')
           t=json.loads(p.read_text(encoding='utf-8'))
           assert t.get('pipeline_version')=='v0.7-dev-text'
-          assert int(t.get('data_revision',0))>=5,t.get('data_revision')
+          assert int(t.get('data_revision',0))>=6,t.get('data_revision')
           s=t.get('stats') or {}
           assert int((s.get('main') or {}).get('tokens',0))>=1_000_000_000
           assert int((s.get('coder') or {}).get('tokens',0))>=175_000_000
@@ -68,6 +68,7 @@ jobs:
           sem=s.get('semantic_interface_sft') or {}
           assert int(sem.get('rows',0))>=550_000
           assert sem.get('anti_copy_verified') is True
+          assert int((s.get('semantic_sft') or {}).get('supervised_tokens',0))>=120_000_000
           langs=sem.get('language_counts') or {}
           assert int(langs.get('tr',0))>=290_000 and int(langs.get('en',0))>=290_000
           modes=sem.get('mode_counts') or {}
@@ -91,7 +92,7 @@ jobs:
           owner=m['id'].split('/')[0]
           assert m['id']==f'{owner}/falcon-flm-v07-semantic-interface-gpu',m
           assert m['title']=='Falcon FLM v07 Semantic Interface Transformer',m
-          assert m['dataset_sources']==[f'{owner}/flm-v07-semantic-text-r5'],m
+          assert m['dataset_sources']==[f'{owner}/flm-v07-semantic-text-r6'],m
           assert m['kernel_sources']==[],m
           assert m['enable_gpu'] is True
           assert m['enable_internet'] is False
