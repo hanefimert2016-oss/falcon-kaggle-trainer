@@ -30,14 +30,14 @@ def ensure_text_dataset(ref:str,dest:Path)->None:
         print("dataset_ready",ref,dest,flush=True)
         return
     if not (os.environ.get("KAGGLE_API_TOKEN") or Path.home().joinpath(".kaggle/kaggle.json").is_file()):
-        raise SystemExit("KAGGLE_API_TOKEN or ~/.kaggle/kaggle.json is required to download FLM r4 text data.")
+        raise SystemExit("KAGGLE_API_TOKEN or ~/.kaggle/kaggle.json is required to download FLM r7 semantic text data.")
     if dest.exists():
         import shutil
         shutil.rmtree(dest)
     dest.mkdir(parents=True,exist_ok=True)
     run(sys.executable,"-m","kaggle","datasets","download","-d",ref,"-p",str(dest),"--unzip")
     if not valid_revision(dest):
-        raise RuntimeError(f"downloaded dataset is not FLM semantic r4: {ref}")
+        raise RuntimeError(f"downloaded dataset is not FLM semantic r7: {ref}")
 
 
 def gpu_profile():
@@ -57,7 +57,7 @@ def gpu_profile():
 def main()->int:
     ap=argparse.ArgumentParser()
     ap.add_argument("--drive-root",default="/content/drive/MyDrive/FalconFLM")
-    ap.add_argument("--data-root",default="/content/flm-v07-r4-data")
+    ap.add_argument("--data-root",default="/content/flm-v07-r7-data")
     ap.add_argument("--owner",default=os.environ.get("KAGGLE_OWNER","mertsigma"))
     ap.add_argument("--skip-drive-mount",action="store_true")
     args=ap.parse_args()
