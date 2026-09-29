@@ -22,7 +22,7 @@ def valid_revision(path:Path)->bool:
         obj=json.loads(meta.read_text(encoding="utf-8"))
     except Exception:
         return False
-    return obj.get("pipeline_version")=="v0.7-dev-text" and int(obj.get("data_revision",0))>=6
+    return obj.get("pipeline_version")=="v0.7-dev-text" and int(obj.get("data_revision",0))>=7
 
 
 def ensure_text_dataset(ref:str,dest:Path)->None:
