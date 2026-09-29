@@ -48,7 +48,7 @@ def resolve_text_root(version: str = "v0.7-dev-text") -> Path:
             obj=json.loads(manifest.read_text(encoding="utf-8"))
         except Exception:
             continue
-        if obj.get("pipeline_version")==version and int(obj.get("data_revision",0))>=7:
+        if obj.get("pipeline_version")==version and int(obj.get("data_revision",0))>=8:
             return manifest.parent
     raise SystemExit(f"could not locate {version} data revision 7+")
 
@@ -325,7 +325,7 @@ def train_mixed_sft(
     if resume_enabled() and resume.is_file():
         ck=torch.load(resume,map_location=runtime.device,weights_only=False)
         if ck.get("config")!=cfg.__dict__ or ck.get("stage")!="mixed_sft-r8":
-            raise RuntimeError("mixed SFT r7 resume config/stage mismatch")
+            raise RuntimeError("mixed SFT r8 resume config/stage mismatch")
         model.load_state_dict(ck["model"])
         opt.load_state_dict(ck["optimizer"]); optimizer_to_device(opt,runtime.device)
         if scaler.is_enabled() and ck.get("scaler"):
