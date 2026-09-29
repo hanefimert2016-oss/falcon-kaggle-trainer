@@ -43,6 +43,19 @@ class DeterministicRenderer:
         if response.operation_results:
             item=response.operation_results[0]
             kind=item.get("kind")
+            if kind=="VERIFY":
+                checks=item.get("checks") or []
+                failed=[x for x in checks if not x.get("ok",False)]
+                if failed:
+                    names=", ".join(str(x.get("name") or "check") for x in failed)
+                    return (
+                        f"Doğrulama geçmedi; başarısız kontroller: {names}."
+                        if tr else
+                        f"Verification failed; failing checks: {names}."
+                    )
+                if item.get("ok",False):
+                    return "Tüm kontroller geçti." if tr else "All checks passed."
+
             if not item.get("ok",False):
                 msg=item.get("message") or item.get("error") or "unknown error"
                 return (f"İşlem başarısız: {msg}" if tr else f"Operation failed: {msg}")
@@ -54,6 +67,14 @@ class DeterministicRenderer:
                         "Adım FLM. Tek bir dil arayüzü modeliyle çalışan, asıl muhakemeyi Semantic Core'da yapan bir yapay zekâ asistanıyım.",
                         "Ben FLM adlı yapay zekâ asistanıyım; dili arayüz modeli işler, planlama ve doğrulama gibi işleri ise çekirdeğim yürütür.",
                         "FLM'im. Amacım soruları anlamak, çekirdek araçlarla sonuç üretmek ve bunu sana doğal biçimde aktarmak.",
+                        "Bana FLM diyebilirsin. Dil tarafını tek bir Transformer işler; hesaplama, mantık ve doğrulama Semantic Core'da yürür.",
+                        "Ben FLM. Soruyu önce anlam yapısına çevirir, ardından çekirdekteki araçlarla doğrulanmış bir sonuç üretirim.",
+                        "FLM adlı bir AI asistanıyım. Ezberlenmiş tek bir cevap vermek yerine Core sonucunu kullanarak cevabı yeniden kurarım.",
+                        "Kısaca FLM'im: dil için bir arayüz modelim, yapılandırılmış muhakeme için de eğitim gerektirmeyen bir çekirdeğim var.",
+                        "Benim adım FLM. İsteğini yorumlar, gereken işlemleri Semantic Core'da çalıştırır ve sonucu doğal dille ifade ederim.",
+                        "FLM'im. Tek bir eğitilebilir arayüz ile semantik hafıza, planlama ve doğrulamayı bir arada kullanan bir yapay zekâ asistanıyım.",
+                        "Ben FLM adlı asistanım; ne istediğini arayüzden anlar, sonucu çekirdekte hesaplayıp farklı ama tutarlı biçimlerde anlatabilirim.",
+                        "Adım FLM. Cevaplarımın anlamını Core belirler; cümleleri ise bağlama uygun biçimde yeniden oluştururum.",
                     )
                 else:
                     variants=(
@@ -61,6 +82,14 @@ class DeterministicRenderer:
                         "My name is FLM. I'm an AI assistant whose reasoning is handled by a Semantic Core while one interface model handles language.",
                         "I'm FLM: an AI assistant designed to understand requests, reason through a Semantic Core, and return useful answers.",
                         "I'm FLM. I use one language interface model, while planning, verification, and other reasoning live in my Core.",
+                        "You can call me FLM. One Transformer handles language, while structured logic and verification run in the Semantic Core.",
+                        "I'm FLM. I translate requests into semantic structure, execute the relevant Core operations, and then phrase the result naturally.",
+                        "I'm an AI assistant named FLM. Rather than replaying one memorized sentence, I render answers from verified Core meaning.",
+                        "In short, I'm FLM: one trainable language interface paired with a training-free structured reasoning Core.",
+                        "My name is FLM. I interpret your request, let the Semantic Core do the structured work, and explain the verified result.",
+                        "I'm FLM, combining a language interface with semantic memory, planning, tools, and verification in the Core.",
+                        "I'm the FLM assistant. The Core fixes the meaning of the answer while the interface can express it in different faithful ways.",
+                        "I'm FLM. My answers are generated from Core-verified meaning rather than copied from a fixed response string.",
                     )
                 return self._choose_nonrepeating("tr" if tr else "en",variants)
 
@@ -107,9 +136,6 @@ class DeterministicRenderer:
                 actions=item.get("actions") or []
                 rendered=[str(x.get("op"))+(f"({x.get('target_id')})" if x.get("target_id") else "") for x in actions]
                 return (f"Eylemler: {' -> '.join(rendered)}." if tr else f"Actions: {' -> '.join(rendered)}.")
-
-            if kind=="VERIFY":
-                return ("Tüm kontroller geçti." if tr else "All checks passed.")
 
         if response.memory_facts or response.memory_rules:
             return "Bilgi kaydedildi." if tr else "Knowledge recorded."
