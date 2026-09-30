@@ -1,5 +1,5 @@
 <resources>
     <string name="app_name">FLM Android</string>
-    <string name="accessibility_description">FLM'nin yalnızca sizin verdiğiniz komutlarla ekrandaki öğeleri okumasına, dokunmasına, kaydırmasına ve metin yazmasına izin verir.</string>
+    <string name="accessibility_description">FLM\'nin yalnızca sizin verdiğiniz komutlarla ekrandaki öğeleri okumasına, dokunmasına, kaydırmasına ve metin yazmasına izin verir.</string>
     <string name="accessibility_label">FLM Telefon Kontrolü</string>
 </resources>
