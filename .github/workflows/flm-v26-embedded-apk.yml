@@ -1,0 +1,57 @@
+name: Build FLM v2.6 Embedded Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - flm-v2.6-apk-embedded
+    paths:
+      - 'flm-android-v2.6/**'
+      - '.github/workflows/flm-v26-embedded-apk.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: flm-android-v2.6
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Prepare Android SDK
+        run: |
+          SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -type f -name sdkmanager | head -n 1)"
+          test -n "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" 'platforms;android-35' 'build-tools;35.0.0'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Compile embedded APK
+        run: gradle :app:assembleDebug --stacktrace
+
+      - name: Verify APK contents
+        run: |
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          unzip -l "$APK" | grep -E 'classes.dex'
+          unzip -l "$APK" | grep -E 'lib/arm64-v8a/.+python|lib/arm64-v8a/.+chaquopy'
+          cp "$APK" FLM-v2.6-Android-Embedded-debug.apk
+          sha256sum FLM-v2.6-Android-Embedded-debug.apk | tee FLM-v2.6-Android-Embedded-debug.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FLM-v2.6-Android-Embedded
+          path: |
+            flm-android-v2.6/FLM-v2.6-Android-Embedded-debug.apk
+            flm-android-v2.6/FLM-v2.6-Android-Embedded-debug.sha256
