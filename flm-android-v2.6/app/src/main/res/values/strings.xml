@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">FLM</string>
+    <string name="accessibility_label">FLM Telefon Kontrolü</string>
+    <string name="accessibility_description">FLM, yalnızca sizin onayladığınız telefon kontrol adımlarında ekrandaki öğeleri okuyabilir, dokunabilir, kaydırabilir ve metin yazabilir.</string>
+</resources>
