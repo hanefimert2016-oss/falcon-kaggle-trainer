@@ -1,4 +1,4 @@
-name: Factory Robot 3D - Kaggle T4
+name: Factory Robot 3D - Kaggle T4 with CPU Fallback
 
 on:
   push:
@@ -75,19 +75,32 @@ jobs:
       - name: Authenticate
         run: kaggle kernels list --mine --page-size 1
 
-      - name: Clean up our earlier robot test kernel
-        shell: bash
-        run: |
-          set +e
-          kaggle kernels delete "$KAGGLE_OWNER/factory-robot-3d" -y
-          sleep 5
-          exit 0
-
-      - name: Push 3D simulation to Kaggle T4
+      - name: Push 3D simulation to Kaggle (T4 first, CPU fallback)
         shell: bash
         run: |
           set -euo pipefail
-          kaggle kernels push -p factory_robot_3d --accelerator "$KAGGLE_ACCELERATOR" --timeout 1800
+          set +e
+          PUSH_LOG="$(kaggle kernels push -p factory_robot_3d --accelerator "$KAGGLE_ACCELERATOR" --timeout 1800 2>&1)"
+          RC=$?
+          set -e
+          echo "$PUSH_LOG"
+          if echo "$PUSH_LOG" | grep -q "Maximum batch GPU session count"; then
+            echo "Kaggle T4 slots are full; switching this exact simulation to Kaggle CPU."
+            python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path("factory_robot_3d/kernel-metadata.json")
+          d = json.loads(p.read_text())
+          d["enable_gpu"] = False
+          d.pop("machine_shape", None)
+          p.write_text(json.dumps(d, indent=2) + "\n")
+          print(json.dumps(d, indent=2))
+          PY
+            kaggle kernels push -p factory_robot_3d --timeout 1800
+          elif [ "$RC" -ne 0 ]; then
+            echo "Kaggle push failed with code $RC"
+            exit "$RC"
+          fi
 
       - name: Wait for simulation completion
         shell: bash
