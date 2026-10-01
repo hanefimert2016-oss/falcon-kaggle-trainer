@@ -75,6 +75,14 @@ jobs:
       - name: Authenticate
         run: kaggle kernels list --mine --page-size 1
 
+      - name: Clean up our earlier robot test kernel
+        shell: bash
+        run: |
+          set +e
+          kaggle kernels delete "$KAGGLE_OWNER/factory-robot-3d" -y
+          sleep 5
+          exit 0
+
       - name: Push 3D simulation to Kaggle T4
         shell: bash
         run: |
