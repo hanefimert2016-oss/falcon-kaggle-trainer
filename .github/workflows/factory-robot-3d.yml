@@ -74,9 +74,23 @@ jobs:
         run: |
           kaggle kernels push             -p kernel_factory_robot             --accelerator "$ACCELERATOR"             --timeout 3600
 
-      - name: Show final kernel status
-        if: always()
-        run: kaggle kernels status "$KAGGLE_OWNER/$KERNEL_SLUG" || true
+      - name: Wait for Kaggle 3D simulation to finish
+        run: |
+          complete=0
+          for i in $(seq 1 240); do
+            status="$(kaggle kernels status "$KAGGLE_OWNER/$KERNEL_SLUG" 2>&1 || true)"
+            echo "[$i] $status"
+            if echo "$status" | grep -q "COMPLETE"; then
+              complete=1
+              break
+            fi
+            if echo "$status" | grep -Eq "ERROR|CANCELLED|FAILED"; then
+              echo "Kaggle simulation failed"
+              exit 1
+            fi
+            sleep 10
+          done
+          test "$complete" = "1" || (echo "Timed out waiting for Kaggle simulation" && exit 1)
 
       - name: Download rendered video and telemetry
         run: |
