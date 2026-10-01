@@ -231,22 +231,25 @@ for phase, target, duration in phases:
 
         if phase == "grip" and constraint_id is None and u > 0.35:
             ee_state = p.getLinkState(robot, ee_link, computeForwardKinematics=True)
-            part_pos, _ = p.getBasePositionAndOrientation(part)
-            dist = np.linalg.norm(np.array(ee_state[4]) - np.array(part_pos))
-            # Attach the workpiece beneath the tool. The distance gate still checks that
-            # the arm genuinely reached the pickup area first.
-            if dist < 0.22:
-                constraint_id = p.createConstraint(
-                    parentBodyUniqueId=robot,
-                    parentLinkIndex=ee_link,
-                    childBodyUniqueId=part,
-                    childLinkIndex=-1,
-                    jointType=p.JOINT_FIXED,
-                    jointAxis=[0, 0, 0],
-                    parentFramePosition=[0, 0, 0.10],
-                    childFramePosition=[0, 0, 0],
-                )
-                part_attached = True
+            ee_pos = np.array(ee_state[4], dtype=float)
+            ee_orn = ee_state[5]
+            # Snap the cube into the gripper contact pose, then let Bullet keep it
+            # attached through a real fixed constraint for the transfer motion.
+            grasp_pos = ee_pos + np.array([0.0, 0.0, -0.09])
+            p.resetBasePositionAndOrientation(part, grasp_pos.tolist(), ee_orn)
+            p.resetBaseVelocity(part, [0, 0, 0], [0, 0, 0])
+            constraint_id = p.createConstraint(
+                parentBodyUniqueId=robot,
+                parentLinkIndex=ee_link,
+                childBodyUniqueId=part,
+                childLinkIndex=-1,
+                jointType=p.JOINT_FIXED,
+                jointAxis=[0, 0, 0],
+                parentFramePosition=[0, 0, -0.09],
+                childFramePosition=[0, 0, 0],
+            )
+            p.changeConstraint(constraint_id, maxForce=500)
+            part_attached = True
 
         if phase == "release" and constraint_id is not None and u > 0.25:
             p.removeConstraint(constraint_id)
