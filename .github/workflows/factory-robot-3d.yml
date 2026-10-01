@@ -3,6 +3,9 @@ name: Factory Robot 3D T4 Simulation
 on:
   push:
     branches: [factory-robot-3d]
+    paths:
+      - 'factory_robot_3d/**'
+      - '.factory-robot-run-trigger'
   workflow_dispatch:
 
 permissions:
