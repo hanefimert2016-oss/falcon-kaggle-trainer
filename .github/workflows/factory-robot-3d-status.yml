@@ -2,9 +2,9 @@ name: Factory Robot 3D - Kaggle Status Probe
 
 on:
   push:
-    branches: [factory-robot-3d]
+    branches: [factory-robot-3d-t4-simulation]
     paths:
-      - '.github/workflows/factory-robot-3d-status.yml'
+      - '.github/workflows/factory-robot-3d-t4-simulation-status.yml'
       - '.factory-robot-status-trigger'
   workflow_dispatch:
 
@@ -27,6 +27,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          kaggle kernels status "$KAGGLE_OWNER/factory-robot-3d"
+          kaggle kernels status "$KAGGLE_OWNER/factory-robot-3d-t4-simulation"
           echo "--- recent log tail ---"
-          kaggle kernels logs "$KAGGLE_OWNER/factory-robot-3d" 2>&1 | tail -n 80 || true
+          kaggle kernels logs "$KAGGLE_OWNER/factory-robot-3d-t4-simulation" 2>&1 | tail -n 80 || true
