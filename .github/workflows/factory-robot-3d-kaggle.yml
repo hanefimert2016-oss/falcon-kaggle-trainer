@@ -1,15 +1,7 @@
 name: Factory Robot 3D - Kaggle T4
 
 on:
-  push:
-    branches:
-      - factory-robot-3d
-    paths:
-      - 'factory_robot_3d/**'
-      - '.github/workflows/factory-robot-3d-kaggle.yml'
-      - '.factory-robot-3d-trigger'
   workflow_dispatch:
-
 permissions:
   contents: read
 
