@@ -1,0 +1,57 @@
+name: Factory Robot 3D - GitHub Render
+
+on:
+  push:
+    branches:
+      - factory-robot-3d-gh-render
+    paths:
+      - 'factory_robot_3d/**'
+      - '.github/workflows/factory-robot-3d-gh-render.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Validate source
+        run: python -m py_compile factory_robot_3d/simulate.py
+
+      - name: Prepare Kaggle-compatible output path
+        shell: bash
+        run: |
+          sudo mkdir -p /kaggle/working
+          sudo chown -R "$USER":"$USER" /kaggle
+
+      - name: Run 3D factory robot simulation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python factory_robot_3d/simulate.py
+
+      - name: Verify render outputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          find /kaggle/working/factory_robot_3d_output -maxdepth 2 -type f -printf '%p %s bytes\n'
+          test -f /kaggle/working/factory_robot_3d_output/factory_robot_3d.mp4
+          test -f /kaggle/working/factory_robot_3d_output/summary.json
+          test -f /kaggle/working/factory_robot_3d_output/telemetry.csv
+          cat /kaggle/working/factory_robot_3d_output/summary.json
+
+      - name: Upload 3D video artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: factory-robot-3d-github-render
+          path: /kaggle/working/factory_robot_3d_output/
+          if-no-files-found: error
+          retention-days: 7
