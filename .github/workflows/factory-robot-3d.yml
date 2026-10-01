@@ -1,0 +1,104 @@
+name: Factory Robot 3D T4 Simulation
+
+on:
+  push:
+    branches: [factory-robot-3d]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: factory-robot-3d-t4
+  cancel-in-progress: true
+
+jobs:
+  simulate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
+      KERNEL_SLUG: factory-robot-3d-t4
+      ACCELERATOR: NvidiaTeslaT4
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: factory-robot-3d
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Validate simulation source
+        run: |
+          python -m py_compile factory_robot_3d/simulate.py
+          test -n "$KAGGLE_API_TOKEN" || (echo "Missing KAGGLE_API_TOKEN" && exit 1)
+          test -n "$KAGGLE_OWNER" || (echo "Missing KAGGLE_OWNER" && exit 1)
+
+      - name: Install Kaggle CLI
+        run: python -m pip install -q "kaggle>=2.2.1"
+
+      - name: Build Kaggle T4 kernel bundle
+        run: |
+          rm -rf kernel_factory_robot
+          mkdir -p kernel_factory_robot
+          cp factory_robot_3d/simulate.py kernel_factory_robot/simulate.py
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          owner = os.environ["KAGGLE_OWNER"]
+          slug = os.environ["KERNEL_SLUG"]
+          metadata = {
+              "id": f"{owner}/{slug}",
+              "title": "Factory Robot 3D T4 Simulation",
+              "code_file": "simulate.py",
+              "language": "python",
+              "kernel_type": "script",
+              "is_private": True,
+              "enable_gpu": True,
+              "enable_internet": True,
+              "dataset_sources": [],
+              "competition_sources": [],
+              "kernel_sources": [],
+              "model_sources": []
+          }
+          Path("kernel_factory_robot/kernel-metadata.json").write_text(
+              json.dumps(metadata, indent=2) + "\n", encoding="utf-8"
+          )
+          print(json.dumps(metadata, indent=2))
+          PY
+
+      - name: Push and run 3D simulation on Kaggle T4
+        run: |
+          kaggle kernels push             -p kernel_factory_robot             --accelerator "$ACCELERATOR"             --timeout 3600
+
+      - name: Show final kernel status
+        if: always()
+        run: kaggle kernels status "$KAGGLE_OWNER/$KERNEL_SLUG" || true
+
+      - name: Download rendered video and telemetry
+        run: |
+          mkdir -p outputs
+          kaggle kernels output "$KAGGLE_OWNER/$KERNEL_SLUG" -p outputs --force
+          find outputs -maxdepth 4 -type f -printf '%p %s bytes\n'
+          test -f outputs/factory_robot_3d_output/factory_robot_3d.mp4
+          test -f outputs/factory_robot_3d_output/summary.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path("outputs/factory_robot_3d_output/summary.json")
+          data = json.loads(p.read_text())
+          print(json.dumps(data, indent=2))
+          assert data["success"] is True
+          assert data["frames"] > 100
+          PY
+
+      - name: Upload 3D simulation artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: factory-robot-3d-t4-output
+          path: outputs/factory_robot_3d_output/
+          if-no-files-found: error
+          retention-days: 7
