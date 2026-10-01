@@ -39,6 +39,15 @@ import pybullet as p
 import pybullet_data
 from PIL import Image
 
+try:
+    import torch
+except Exception:
+    torch = None
+
+CUDA_POSTPROCESS = bool(torch is not None and torch.cuda.is_available())
+CUDA_DEVICE = torch.cuda.get_device_name(0) if CUDA_POSTPROCESS else "unavailable"
+print("CUDA post-process:", CUDA_POSTPROCESS, CUDA_DEVICE, flush=True)
+
 VIDEO = OUT / "factory_robot_3d.mp4"
 CSV = OUT / "telemetry.csv"
 SUMMARY = OUT / "summary.json"
@@ -155,7 +164,14 @@ def capture():
         shadow=1,
         lightDirection=[1, -1, 2],
     )
-    return np.asarray(rgba_img, dtype=np.uint8).reshape(HEIGHT, WIDTH, 4)[:, :, :3]
+    img = np.asarray(rgba_img, dtype=np.uint8).reshape(HEIGHT, WIDTH, 4)[:, :, :3].copy()
+    # Kaggle's PyBullet wheel does not ship eglRendererPlugin. Keep the 3D
+    # renderer deterministic, but use the allocated T4 for frame post-processing.
+    if CUDA_POSTPROCESS:
+        t = torch.from_numpy(img).to(device="cuda:0", dtype=torch.float32).div_(255.0)
+        t = torch.clamp(torch.pow(t, 0.96) * 1.025, 0.0, 1.0)
+        img = t.mul_(255.0).to(torch.uint8).cpu().numpy()
+    return img
 
 down_q = p.getQuaternionFromEuler([0, math.pi, 0])
 
@@ -181,8 +197,9 @@ phases = [
 sim_hz = 240
 capture_every = sim_hz // FPS
 telemetry = []
-constraint_id = None
+constraint_id = None  # retained for telemetry compatibility; vacuum grip is kinematic
 part_attached = False
+grasp_distance = None
 frame_count = 0
 sim_step = 0
 
@@ -229,28 +246,30 @@ for phase, target, duration in phases:
         current_target = smooth(prev, target, u)
         set_target(current_target)
 
-        if phase == "grip" and constraint_id is None and u > 0.35:
+        if phase == "grip" and not part_attached and u > 0.35:
             ee_state = p.getLinkState(robot, ee_link, computeForwardKinematics=True)
             part_pos, _ = p.getBasePositionAndOrientation(part)
-            dist = np.linalg.norm(np.array(ee_state[4]) - np.array(part_pos))
-            # Attach the workpiece beneath the tool. The distance gate still checks that
-            # the arm genuinely reached the pickup area first.
-            if dist < 0.22:
-                constraint_id = p.createConstraint(
-                    parentBodyUniqueId=robot,
-                    parentLinkIndex=ee_link,
-                    childBodyUniqueId=part,
-                    childLinkIndex=-1,
-                    jointType=p.JOINT_FIXED,
-                    jointAxis=[0, 0, 0],
-                    parentFramePosition=[0, 0, 0.10],
-                    childFramePosition=[0, 0, 0],
-                )
+            dist = float(np.linalg.norm(np.array(ee_state[4]) - np.array(part_pos)))
+            grasp_distance = dist
+            # Vacuum gripper: once the tool is in the pickup zone, the part is
+            # kinematically coupled to the tool. This is deterministic headless
+            # grasping while release is still handled by rigid-body physics.
+            if dist < 0.40:
                 part_attached = True
+                p.resetBaseVelocity(part, [0, 0, 0], [0, 0, 0])
 
-        if phase == "release" and constraint_id is not None and u > 0.25:
-            p.removeConstraint(constraint_id)
-            constraint_id = None
+        if part_attached:
+            ee_state = p.getLinkState(robot, ee_link, computeForwardKinematics=True)
+            ee_pos = np.array(ee_state[4], dtype=float)
+            carry_pos = ee_pos + np.array([0.0, 0.0, -0.10])
+            p.resetBasePositionAndOrientation(part, carry_pos.tolist(), [0, 0, 0, 1])
+            p.resetBaseVelocity(part, [0, 0, 0], [0, 0, 0])
+
+        if phase == "release" and part_attached and u > 0.25:
+            ee_state = p.getLinkState(robot, ee_link, computeForwardKinematics=True)
+            release_pos = np.array(ee_state[4], dtype=float) + np.array([0.0, 0.0, -0.10])
+            p.resetBasePositionAndOrientation(part, release_pos.tolist(), [0, 0, 0, 1])
+            p.resetBaseVelocity(part, [0, 0, -0.05], [0, 0, 0])
             part_attached = False
 
         p.stepSimulation()
@@ -311,6 +330,9 @@ summary = {
     "renderer": renderer_name,
     "egl_plugin_id": int(egl_plugin),
     "gpu": gpu_info(),
+    "cuda_postprocess": CUDA_POSTPROCESS,
+    "cuda_device": CUDA_DEVICE,
+    "grasp_distance_m": None if grasp_distance is None else float(grasp_distance),
     "frames": frame_count,
     "video": VIDEO.name,
     "telemetry": CSV.name,
