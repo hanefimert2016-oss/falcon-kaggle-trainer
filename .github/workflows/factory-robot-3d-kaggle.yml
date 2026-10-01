@@ -3,7 +3,7 @@ name: Factory Robot 3D - Kaggle T4
 on:
   push:
     branches:
-      - factory-robot-3d
+      - factory-robot-3d-public-run
     paths:
       - 'factory_robot_3d/**'
       - '.github/workflows/factory-robot-3d-kaggle.yml'
@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: factory-robot-3d-kaggle
+  group: factory-robot-3d-kaggle-public-run
   cancel-in-progress: true
 
 jobs:
@@ -24,7 +24,7 @@ jobs:
     env:
       KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
       KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
-      KAGGLE_KERNEL_SLUG: factory-robot-3d
+      KAGGLE_KERNEL_SLUG: factory-robot-3d-video
       KAGGLE_ACCELERATOR: NvidiaTeslaT4
     steps:
       - uses: actions/checkout@v4
@@ -33,10 +33,11 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Validate Kaggle bridge
+      - name: Validate source and Kaggle bridge
         shell: bash
         run: |
           set -euo pipefail
+          python -m py_compile factory_robot_3d/simulate.py
           test -n "$KAGGLE_API_TOKEN" || (echo "Missing KAGGLE_API_TOKEN secret" && exit 1)
           test -n "$KAGGLE_OWNER" || (echo "Missing KAGGLE_OWNER repository variable" && exit 1)
           echo "Owner=$KAGGLE_OWNER"
@@ -45,7 +46,7 @@ jobs:
       - name: Install Kaggle CLI
         run: python -m pip install -q "kaggle>=2.2.1"
 
-      - name: Build Kaggle kernel metadata
+      - name: Build public Kaggle kernel metadata
         shell: bash
         run: |
           set -euo pipefail
@@ -54,11 +55,11 @@ jobs:
           root = pathlib.Path("factory_robot_3d")
           meta = {
               "id": f"{os.environ['KAGGLE_OWNER']}/{os.environ['KAGGLE_KERNEL_SLUG']}",
-              "title": "Factory Robot 3D - Industrial Pick and Place",
+              "title": "Factory Robot 3D Video",
               "code_file": "simulate.py",
               "language": "python",
               "kernel_type": "script",
-              "is_private": True,
+              "is_private": False,
               "enable_gpu": True,
               "enable_internet": True,
               "machine_shape": os.environ["KAGGLE_ACCELERATOR"],
@@ -71,12 +72,8 @@ jobs:
           print(json.dumps(meta, indent=2))
           PY
 
-      - name: Authenticate and show GPU quota
-        shell: bash
-        run: |
-          set -euo pipefail
-          kaggle kernels list --mine --page-size 1
-          kaggle quota || true
+      - name: Authenticate
+        run: kaggle kernels list --mine --page-size 1
 
       - name: Push 3D simulation to Kaggle T4
         shell: bash
@@ -89,10 +86,9 @@ jobs:
         run: |
           set -euo pipefail
           REF="$KAGGLE_OWNER/$KAGGLE_KERNEL_SLUG"
-          for i in $(seq 1 90); do
-            echo "=== poll $i ==="
+          for i in $(seq 1 120); do
             STATUS="$(kaggle kernels status "$REF" 2>&1 || true)"
-            echo "$STATUS"
+            echo "[$i] $STATUS"
             if echo "$STATUS" | grep -Eqi 'complete|finished'; then
               exit 0
             fi
@@ -101,7 +97,7 @@ jobs:
               kaggle kernels logs "$REF" || true
               exit 1
             fi
-            sleep 15
+            sleep 10
           done
           echo "Timed out waiting for Kaggle simulation"
           kaggle kernels logs "$REF" || true
@@ -110,14 +106,14 @@ jobs:
       - name: Show Kaggle logs
         if: always()
         shell: bash
-        run: |
-          kaggle kernels logs "$KAGGLE_OWNER/$KAGGLE_KERNEL_SLUG" || true
+        run: kaggle kernels logs "$KAGGLE_OWNER/$KAGGLE_KERNEL_SLUG" || true
 
       - name: Download rendered video and telemetry
         if: success()
         shell: bash
         run: |
           set -euo pipefail
+          rm -rf outputs
           mkdir -p outputs
           kaggle kernels output "$KAGGLE_OWNER/$KAGGLE_KERNEL_SLUG" -p outputs -o
           find outputs -maxdepth 4 -type f -printf '%p %s bytes\n'
@@ -125,12 +121,19 @@ jobs:
           test -f outputs/factory_robot_3d_output/summary.json
           test -f outputs/factory_robot_3d_output/telemetry.csv
           cat outputs/factory_robot_3d_output/summary.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("outputs/factory_robot_3d_output/summary.json").read_text())
+          assert d["success"] is True, d
+          assert d["frames"] > 100, d
+          PY
 
       - name: Upload 3D simulation artifact
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: factory-robot-3d-kaggle-t4
+          name: factory-robot-3d-kaggle-t4-video
           path: outputs/factory_robot_3d_output/
           if-no-files-found: error
           retention-days: 7
