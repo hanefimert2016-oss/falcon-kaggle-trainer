@@ -2,9 +2,9 @@ name: Factory Robot 3D - Kaggle Status Probe
 
 on:
   push:
-    branches: [factory-robot-3d-t4-simulation]
+    branches: [factory-robot-3d]
     paths:
-      - '.github/workflows/factory-robot-3d-t4-simulation-status.yml'
+      - '.github/workflows/factory-robot-3d-status.yml'
       - '.factory-robot-status-trigger'
   workflow_dispatch:
 
