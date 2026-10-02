@@ -20,10 +20,9 @@ mkdir -p "$FRAMES"
 "$BLENDER" \
   --background "$SCENE" \
   --disable-autoexec \
-  --python factory_robot_3d/blender/prepare_render.py \
-  -o "$FRAMES/frame_####" \
-  -F PNG \
-  -a
+  --python factory_robot_3d/blender/render_scene.py \
+  -- \
+  --frames-dir "$FRAMES"
 
 COUNT="$(find "$FRAMES" -maxdepth 1 -type f -name 'frame_*.png' | wc -l | tr -d ' ')"
 if [[ "$COUNT" != "288" ]]; then
