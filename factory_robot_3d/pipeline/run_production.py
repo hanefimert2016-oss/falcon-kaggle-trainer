@@ -103,30 +103,35 @@ def run_production(
     if not simulation_summary.get("success"):
         raise RuntimeError("simulation failed success criteria; render not started")
 
+    print("FACTORY_STAGE_BEGIN probe_gpu", flush=True)
+    _run([
+        str(blender_bin),
+        "--background",
+        "--factory-startup",
+        "--disable-autoexec",
+        "--python",
+        "factory_robot_3d/blender/probe_gpu.py",
+    ])
+    print("FACTORY_STAGE_OK probe_gpu", flush=True)
+
+    print("FACTORY_STAGE_BEGIN build_scene", flush=True)
+    _run([
+        str(blender_bin),
+        "--background",
+        "--factory-startup",
+        "--disable-autoexec",
+        "--python",
+        "factory_robot_3d/blender/build_scene.py",
+        "--",
+        "--input",
+        str(output_dir),
+        "--output",
+        str(scene_path),
+    ])
+    print("FACTORY_STAGE_OK build_scene", flush=True)
+
     with render_log.open("w", encoding="utf-8") as log:
-        _run([
-            str(blender_bin),
-            "--background",
-            "--factory-startup",
-            "--disable-autoexec",
-            "--python",
-            "factory_robot_3d/blender/probe_gpu.py",
-        ], log=log)
-
-        _run([
-            str(blender_bin),
-            "--background",
-            "--factory-startup",
-            "--disable-autoexec",
-            "--python",
-            "factory_robot_3d/blender/build_scene.py",
-            "--",
-            "--input",
-            str(output_dir),
-            "--output",
-            str(scene_path),
-        ], log=log)
-
+        print("FACTORY_STAGE_BEGIN render_frames", flush=True)
         _run([
             "bash",
             "factory_robot_3d/pipeline/render_frames.sh",
@@ -135,12 +140,16 @@ def run_production(
             str(output_dir),
         ], log=log)
 
+        print("FACTORY_STAGE_OK render_frames", flush=True)
+        print("FACTORY_STAGE_BEGIN encode_video", flush=True)
         _run([
             "bash",
             "factory_robot_3d/pipeline/encode_video.sh",
             str(output_dir),
         ], log=log)
+        print("FACTORY_STAGE_OK encode_video", flush=True)
 
+    print("FACTORY_STAGE_BEGIN validate_video", flush=True)
     _run([
         python_executable,
         "-m",
@@ -148,6 +157,7 @@ def run_production(
         str(output_dir / "factory_robot_cinematic.mp4"),
     ])
 
+    print("FACTORY_STAGE_OK validate_video", flush=True)
     report = validate_artifacts(output_dir)
     if not report.ok:
         raise RuntimeError("artifact validation failed: " + "; ".join(report.errors))
