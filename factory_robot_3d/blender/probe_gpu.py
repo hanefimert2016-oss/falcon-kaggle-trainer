@@ -50,7 +50,7 @@ def _cycles_devices(bpy: Any) -> tuple[DeviceInfo, ...]:
                 DeviceInfo(
                     name=name,
                     backend=dtype,
-                    enabled=bool(getattr(device, "use", True)),
+                    enabled=True,
                 )
             )
 
