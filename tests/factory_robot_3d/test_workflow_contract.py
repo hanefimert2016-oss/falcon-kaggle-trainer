@@ -86,3 +86,12 @@ def test_primary_smokes_blender_before_kaggle_t4_push():
     assert text.index(smoke) < text.index(push)
     assert "BLENDER_ROOT" in text
     assert "factory_robot_3d/pipeline/install_blender.sh" in text
+
+
+def test_primary_retries_when_batch_gpu_slots_are_temporarily_full():
+    text = PRIMARY.read_text(encoding="utf-8")
+
+    assert "GPU_SLOT_RETRY" in text
+    assert "seq 1 120" in text
+    assert "sleep 60" in text
+    assert "GPU_SLOT_TIMEOUT" in text
