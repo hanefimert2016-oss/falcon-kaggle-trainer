@@ -152,3 +152,23 @@ def test_production_surfaces_render_log_tail_on_blender_failure():
     assert "RENDER_LOG_TAIL_BEGIN" in source
     assert "RENDER_LOG_TAIL_END" in source
     assert "CalledProcessError" in source
+
+
+def test_logged_command_failure_surfaces_render_log_tail(monkeypatch, tmp_path, capsys):
+    import subprocess
+    import factory_robot_3d.pipeline.run_production as module
+
+    def fail_run(*args, **kwargs):
+        raise subprocess.CalledProcessError(2, args[0])
+
+    monkeypatch.setattr(module.subprocess, "run", fail_run)
+    log_path = tmp_path / "render.log"
+    with log_path.open("w+", encoding="utf-8") as log:
+        log.write("cycles: device init\nFATAL_RENDER_DIAGNOSTIC\n")
+        log.flush()
+        with pytest.raises(subprocess.CalledProcessError):
+            module._run(["blender", "-a"], log=log)
+
+    err = capsys.readouterr().err
+    assert "FACTORY_COMMAND_FAILED" in err
+    assert "FATAL_RENDER_DIAGNOSTIC" in err
