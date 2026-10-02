@@ -29,7 +29,11 @@ jobs:
         run: |
           set -euo pipefail
           REF="$KAGGLE_OWNER/$KERNEL_SLUG"
+          echo "=== my kernels ==="
+          kaggle kernels list --mine -v --page-size 50 || true
           echo "=== status: $REF ==="
           kaggle kernels status "$REF" || true
+          echo '--- output files probe ---'
+          kaggle kernels files "$REF" -v --page-size 20 || true
           echo '--- recent log tail ---'
           kaggle kernels logs "$REF" 2>&1 | tail -n 160 || true
