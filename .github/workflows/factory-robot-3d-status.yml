@@ -36,6 +36,9 @@ jobs:
           STATUS="$(kaggle kernels status "$REF" 2>&1 || true)"
           echo "$STATUS"
 
+          echo '--- recent kernel log tail ---'
+          kaggle kernels logs "$REF" 2>&1 | tail -n 300 || true
+
           if echo "$STATUS" | grep -Eqi 'QUEUED|RUNNING'; then
             echo 'CINEMATIC_PROBE_ACTIVE: kernel still running'
             exit 0
@@ -43,6 +46,3 @@ jobs:
 
           echo '--- output files probe ---'
           kaggle kernels files "$REF" -v --page-size 50 || true
-
-          echo '--- recent kernel log tail ---'
-          kaggle kernels logs "$REF" 2>&1 | tail -n 300 || true
