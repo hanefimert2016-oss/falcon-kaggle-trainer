@@ -79,11 +79,27 @@ def _verify_t4() -> tuple[str, ...]:
 
 def _install_blender() -> Path:
     installer = ROOT / "factory_robot_3d" / "pipeline" / "install_blender.sh"
-    result = _run(["bash", str(installer)], capture=True)
+    print("+ bash", installer, flush=True)
+    result = subprocess.run(
+        ["bash", str(installer)],
+        cwd=ROOT,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
     if result.stdout:
-        print(result.stdout, flush=True)
+        print(result.stdout, end="" if result.stdout.endswith("\\n") else "\\n", flush=True)
     if result.stderr:
-        print(result.stderr, file=sys.stderr, flush=True)
+        print(
+            result.stderr,
+            end="" if result.stderr.endswith("\\n") else "\\n",
+            file=sys.stderr,
+            flush=True,
+        )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"Blender installer failed with exit code {result.returncode}"
+        )
 
     candidates = [
         Path(line.strip())

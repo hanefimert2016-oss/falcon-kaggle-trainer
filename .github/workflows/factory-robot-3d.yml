@@ -73,6 +73,20 @@ jobs:
           test -s kernel_factory_robot/kernel-metadata.json
           ! grep -Fq '__EMBEDDED_PROJECT_ZIP_B64__' kernel_factory_robot/kaggle_entrypoint.py
 
+      - name: Smoke Blender 5.2.2 bootstrap before T4 push
+        shell: bash
+        env:
+          BLENDER_ROOT: ${{ runner.temp }}/factory-blender-runtime
+          BLENDER_CACHE: ${{ runner.temp }}/factory-blender-cache
+        run: |
+          set -euo pipefail
+          rm -f /tmp/factory-blender-bootstrap.log
+          bash factory_robot_3d/pipeline/install_blender.sh | tee /tmp/factory-blender-bootstrap.log
+          BLENDER_BIN="$(tail -n1 /tmp/factory-blender-bootstrap.log)"
+          test -x "$BLENDER_BIN"
+          "$BLENDER_BIN" --background --factory-startup --disable-autoexec \
+            --python-expr "import bpy; assert bpy.app.version_string.startswith('5.2.2'); print('BLENDER_HEADLESS_SMOKE_OK', bpy.app.version_string)"
+
       - name: Show Kaggle quota
         shell: bash
         run: |

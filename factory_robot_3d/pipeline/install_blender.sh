@@ -15,32 +15,55 @@ BIN="$INSTALL_DIR/blender"
 
 mkdir -p "$ROOT" "$CACHE"
 
+first_version_line() {
+  local output first
+  output="$("$BIN" --version 2>&1)"
+  first="${output%%$'\n'*}"
+  printf '%s\n' "$first"
+}
+
 if [[ -x "$BIN" ]]; then
-  if "$BIN" --version | head -n1 | grep -Fxq "Blender $VERSION"; then
+  CACHED_VERSION="$(first_version_line || true)"
+  if [[ "$CACHED_VERSION" == "Blender $VERSION" ]]; then
     echo "BLENDER_CACHE_HIT $BIN"
     printf '%s\n' "$BIN"
     exit 0
   fi
+  echo "BLENDER_INSTALL_STAGE stale_cache version=$CACHED_VERSION" >&2
   rm -rf "$INSTALL_DIR"
 fi
 
 cd "$CACHE"
+
+echo "BLENDER_INSTALL_STAGE download archive=$ARCHIVE" >&2
 if [[ ! -s "$ARCHIVE" ]]; then
   curl --fail --location --retry 4 --retry-delay 3 "$URL" -o "$ARCHIVE"
 fi
 
+echo "BLENDER_INSTALL_STAGE verify_pinned_sha" >&2
 ACTUAL_SHA="$(sha256sum "$ARCHIVE" | awk '{print $1}')"
 if [[ "$ACTUAL_SHA" != "$PINNED_SHA256" ]]; then
   echo "Pinned SHA mismatch: expected $PINNED_SHA256 got $ACTUAL_SHA" >&2
   rm -f "$ARCHIVE"
   exit 1
 fi
+printf '%s  %s\n' "$PINNED_SHA256" "$ARCHIVE" | sha256sum -c -
 
-curl --fail --location --retry 4 "$MANIFEST_URL" -o "blender-$VERSION.sha256"
-grep " $ARCHIVE$" "blender-$VERSION.sha256" > "blender-linux.sha256"
-grep -Fq "$PINNED_SHA256" "blender-linux.sha256"
+echo "BLENDER_INSTALL_STAGE verify_official_manifest" >&2
+curl --fail --location --retry 4 --retry-delay 3 "$MANIFEST_URL" -o "blender-$VERSION.sha256"
+grep -F "$ARCHIVE" "blender-$VERSION.sha256" > "blender-linux.sha256"
+if [[ ! -s "blender-linux.sha256" ]]; then
+  echo "Official Blender manifest does not contain $ARCHIVE" >&2
+  exit 1
+fi
+if ! grep -Fq "$PINNED_SHA256" "blender-linux.sha256"; then
+  echo "Official Blender manifest does not contain pinned SHA $PINNED_SHA256" >&2
+  cat "blender-linux.sha256" >&2
+  exit 1
+fi
 sha256sum -c "blender-linux.sha256"
 
+echo "BLENDER_INSTALL_STAGE extract root=$ROOT" >&2
 rm -rf "$INSTALL_DIR"
 tar -xJf "$ARCHIVE" -C "$ROOT"
 
@@ -48,5 +71,13 @@ if [[ ! -x "$BIN" ]]; then
   echo "Blender binary missing after extraction: $BIN" >&2
   exit 1
 fi
-"$BIN" --version | head -n1 | grep -Fx "Blender $VERSION"
+
+echo "BLENDER_INSTALL_STAGE verify_binary" >&2
+VERSION_LINE="$(first_version_line)"
+if [[ "$VERSION_LINE" != "Blender $VERSION" ]]; then
+  echo "Unexpected Blender version: $VERSION_LINE" >&2
+  exit 1
+fi
+
+echo "BLENDER_INSTALL_OK version=$VERSION path=$BIN" >&2
 printf '%s\n' "$BIN"
