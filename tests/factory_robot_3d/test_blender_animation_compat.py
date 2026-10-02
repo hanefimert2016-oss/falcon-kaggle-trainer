@@ -58,3 +58,35 @@ def test_linear_interpolation_updates_layered_action_keyframes():
         "LINEAR",
         "LINEAR",
     ]
+
+
+def test_camera_bezier_interpolation_supports_blender5_layered_actions():
+    from factory_robot_3d.blender.cameras import _set_camera_bezier_interpolation
+
+    points = [
+        SimpleNamespace(
+            interpolation="LINEAR",
+            handle_left_type="FREE",
+            handle_right_type="FREE",
+        ),
+        SimpleNamespace(
+            interpolation="CONSTANT",
+            handle_left_type="ALIGNED",
+            handle_right_type="ALIGNED",
+        ),
+    ]
+    curve = SimpleNamespace(keyframe_points=points)
+    bag = SimpleNamespace(fcurves=(curve,))
+    strip = SimpleNamespace(channelbags=(bag,))
+    layer = SimpleNamespace(strips=(strip,))
+    camera = SimpleNamespace(
+        animation_data=SimpleNamespace(
+            action=SimpleNamespace(layers=(layer,))
+        )
+    )
+
+    _set_camera_bezier_interpolation(camera)
+
+    assert [p.interpolation for p in points] == ["BEZIER", "BEZIER"]
+    assert [p.handle_left_type for p in points] == ["AUTO_CLAMPED", "AUTO_CLAMPED"]
+    assert [p.handle_right_type for p in points] == ["AUTO_CLAMPED", "AUTO_CLAMPED"]
