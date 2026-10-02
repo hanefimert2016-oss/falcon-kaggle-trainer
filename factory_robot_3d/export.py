@@ -78,9 +78,9 @@ def _animation_payload(result: SimulationResult) -> dict:
                     for i in range(1, 6)
                 },
                 "active_task_ids": [
-                    f"T-{wid}-{state.stage}"
-                    for wid, state in sorted(sample.workpieces.items())
-                    if state.state == "processing"
+                    f"T-{wid}-{state['stage']}"
+                    for wid, state in sorted(workpieces.items())
+                    if state["state"] in {"processing", "active"}
                 ],
             }
         )
