@@ -55,6 +55,48 @@ def _set_joint_rotation(joint: Any, axis: str, angle: float) -> None:
         raise ValueError(f"unsupported joint axis: {axis}")
 
 
+def _animation_fcurves(animated: Any) -> tuple[Any, ...]:
+    """Return F-Curves for both legacy and Blender 5 layered Actions."""
+    animation_data = getattr(animated, "animation_data", None)
+    if animation_data is None:
+        return ()
+
+    action = getattr(animation_data, "action", None)
+    if action is None:
+        return ()
+
+    legacy_fcurves = getattr(action, "fcurves", None)
+    if legacy_fcurves is not None:
+        return tuple(legacy_fcurves)
+
+    # Blender 5+ stores F-Curves in the channelbag assigned to the
+    # animation data's Action slot.
+    try:
+        from bpy_extras.anim_utils import animdata_get_channelbag_for_assigned_slot
+    except ImportError:
+        channelbag = None
+    else:
+        channelbag = animdata_get_channelbag_for_assigned_slot(animation_data)
+
+    if channelbag is not None:
+        return tuple(getattr(channelbag, "fcurves", ()) or ())
+
+    # Fallback keeps this robust for layered Action objects that are available
+    # without bpy_extras helpers (and makes the compatibility path testable).
+    curves: list[Any] = []
+    for layer in getattr(action, "layers", ()) or ():
+        for strip in getattr(layer, "strips", ()) or ():
+            for bag in getattr(strip, "channelbags", ()) or ():
+                curves.extend(tuple(getattr(bag, "fcurves", ()) or ()))
+    return tuple(curves)
+
+
+def _set_linear_interpolation(animated: Any) -> None:
+    for fcurve in _animation_fcurves(animated):
+        for point in fcurve.keyframe_points:
+            point.interpolation = "LINEAR"
+
+
 def _ensure_workpiece_object(
     bpy: Any,
     collection: Any,
@@ -140,18 +182,9 @@ def apply_animation(
     # Simulation data should interpolate linearly between sampled states.
     for rig in rigs.values():
         for joint in rig.joints:
-            action = getattr(getattr(joint, "animation_data", None), "action", None)
-            if action is None:
-                continue
-            for fcurve in action.fcurves:
-                for point in fcurve.keyframe_points:
-                    point.interpolation = "LINEAR"
+            _set_linear_interpolation(joint)
 
     for obj in workpieces.values():
-        action = getattr(getattr(obj, "animation_data", None), "action", None)
-        if action is not None:
-            for fcurve in action.fcurves:
-                for point in fcurve.keyframe_points:
-                    point.interpolation = "LINEAR"
+        _set_linear_interpolation(obj)
 
     return manifest
