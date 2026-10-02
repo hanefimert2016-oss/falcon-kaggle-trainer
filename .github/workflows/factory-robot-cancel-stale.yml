@@ -14,11 +14,11 @@ jobs:
   cancel-stale:
     runs-on: ubuntu-latest
     steps:
-      - name: Cancel known-bad production run 28
+      - name: Cancel stuck production run 31
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
-          STALE_RUN_ID: '37015142997'
+          STALE_RUN_ID: '37018249184'
         run: |
           set -euo pipefail
           gh api --method POST "repos/$REPOSITORY/actions/runs/$STALE_RUN_ID/cancel" || true
