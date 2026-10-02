@@ -13,7 +13,7 @@ permissions:
 
 concurrency:
   group: factory-robot-cinematic-t4
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   production:
@@ -22,7 +22,7 @@ jobs:
     env:
       KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
       KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
-      KERNEL_SLUG: factory-robot-cinematic-t4
+      KERNEL_SLUG: factory-robot-cinematic-t4-production
       ACCELERATOR: NvidiaTeslaT4
       PYTHONPATH: ${{ github.workspace }}
 
@@ -55,8 +55,10 @@ jobs:
           set -euo pipefail
           rm -rf kernel_factory_robot
           mkdir -p kernel_factory_robot
-          cp -R factory_robot_3d kernel_factory_robot/factory_robot_3d
-          cp factory_robot_3d/kaggle_entrypoint.py kernel_factory_robot/kaggle_entrypoint.py
+          python -m factory_robot_3d.pipeline.build_kaggle_bundle \
+            --template factory_robot_3d/kaggle_entrypoint.py \
+            --package-root factory_robot_3d \
+            --output kernel_factory_robot/kaggle_entrypoint.py
           python - <<'PY'
           import json, os
           from pathlib import Path
@@ -68,9 +70,8 @@ jobs:
           print(json.dumps(data, indent=2))
           PY
           test -s kernel_factory_robot/kaggle_entrypoint.py
-          test -s kernel_factory_robot/factory_robot_3d/pipeline/run_production.py
-          test -s kernel_factory_robot/factory_robot_3d/pipeline/render_frames.sh
-          test -s kernel_factory_robot/factory_robot_3d/pipeline/encode_video.sh
+          test -s kernel_factory_robot/kernel-metadata.json
+          ! grep -Fq '__EMBEDDED_PROJECT_ZIP_B64__' kernel_factory_robot/kaggle_entrypoint.py
 
       - name: Show Kaggle quota
         shell: bash
@@ -109,6 +110,11 @@ jobs:
             if echo "$STATUS" | grep -Fiq 'Maximum batch GPU session count'; then
               echo 'quota_error: Maximum batch GPU session count reached'
               exit 86
+            fi
+            if echo "$STATUS" | grep -Fiq "Permission 'kernels.get' was denied"; then
+              echo "kernel_error: Kaggle kernel ref is inaccessible: $REF"
+              kaggle kernels list --mine -v --page-size 50 || true
+              exit 1
             fi
             if echo "$STATUS" | grep -Eqi 'COMPLETE|FINISHED'; then
               complete=1
