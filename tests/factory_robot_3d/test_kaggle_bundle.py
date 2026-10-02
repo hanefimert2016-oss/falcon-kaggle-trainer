@@ -54,3 +54,17 @@ def test_kaggle_bundle_excludes_transient_python_cache_files(tmp_path):
 
     assert "factory_robot_3d/ok.py" in names
     assert not any("__pycache__" in name or name.endswith(".pyc") for name in names)
+
+
+def test_embedded_entrypoint_keeps_runtime_guard_distinct_from_payload():
+    from factory_robot_3d.pipeline.build_kaggle_bundle import build_embedded_script
+
+    package = Path("factory_robot_3d")
+    script = build_embedded_script(package / "kaggle_entrypoint.py", package)
+
+    assert 'if EMBEDDED_PROJECT_ZIP_B64.startswith("__EMBEDDED_"):' in script
+    assert 'EMBEDDED_PROJECT_READY' in script
+
+    with zipfile.ZipFile(BytesIO(_payload(script))) as archive:
+        names = set(archive.namelist())
+    assert "factory_robot_3d/__init__.py" in names
