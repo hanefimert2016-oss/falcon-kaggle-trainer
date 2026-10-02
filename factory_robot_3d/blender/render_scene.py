@@ -8,38 +8,45 @@ import sys
 from factory_robot_3d.blender.render_config import configure_cycles
 
 
+def _args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--output-dir", type=Path, required=True)
+    return parser.parse_args(argv)
+
+
 def _script_args() -> list[str]:
     if "--" not in sys.argv:
         return []
     return sys.argv[sys.argv.index("--") + 1 :]
 
 
-def _args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--frames-dir", type=Path, required=True)
-    return parser.parse_args(argv)
-
-
 def main(argv: list[str] | None = None) -> int:
     import bpy
 
     args = _args(_script_args() if argv is None else argv)
-    frames_dir = args.frames_dir.resolve()
+    output_dir = args.output_dir
+    frames_dir = output_dir / "frames"
     frames_dir.mkdir(parents=True, exist_ok=True)
 
     scene = bpy.context.scene
-    selected = configure_cycles(scene, bpy_module=bpy)
-    scene.render.filepath = str(frames_dir / "frame_")
+    scene.frame_start = 1
+    scene.frame_end = 288
+    scene.render.fps = 24
     scene.render.image_settings.file_format = "PNG"
+    scene.render.use_file_extension = True
+    scene.render.filepath = str(frames_dir / "frame_")
+    if hasattr(scene.render, "use_persistent_data"):
+        scene.render.use_persistent_data = True
 
+    selected = configure_cycles(scene, bpy_module=bpy)
     payload = {
         "backend": selected.backend,
         "device_names": list(selected.device_names),
         "engine": scene.render.engine,
         "cycles_device": scene.cycles.device,
-        "frame_start": int(scene.frame_start),
-        "frame_end": int(scene.frame_end),
-        "filepath": scene.render.filepath,
+        "frame_start": scene.frame_start,
+        "frame_end": scene.frame_end,
+        "output": scene.render.filepath,
     }
     print(
         "FACTORY_RENDER_RUNTIME_DEVICE " + json.dumps(payload, sort_keys=True),
@@ -48,13 +55,18 @@ def main(argv: list[str] | None = None) -> int:
 
     bpy.ops.render.render(animation=True)
 
-    rendered = sorted(frames_dir.glob("frame_*.png"))
+    first = frames_dir / "frame_0001.png"
+    last = frames_dir / "frame_0288.png"
+    if not first.is_file() or not last.is_file():
+        raise RuntimeError(
+            f"animation render incomplete: first={first.exists()} last={last.exists()}"
+        )
+
     print(
-        f"FACTORY_RENDER_RUNTIME_COMPLETE frames={len(rendered)} dir={frames_dir}",
+        "FACTORY_RENDER_ANIMATION_OK "
+        f"first={first} last={last}",
         flush=True,
     )
-    if len(rendered) != 288:
-        raise RuntimeError(f"expected 288 rendered frames, got {len(rendered)}")
     return 0
 
 

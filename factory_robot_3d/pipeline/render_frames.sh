@@ -17,12 +17,13 @@ FRAMES="$OUT/frames"
 rm -rf "$FRAMES"
 mkdir -p "$FRAMES"
 
+# Expected Blender animation naming contract: frame_####.png
 "$BLENDER" \
   --background "$SCENE" \
   --disable-autoexec \
   --python factory_robot_3d/blender/render_scene.py \
   -- \
-  --frames-dir "$FRAMES"
+  --output-dir "$OUT"
 
 COUNT="$(find "$FRAMES" -maxdepth 1 -type f -name 'frame_*.png' | wc -l | tr -d ' ')"
 if [[ "$COUNT" != "288" ]]; then
