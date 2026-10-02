@@ -10,12 +10,14 @@ BLENDER="$1"
 SCENE="$2"
 OUT="$3"
 FRAMES="$OUT/frames"
+LOG="$OUT/render.log"
 
 [[ -x "$BLENDER" ]] || { echo "Blender binary is not executable: $BLENDER" >&2; exit 2; }
 [[ -s "$SCENE" ]] || { echo "Scene file is missing or empty: $SCENE" >&2; exit 2; }
 
 rm -rf "$FRAMES"
 mkdir -p "$FRAMES"
+touch "$LOG"
 
 # Expected Blender animation naming contract: frame_####.png
 "$BLENDER" \
@@ -23,7 +25,7 @@ mkdir -p "$FRAMES"
   --disable-autoexec \
   --python factory_robot_3d/blender/render_scene.py \
   -- \
-  --output-dir "$OUT"
+  --output-dir "$OUT" 2>&1 | tee -a "$LOG"
 
 COUNT="$(find "$FRAMES" -maxdepth 1 -type f -name 'frame_*.png' | wc -l | tr -d ' ')"
 if [[ "$COUNT" != "288" ]]; then
