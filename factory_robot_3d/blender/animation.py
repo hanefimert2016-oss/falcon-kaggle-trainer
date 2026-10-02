@@ -33,7 +33,7 @@ def animation_manifest_from_bundle(bundle: Any) -> AnimationManifest:
                 raise ValueError(
                     f"robot {robot_id} frame {expected_index} must contain seven joints"
                 )
-        workpieces.update(frame.get("workpieces", {}).keys())
+        workpiece_ids.update(frame.get("workpieces", {}).keys())
 
     return AnimationManifest(
         frame_count=288,
