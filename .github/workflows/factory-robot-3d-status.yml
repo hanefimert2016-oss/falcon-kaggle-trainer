@@ -33,18 +33,28 @@ jobs:
           REF="$KAGGLE_OWNER/$KERNEL_SLUG"
 
           echo "=== status: $REF ==="
-          kaggle kernels status "$REF" || true
+          STATUS="$(kaggle kernels status "$REF" 2>&1 || true)"
+          echo "$STATUS"
+
+          if echo "$STATUS" | grep -Eqi 'QUEUED|RUNNING'; then
+            echo 'CINEMATIC_PROBE_ACTIVE: kernel still running; skipping output API'
+            exit 0
+          fi
 
           echo '--- output files probe ---'
           kaggle kernels files "$REF" -v --page-size 50 || true
 
           echo '--- recent kernel log tail ---'
-          kaggle kernels logs "$REF" 2>&1 | tail -n 180 || true
+          kaggle kernels logs "$REF" 2>&1 | tail -n 220 || true
 
           echo '--- render.log download ---'
           rm -rf /tmp/factory-kaggle-output
           mkdir -p /tmp/factory-kaggle-output
-          kaggle kernels output "$REF"             -p /tmp/factory-kaggle-output             -o             --file-pattern 'render[.]log$' || true
+          kaggle kernels output "$REF" \
+            -p /tmp/factory-kaggle-output \
+            -o \
+            --file-pattern 'render[.]log
+ || true
 
           find /tmp/factory-kaggle-output -type f -printf '%p %s bytes\n' | sort || true
           RENDER_LOG="$(find /tmp/factory-kaggle-output -type f -name render.log | head -n1 || true)"
