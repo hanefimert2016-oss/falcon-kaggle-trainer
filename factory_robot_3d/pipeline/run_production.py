@@ -77,6 +77,7 @@ def run_production(
     *,
     blender_bin: Path | None = None,
     python_executable: str = sys.executable,
+    skip_simulation: bool = False,
 ) -> ProductionSummary:
     """Execute the complete local/Kaggle production chain.
 
@@ -90,13 +91,17 @@ def run_production(
     scene_path = output_dir / "factory_robot_cinematic.blend"
     render_log = output_dir / "render.log"
 
-    _run([
-        python_executable,
-        "-m",
-        "factory_robot_3d.run_simulation",
-        "--output",
-        str(output_dir),
-    ])
+    if not skip_simulation:
+        _run([
+            python_executable,
+            "-m",
+            "factory_robot_3d.run_simulation",
+            "--output",
+            str(output_dir),
+        ])
+    else:
+        print("FACTORY_STAGE_SKIP simulate precomputed=true", flush=True)
+
     simulation_summary = json.loads(
         (output_dir / "summary.json").read_text(encoding="utf-8")
     )
