@@ -49,8 +49,8 @@ jobs:
           old='samples=64,'
           if old not in text:
               raise SystemExit('expected production sample setting not found')
-          p.write_text(text.replace(old,'samples=8,',1),encoding='utf-8')
-          print('ULTRAFAST_RENDER_SAMPLES=8')
+          p.write_text(text.replace(old,'samples=4,',1),encoding='utf-8')
+          print('ULTRAFAST_RENDER_SAMPLES=4')
           PY
           rm -rf kernel_factory_robot_ultrafast
           mkdir -p kernel_factory_robot_ultrafast
@@ -77,15 +77,16 @@ jobs:
             RC=$?
             set -e
             echo "$OUT"
-            if [[ "$RC" -eq 0 ]]; then
-              echo "ULTRAFAST_GPU_SLOT_ACQUIRED attempt=$attempt"
-              exit 0
-            fi
             if echo "$OUT" | grep -Fiq 'Maximum batch GPU session count'; then
               echo "ULTRAFAST_GPU_SLOT_RETRY attempt=$attempt/120"
               sleep 20
               continue
             fi
+            if [[ "$RC" -eq 0 ]] && echo "$OUT" | grep -Eqi 'successfully pushed|Kernel version'; then
+              echo "ULTRAFAST_GPU_SLOT_ACQUIRED attempt=$attempt"
+              exit 0
+            fi
+            echo "ULTRAFAST_PUSH_FAILED rc=$RC"
             exit "$RC"
           done
           exit 86
