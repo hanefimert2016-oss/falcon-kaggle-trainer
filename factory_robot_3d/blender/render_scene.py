@@ -5,6 +5,10 @@ import json
 from pathlib import Path
 import sys
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 from factory_robot_3d.blender.render_config import configure_cycles
 
 
@@ -34,12 +38,7 @@ def main(argv: list[str] | None = None) -> int:
     scene.render.fps = 24
     scene.render.image_settings.file_format = "PNG"
     scene.render.use_file_extension = True
-    frame_pattern = args.frame_pattern.resolve()
-    if frame_pattern.parent != frames_dir:
-        raise RuntimeError("frame pattern must live inside frames directory")
-    if "####" not in frame_pattern.name:
-        raise RuntimeError("frame pattern must include ####")
-    scene.render.filepath = str(frame_pattern)
+    scene.render.filepath = str(frames_dir / "frame_####")
     if hasattr(scene.render, "use_persistent_data"):
         scene.render.use_persistent_data = True
 

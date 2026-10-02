@@ -172,3 +172,21 @@ def test_logged_command_failure_surfaces_render_log_tail(monkeypatch, tmp_path, 
     err = capsys.readouterr().err
     assert "FACTORY_COMMAND_FAILED" in err
     assert "FATAL_RENDER_DIAGNOSTIC" in err
+
+
+def test_blender_entry_scripts_bootstrap_project_root_before_package_import():
+    root = Path("factory_robot_3d/blender")
+    for name in ("probe_gpu.py", "build_scene.py", "render_scene.py"):
+        source = (root / name).read_text(encoding="utf-8")
+        assert "Path(__file__).resolve().parents[2]" in source
+        assert "sys.path.insert(0, str(PROJECT_ROOT))" in source
+        assert source.index("sys.path.insert(0, str(PROJECT_ROOT))") < source.index(
+            "from factory_robot_3d"
+        )
+
+
+def test_render_driver_uses_deterministic_hash_frame_pattern_without_missing_arg():
+    driver = Path("factory_robot_3d/blender/render_scene.py").read_text(encoding="utf-8")
+
+    assert 'frames_dir / "frame_####"' in driver
+    assert "args.frame_pattern" not in driver
