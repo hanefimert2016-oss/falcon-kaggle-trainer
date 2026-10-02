@@ -1,0 +1,25 @@
+name: Factory Robot Cancel Stale Production Run
+
+on:
+  push:
+    branches: [factory-robot-cinematic-impl]
+    paths:
+      - '.github/workflows/factory-robot-cancel-stale.yml'
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  cancel-stale:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cancel known-bad production run 28
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          STALE_RUN_ID: '37015142997'
+        run: |
+          set -euo pipefail
+          gh api --method POST "repos/$REPOSITORY/actions/runs/$STALE_RUN_ID/cancel" || true
+          echo "STALE_FACTORY_RUN_CANCEL_REQUESTED id=$STALE_RUN_ID"
