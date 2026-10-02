@@ -38,6 +38,22 @@ jobs:
       - name: Verify robot suite
         run: pytest tests/factory_robot_3d -q
 
+      - name: Precompute simulation on GitHub CPU
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf precomputed_sim
+          python -m factory_robot_3d.run_simulation --output precomputed_sim
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          s=json.loads(Path('precomputed_sim/summary.json').read_text(encoding='utf-8'))
+          assert s['success'] is True, s
+          assert s['robot_count'] == 20, s
+          assert s['simulation_frames'] == 288, s
+          print('PRECOMPUTE_OK', s)
+          PY
+
       - name: Build ultrafast cinematic bundle
         shell: bash
         run: |
@@ -98,6 +114,10 @@ jobs:
           for i in $(seq 1 1200); do
             STATUS="$(kaggle kernels status "$REF" 2>&1 || true)"
             echo "[$i] $STATUS"
+            if echo "$STATUS" | grep -Fiq '404 Client Error'; then
+              sleep 5
+              continue
+            fi
             if echo "$STATUS" | grep -Eqi 'COMPLETE|FINISHED'; then
               exit 0
             fi
