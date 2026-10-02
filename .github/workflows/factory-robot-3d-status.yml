@@ -1,6 +1,11 @@
 name: Factory Robot Cinematic - Kaggle Status Probe
 
 on:
+  push:
+    branches: [factory-robot-cinematic-impl]
+    paths:
+      - '.github/workflows/factory-robot-3d-status.yml'
+      - '.factory-robot-cinematic-status-trigger'
   workflow_dispatch:
 
 permissions:
