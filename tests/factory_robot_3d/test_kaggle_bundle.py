@@ -68,3 +68,37 @@ def test_embedded_entrypoint_keeps_runtime_guard_distinct_from_payload():
     with zipfile.ZipFile(BytesIO(_payload(script))) as archive:
         names = set(archive.namelist())
     assert "factory_robot_3d/__init__.py" in names
+
+
+def test_precomputed_bundle_embeds_simulation_outputs(tmp_path):
+    from factory_robot_3d.pipeline.build_precomputed_kaggle_bundle import (
+        build_precomputed_script,
+    )
+
+    sim = tmp_path / "sim"
+    sim.mkdir()
+    for name in ("factory_config.json", "animation.json", "telemetry.csv", "summary.json"):
+        (sim / name).write_text(f"{name}\n", encoding="utf-8")
+
+    package = Path("factory_robot_3d")
+    script = build_precomputed_script(
+        package / "kaggle_render_entrypoint.py",
+        package,
+        sim,
+    )
+
+    assert "__EMBEDDED_PROJECT_ZIP_B64__" not in script
+    assert "__EMBEDDED_SIMULATION_ZIP_B64__" not in script
+    match = re.search(
+        r'^EMBEDDED_SIMULATION_ZIP_B64 = "([A-Za-z0-9+/=]+)"$',
+        script,
+        flags=re.MULTILINE,
+    )
+    assert match
+    with zipfile.ZipFile(BytesIO(base64.b64decode(match.group(1)))) as archive:
+        assert set(archive.namelist()) == {
+            "animation.json",
+            "factory_config.json",
+            "summary.json",
+            "telemetry.csv",
+        }
