@@ -12,6 +12,8 @@ from factory_robot_3d.blender.factory_scene import build_factory_shell
 from factory_robot_3d.blender.lighting import configure_factory_lighting
 from factory_robot_3d.blender.materials import ensure_materials
 from factory_robot_3d.blender.robot_rig import build_robot_manifest, create_robot_rig
+from factory_robot_3d.blender.render_config import configure_cycles
+from factory_robot_3d.blender.validate_scene import validate_scene
 from factory_robot_3d.blender.schema import load_animation_bundle
 
 
@@ -93,6 +95,17 @@ def main(argv: list[str] | None = None) -> int:
     bpy.context.scene["factory_animation_frames"] = animation_manifest.frame_count
     bpy.context.scene["factory_camera_shots"] = len(camera_plan.shots)
     bpy.context.scene["factory_smoke"] = bool(args.smoke)
+
+    device = configure_cycles(bpy.context.scene, bpy_module=bpy)
+    report = validate_scene(bpy.context.scene, bundle, bpy_module=bpy)
+    if not report.ok:
+        raise RuntimeError("cinematic scene validation failed: " + "; ".join(report.errors))
+    print(
+        "FACTORY_RENDER_DEVICE",
+        device.backend,
+        ",".join(device.device_names),
+        flush=True,
+    )
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     bpy.ops.wm.save_as_mainfile(filepath=str(args.output))
