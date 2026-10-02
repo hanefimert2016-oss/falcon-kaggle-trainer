@@ -14,12 +14,13 @@ jobs:
   cancel-stale:
     runs-on: ubuntu-latest
     steps:
-      - name: Cancel stale ultrafast run 2
+      - name: Cancel active and pending stale factory runs
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
-          STALE_RUN_ID: '37025232729'
         run: |
           set -euo pipefail
-          gh api --method POST "repos/$REPOSITORY/actions/runs/$STALE_RUN_ID/force-cancel" || gh api --method POST "repos/$REPOSITORY/actions/runs/$STALE_RUN_ID/cancel" || true
-          echo "STALE_FACTORY_RUN_FORCE_CANCEL_REQUESTED id=$STALE_RUN_ID"
+          for RUN_ID in 37025142106 37025710086; do
+            gh api --method POST "repos/$REPOSITORY/actions/runs/$RUN_ID/force-cancel"               || gh api --method POST "repos/$REPOSITORY/actions/runs/$RUN_ID/cancel"               || true
+            echo "STALE_FACTORY_RUN_CANCEL_REQUESTED id=$RUN_ID"
+          done
