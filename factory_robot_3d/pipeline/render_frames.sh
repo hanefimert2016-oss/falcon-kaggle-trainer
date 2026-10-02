@@ -20,6 +20,7 @@ mkdir -p "$FRAMES"
 "$BLENDER" \
   --background "$SCENE" \
   --disable-autoexec \
+  --python factory_robot_3d/blender/prepare_render.py \
   -o "$FRAMES/frame_####" \
   -F PNG \
   -a
