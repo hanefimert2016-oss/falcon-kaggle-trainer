@@ -70,7 +70,11 @@ jobs:
           PY
           rm -rf kernel_factory_robot_ultrafast
           mkdir -p kernel_factory_robot_ultrafast
-          python -m factory_robot_3d.pipeline.build_kaggle_bundle             --template factory_robot_3d/kaggle_entrypoint.py             --package-root factory_robot_3d             --output kernel_factory_robot_ultrafast/kaggle_entrypoint.py
+          python -m factory_robot_3d.pipeline.build_precomputed_kaggle_bundle \
+            --template factory_robot_3d/kaggle_render_entrypoint.py \
+            --package-root factory_robot_3d \
+            --simulation-dir precomputed_sim \
+            --output kernel_factory_robot_ultrafast/kaggle_entrypoint.py
           python - <<'PY'
           import json, os
           from pathlib import Path
