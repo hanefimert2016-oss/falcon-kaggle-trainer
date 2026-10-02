@@ -141,7 +141,10 @@ def test_render_driver_reconfigures_gpu_and_renders_animation():
     driver = Path("factory_robot_3d/blender/render_scene.py").read_text(encoding="utf-8")
 
     assert "configure_cycles" in driver
-    assert "bpy.ops.render.render(animation=True)" in driver
+    assert "bpy.ops.render.render(write_still=True)" in driver
+    assert "scene.frame_set(frame)" in driver
+    assert "FACTORY_FRAME_OK" in driver
+    assert "animation=True" not in driver
     assert "FACTORY_RENDER_RUNTIME_DEVICE" in driver
     assert "frame_" in driver
 
@@ -190,3 +193,12 @@ def test_render_driver_uses_deterministic_hash_frame_pattern_without_missing_arg
 
     assert 'frames_dir / "frame_####"' in driver
     assert "args.frame_pattern" not in driver
+
+
+def test_render_wrapper_streams_blender_progress_to_console_and_log():
+    render = Path("factory_robot_3d/pipeline/render_frames.sh").read_text(encoding="utf-8")
+    production = Path("factory_robot_3d/pipeline/run_production.py").read_text(encoding="utf-8")
+
+    assert "tee -a" in render
+    assert "render.log" in render
+    assert "log=log" not in production.split('FACTORY_STAGE_BEGIN render_frames', 1)[1].split('FACTORY_STAGE_OK render_frames', 1)[0]
