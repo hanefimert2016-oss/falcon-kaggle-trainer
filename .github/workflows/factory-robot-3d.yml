@@ -13,7 +13,7 @@ permissions:
 
 concurrency:
   group: factory-robot-cinematic-t4
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   production:
@@ -22,7 +22,7 @@ jobs:
     env:
       KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
       KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
-      KERNEL_SLUG: factory-robot-cinematic-t4-production
+      KERNEL_SLUG: factory-robot-cinematic-t4-production-r${{ github.run_number }}
       ACCELERATOR: NvidiaTeslaT4
       PYTHONPATH: ${{ github.workspace }}
 
@@ -65,7 +65,7 @@ jobs:
           source = Path('factory_robot_3d/kernel-metadata.template.json')
           target = Path('kernel_factory_robot/kernel-metadata.json')
           data = json.loads(source.read_text(encoding='utf-8'))
-          data['id'] = data['id'].replace('__KAGGLE_OWNER__', os.environ['KAGGLE_OWNER'])
+          data['id'] = f"{os.environ['KAGGLE_OWNER']}/{os.environ['KERNEL_SLUG']}"
           target.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
           print(json.dumps(data, indent=2))
           PY
@@ -136,6 +136,8 @@ jobs:
           set -euo pipefail
           REF="$KAGGLE_OWNER/$KERNEL_SLUG"
           complete=0
+          cancel_retries=0
+          max_cancel_retries=3
           for i in $(seq 1 1200); do
             STATUS="$(kaggle kernels status "$REF" 2>&1 || true)"
             echo "[$i] $STATUS"
@@ -152,7 +154,33 @@ jobs:
               complete=1
               break
             fi
-            if echo "$STATUS" | grep -Eqi 'ERROR|FAILED|CANCELLED'; then
+            if echo "$STATUS" | grep -Eqi 'CANCEL_ACKNOWLEDGED|CANCELLED'; then
+              if [[ "$cancel_retries" -ge "$max_cancel_retries" ]]; then
+                echo "kernel_error: Kaggle production repeatedly cancelled after $cancel_retries retries"
+                kaggle kernels logs "$REF" || true
+                exit 1
+              fi
+              cancel_retries=$((cancel_retries + 1))
+              echo "KAGGLE_CANCEL_RECOVERY retry=$cancel_retries/$max_cancel_retries"
+              sleep 30
+              set +e
+              RETRY_OUTPUT="$(kaggle kernels push -p kernel_factory_robot --accelerator "$ACCELERATOR" --timeout 3600 2>&1)"
+              RETRY_RC=$?
+              set -e
+              echo "$RETRY_OUTPUT"
+              if [[ "$RETRY_RC" -ne 0 ]]; then
+                if echo "$RETRY_OUTPUT" | grep -Fiq 'Maximum batch GPU session count'; then
+                  echo "GPU_SLOT_RETRY after_cancel=$cancel_retries"
+                  sleep 60
+                  continue
+                fi
+                echo "kernel_error: Kaggle restart failed rc=$RETRY_RC"
+                exit "$RETRY_RC"
+              fi
+              sleep 30
+              continue
+            fi
+            if echo "$STATUS" | grep -Eqi 'ERROR|FAILED'; then
               echo 'kernel_error: Kaggle production failed'
               kaggle kernels logs "$REF" || true
               exit 1
