@@ -1,15 +1,45 @@
 from __future__ import annotations
 
+import base64
+from io import BytesIO
 import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
+import zipfile
 
 
-ROOT = Path(__file__).resolve().parent
+EMBEDDED_PROJECT_ZIP_B64 = "__EMBEDDED_PROJECT_ZIP_B64__"
 OUTPUT = Path("/kaggle/working/factory_robot_cinematic_output")
+
+
+def _prepare_project_root() -> Path:
+    if EMBEDDED_PROJECT_ZIP_B64 == "__EMBEDDED_PROJECT_ZIP_B64__":
+        root = Path(__file__).resolve().parent.parent
+    else:
+        root = Path("/kaggle/working/factory_robot_project")
+        if root.exists():
+            shutil.rmtree(root)
+        root.mkdir(parents=True, exist_ok=True)
+        payload = base64.b64decode(EMBEDDED_PROJECT_ZIP_B64)
+        with zipfile.ZipFile(BytesIO(payload)) as archive:
+            archive.extractall(root)
+        print(
+            "EMBEDDED_PROJECT_READY",
+            f"root={root}",
+            f"zip_bytes={len(payload)}",
+            flush=True,
+        )
+
+    root_text = str(root)
+    if root_text not in sys.path:
+        sys.path.insert(0, root_text)
+    return root
+
+
+ROOT = _prepare_project_root()
 
 
 def _run(command: list[str], *, capture: bool = False) -> subprocess.CompletedProcess[str]:
