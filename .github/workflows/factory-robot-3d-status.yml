@@ -23,32 +23,34 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
       - run: python -m pip install -q "kaggle>=2.2.1"
-      - name: Production kernel status and recent logs
+
+      - name: Production kernel status and render diagnostics
         shell: bash
         run: |
           set -euo pipefail
           REF="$KAGGLE_OWNER/$KERNEL_SLUG"
-          echo "=== my kernels ==="
-          kaggle kernels list --mine -v --page-size 50 || true
+
           echo "=== status: $REF ==="
           kaggle kernels status "$REF" || true
+
           echo '--- output files probe ---'
-          kaggle kernels files "$REF" -v --page-size 20 || true
-          echo '--- recent log tail ---'
-          kaggle kernels logs "$REF" 2>&1 | tail -n 160 || true
-          echo '--- failed/success output download probe ---'
+          kaggle kernels files "$REF" -v --page-size 50 || true
+
+          echo '--- recent kernel log tail ---'
+          kaggle kernels logs "$REF" 2>&1 | tail -n 180 || true
+
+          echo '--- render.log download ---'
           rm -rf /tmp/factory-kaggle-output
           mkdir -p /tmp/factory-kaggle-output
-          kaggle kernels output "$REF" -p /tmp/factory-kaggle-output -o --file-pattern '(^|/)render\\.log          RENDER_LOG="$(find /tmp/factory-kaggle-output -type f -name render.log | head -n1 || true)"
-          if [[ -n "$RENDER_LOG" && -s "$RENDER_LOG" ]]; then
-            echo "--- render.log tail: $RENDER_LOG ---"
-            tail -n 220 "$RENDER_LOG" || true
-          fi
- || true
+          kaggle kernels output "$REF"             -p /tmp/factory-kaggle-output             -o             --file-pattern 'render[.]log$' || true
+
           find /tmp/factory-kaggle-output -type f -printf '%p %s bytes\n' | sort || true
           RENDER_LOG="$(find /tmp/factory-kaggle-output -type f -name render.log | head -n1 || true)"
           if [[ -n "$RENDER_LOG" && -s "$RENDER_LOG" ]]; then
             echo "--- render.log tail: $RENDER_LOG ---"
-            tail -n 220 "$RENDER_LOG" || true
+            tail -n 260 "$RENDER_LOG" || true
+          else
+            echo 'render.log was not published by Kaggle'
           fi
