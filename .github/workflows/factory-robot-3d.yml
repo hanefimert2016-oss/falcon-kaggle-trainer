@@ -98,18 +98,36 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          set +e
-          PUSH_OUTPUT="$(kaggle kernels push -p kernel_factory_robot --accelerator "$ACCELERATOR" --timeout 3600 2>&1)"
-          RC=$?
-          set -e
-          echo "$PUSH_OUTPUT"
-          if echo "$PUSH_OUTPUT" | grep -Fiq 'Maximum batch GPU session count'; then
-            echo 'quota_error: Maximum batch GPU session count reached'
-            exit 86
-          fi
-          if [[ "$RC" -ne 0 ]]; then
+          pushed=0
+          for attempt in $(seq 1 120); do
+            set +e
+            PUSH_OUTPUT="$(kaggle kernels push -p kernel_factory_robot --accelerator "$ACCELERATOR" --timeout 3600 2>&1)"
+            RC=$?
+            set -e
+            echo "$PUSH_OUTPUT"
+
+            if [[ "$RC" -eq 0 ]]; then
+              pushed=1
+              echo "GPU_SLOT_ACQUIRED attempt=$attempt"
+              break
+            fi
+
+            if echo "$PUSH_OUTPUT" | grep -Fiq 'Maximum batch GPU session count'; then
+              echo "GPU_SLOT_RETRY attempt=$attempt/120: Maximum batch GPU session count reached"
+              kaggle quota || true
+              if [[ "$attempt" -lt 120 ]]; then
+                sleep 60
+              fi
+              continue
+            fi
+
             echo "kernel_error: Kaggle kernel push failed with exit code $RC"
             exit "$RC"
+          done
+
+          if [[ "$pushed" != "1" ]]; then
+            echo "GPU_SLOT_TIMEOUT: no batch GPU slot became available"
+            exit 86
           fi
 
       - name: Wait for cinematic production
