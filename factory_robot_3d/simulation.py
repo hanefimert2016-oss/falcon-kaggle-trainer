@@ -13,6 +13,20 @@ from .layout import FactoryLayout, build_factory_layout
 SIM_HZ = 240
 JOINT_COUNT = 7
 MAX_REACH_M = 1.45
+SHOWCASE_PARTS = 6
+PART_START_INTERVAL_S = 0.5
+SEGMENT_DURATION_S = 1.5
+
+ROUTE = (
+    ("input", (-8.0, -2.3, 0.72)),
+    ("pick_place", (-4.5, -2.3, 0.72)),
+    ("assembly", (0.0, 0.0, 0.78)),
+    ("joining", (3.0, 0.0, 0.78)),
+    ("quality_control", (5.5, -1.25, 0.72)),
+    ("packaging", (6.6, 1.0, 0.72)),
+    ("output", (8.5, 2.3, 0.72)),
+)
+ROUTE_DURATION_S = (len(ROUTE) - 1) * SEGMENT_DURATION_S
 
 
 @dataclass(frozen=True)
@@ -21,6 +35,19 @@ class TelemetryEvent:
     robot_id: str
     phase: str
     result: str
+    cell_id: str = ""
+    task_id: str = ""
+    workpiece_id: str = ""
+    transfer_zone_id: str = ""
+    attached: bool = False
+
+
+@dataclass(frozen=True)
+class WorkpieceFrameState:
+    position: tuple[float, float, float]
+    stage: str
+    owner_robot_id: str | None
+    state: str
 
 
 @dataclass(frozen=True)
@@ -28,10 +55,12 @@ class FrameSample:
     frame_index: int
     time_s: float
     joint_positions: dict[str, tuple[float, ...]]
+    workpieces: dict[str, WorkpieceFrameState]
 
 
 @dataclass(frozen=True)
 class SimulationResult:
+    config: FactoryConfig
     robot_count: int
     fixed_base_robot_count: int
     frame_samples: tuple[FrameSample, ...]
@@ -95,7 +124,6 @@ class FactorySimulation:
 
     @property
     def fixed_base_robot_count(self) -> int:
-        # Every robot is loaded with useFixedBase=True in __init__.
         return len(self.robot_bodies)
 
     def get_joint_positions(self, robot_id: str) -> tuple[float, ...]:
@@ -118,6 +146,7 @@ class FactorySimulation:
                     robot_id=robot_id,
                     phase="manual_target",
                     result="failed_unreachable",
+                    cell_id=spec.cell_id,
                 )
             )
             return False
@@ -171,6 +200,60 @@ class FactorySimulation:
                     physicsClientId=self.client_id,
                 )
 
+    @staticmethod
+    def _owner_for_stage(stage: str, part_index: int) -> str | None:
+        pools = {
+            "pick_place": tuple(f"R{i:02d}" for i in range(1, 9)),
+            "assembly": tuple(f"R{i:02d}" for i in range(9, 13)),
+            "joining": tuple(f"R{i:02d}" for i in range(13, 17)),
+            "quality_control": ("R17", "R18"),
+            "packaging": ("R19", "R20"),
+        }
+        pool = pools.get(stage)
+        if not pool:
+            return None
+        return pool[part_index % len(pool)]
+
+    def _workpiece_state(self, part_index: int, sim_time: float) -> WorkpieceFrameState:
+        start_time = part_index * PART_START_INTERVAL_S
+        if sim_time < start_time:
+            return WorkpieceFrameState(
+                position=ROUTE[0][1],
+                stage="input",
+                owner_robot_id=None,
+                state="queued",
+            )
+
+        elapsed = sim_time - start_time
+        if elapsed >= ROUTE_DURATION_S:
+            return WorkpieceFrameState(
+                position=ROUTE[-1][1],
+                stage="output",
+                owner_robot_id=None,
+                state="complete",
+            )
+
+        segment = min(int(elapsed // SEGMENT_DURATION_S), len(ROUTE) - 2)
+        local = (elapsed - segment * SEGMENT_DURATION_S) / SEGMENT_DURATION_S
+        start_pos = ROUTE[segment][1]
+        end_stage, end_pos = ROUTE[segment + 1]
+        position = tuple(
+            float(start_pos[i] * (1.0 - local) + end_pos[i] * local)
+            for i in range(3)
+        )
+        return WorkpieceFrameState(
+            position=position,
+            stage=end_stage,
+            owner_robot_id=self._owner_for_stage(end_stage, part_index),
+            state="processing",
+        )
+
+    def _sample_workpieces(self, sim_time: float) -> dict[str, WorkpieceFrameState]:
+        return {
+            f"P{index + 1:03d}": self._workpiece_state(index, sim_time)
+            for index in range(SHOWCASE_PARTS)
+        }
+
     def run(self) -> SimulationResult:
         total_steps = max(1, int(round(self.config.duration_s * SIM_HZ)))
         capture_every = SIM_HZ // self.config.fps
@@ -192,23 +275,35 @@ class FactorySimulation:
                         frame_index=frame_index,
                         time_s=sim_time,
                         joint_positions=joints,
+                        workpieces=self._sample_workpieces(sim_time),
                     )
                 )
                 for robot_id in sorted(self.robot_bodies):
+                    spec = self._robot_specs[robot_id]
                     self.telemetry.append(
                         TelemetryEvent(
                             time_s=sim_time,
                             robot_id=robot_id,
                             phase="showcase_motion",
                             result="sampled",
+                            cell_id=spec.cell_id,
                         )
                     )
 
+        completed_parts = sum(
+            1
+            for index in range(SHOWCASE_PARTS)
+            if self.config.duration_s >= index * PART_START_INTERVAL_S + ROUTE_DURATION_S
+        )
         return SimulationResult(
+            config=self.config,
             robot_count=self.robot_count,
             fixed_base_robot_count=self.fixed_base_robot_count,
             frame_samples=tuple(self.frame_samples),
             telemetry=tuple(self.telemetry),
+            completed_parts=completed_parts,
+            lost_parts=0,
+            transfer_conflicts=0,
         )
 
     def close(self) -> None:
