@@ -6,7 +6,10 @@ import sys
 
 from factory_robot_3d.config import FactoryConfig
 from factory_robot_3d.layout import build_factory_layout
+from factory_robot_3d.blender.animation import apply_animation
+from factory_robot_3d.blender.cameras import build_camera_plan
 from factory_robot_3d.blender.factory_scene import build_factory_shell
+from factory_robot_3d.blender.lighting import configure_factory_lighting
 from factory_robot_3d.blender.materials import ensure_materials
 from factory_robot_3d.blender.robot_rig import build_robot_manifest, create_robot_rig
 from factory_robot_3d.blender.schema import load_animation_bundle
@@ -73,8 +76,22 @@ def main(argv: list[str] | None = None) -> int:
         for robot_id in ids
     }
 
+    configure_factory_lighting(bpy.context.scene, bpy_module=bpy)
+    animation_manifest = apply_animation(
+        bundle,
+        rigs,
+        bpy_module=bpy,
+        materials=materials,
+    )
+    camera_plan = build_camera_plan(bpy.context.scene, bpy_module=bpy)
+
+    bpy.context.scene.frame_start = 1
+    bpy.context.scene.frame_end = 288
+    bpy.context.scene.render.fps = 24
     bpy.context.scene["factory_robot_count"] = len(rigs)
     bpy.context.scene["factory_cell_count"] = 5
+    bpy.context.scene["factory_animation_frames"] = animation_manifest.frame_count
+    bpy.context.scene["factory_camera_shots"] = len(camera_plan.shots)
     bpy.context.scene["factory_smoke"] = bool(args.smoke)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
