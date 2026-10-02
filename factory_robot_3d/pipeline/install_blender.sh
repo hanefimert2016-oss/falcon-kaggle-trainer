@@ -15,6 +15,33 @@ BIN="$INSTALL_DIR/blender"
 
 mkdir -p "$ROOT" "$CACHE"
 
+CURL_ARGS=(
+  --fail
+  --location
+  --show-error
+  --retry 8
+  --retry-all-errors
+  --retry-delay 5
+  --connect-timeout 20
+  --max-time 1800
+)
+
+download_to_file() {
+  local url="$1"
+  local dest="$2"
+  local part="${dest}.part"
+
+  rm -f "$part"
+  echo "BLENDER_INSTALL_STAGE download url=$url dest=$dest" >&2
+  curl "${CURL_ARGS[@]}" "$url" -o "$part"
+  if [[ ! -s "$part" ]]; then
+    echo "Downloaded file is empty: $part" >&2
+    rm -f "$part"
+    return 1
+  fi
+  mv -f "$part" "$dest"
+}
+
 first_version_line() {
   local output first
   output="$("$BIN" --version 2>&1)"
@@ -35,9 +62,16 @@ fi
 
 cd "$CACHE"
 
-echo "BLENDER_INSTALL_STAGE download archive=$ARCHIVE" >&2
+if [[ -s "$ARCHIVE" ]]; then
+  ACTUAL_SHA="$(sha256sum "$ARCHIVE" | awk '{print $1}')"
+  if [[ "$ACTUAL_SHA" != "$PINNED_SHA256" ]]; then
+    echo "BLENDER_INSTALL_STAGE stale_archive expected=$PINNED_SHA256 got=$ACTUAL_SHA" >&2
+    rm -f "$ARCHIVE"
+  fi
+fi
+
 if [[ ! -s "$ARCHIVE" ]]; then
-  curl --fail --location --retry 4 --retry-delay 3 "$URL" -o "$ARCHIVE"
+  download_to_file "$URL" "$ARCHIVE"
 fi
 
 echo "BLENDER_INSTALL_STAGE verify_pinned_sha" >&2
@@ -50,8 +84,9 @@ fi
 printf '%s  %s\n' "$PINNED_SHA256" "$ARCHIVE" | sha256sum -c -
 
 echo "BLENDER_INSTALL_STAGE verify_official_manifest" >&2
-curl --fail --location --retry 4 --retry-delay 3 "$MANIFEST_URL" -o "blender-$VERSION.sha256"
-grep -F "$ARCHIVE" "blender-$VERSION.sha256" > "blender-linux.sha256"
+MANIFEST_FILE="blender-$VERSION.sha256"
+download_to_file "$MANIFEST_URL" "$MANIFEST_FILE"
+grep -F "$ARCHIVE" "$MANIFEST_FILE" > "blender-linux.sha256"
 if [[ ! -s "blender-linux.sha256" ]]; then
   echo "Official Blender manifest does not contain $ARCHIVE" >&2
   exit 1
