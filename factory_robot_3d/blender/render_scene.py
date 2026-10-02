@@ -57,7 +57,24 @@ def main(argv: list[str] | None = None) -> int:
         flush=True,
     )
 
-    bpy.ops.render.render(animation=True)
+    total_frames = scene.frame_end - scene.frame_start + 1
+    for frame in range(scene.frame_start, scene.frame_end + 1):
+        scene.frame_set(frame)
+        target = frames_dir / f"frame_{frame:04d}"
+        scene.render.filepath = str(target)
+        print(
+            f"FACTORY_FRAME_BEGIN frame={frame}/{scene.frame_end}",
+            flush=True,
+        )
+        bpy.ops.render.render(write_still=True)
+        rendered = target.with_suffix(".png")
+        if not rendered.is_file() or rendered.stat().st_size == 0:
+            raise RuntimeError(f"rendered frame missing or empty: {rendered}")
+        print(
+            f"FACTORY_FRAME_OK frame={frame}/{scene.frame_end} "
+            f"bytes={rendered.stat().st_size}",
+            flush=True,
+        )
 
     first = frames_dir / "frame_0001.png"
     last = frames_dir / "frame_0288.png"
