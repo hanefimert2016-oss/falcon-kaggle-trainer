@@ -37,3 +37,13 @@ jobs:
           kaggle kernels files "$REF" -v --page-size 20 || true
           echo '--- recent log tail ---'
           kaggle kernels logs "$REF" 2>&1 | tail -n 160 || true
+          echo '--- failed/success output download probe ---'
+          rm -rf /tmp/factory-kaggle-output
+          mkdir -p /tmp/factory-kaggle-output
+          kaggle kernels output "$REF" -p /tmp/factory-kaggle-output -o || true
+          find /tmp/factory-kaggle-output -type f -printf '%p %s bytes\n' | sort || true
+          RENDER_LOG="$(find /tmp/factory-kaggle-output -type f -name render.log | head -n1 || true)"
+          if [[ -n "$RENDER_LOG" && -s "$RENDER_LOG" ]]; then
+            echo "--- render.log tail: $RENDER_LOG ---"
+            tail -n 220 "$RENDER_LOG" || true
+          fi
