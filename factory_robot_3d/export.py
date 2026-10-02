@@ -34,6 +34,23 @@ def _config_payload(result: SimulationResult) -> dict:
     }
 
 
+def _serialize_workpiece_state(state: object) -> dict:
+    if isinstance(state, dict):
+        position = state.get("position", (0.0, 0.0, 0.0))
+        return {
+            "position": [_round_float(x) for x in position],
+            "stage": state.get("stage", "unknown"),
+            "owner_robot_id": state.get("owner_robot_id"),
+            "state": state.get("state", "unknown"),
+        }
+    return {
+        "position": [_round_float(x) for x in state.position],
+        "stage": state.stage,
+        "owner_robot_id": getattr(state, "owner_robot_id", None),
+        "state": state.state,
+    }
+
+
 def _animation_payload(result: SimulationResult) -> dict:
     frames = []
     for sample in result.frame_samples:
@@ -42,12 +59,7 @@ def _animation_payload(result: SimulationResult) -> dict:
             for robot_id in sorted(sample.joint_positions)
         }
         workpieces = {
-            workpiece_id: {
-                "position": [_round_float(x) for x in state.position],
-                "stage": state.stage,
-                "owner_robot_id": state.owner_robot_id,
-                "state": state.state,
-            }
+            workpiece_id: _serialize_workpiece_state(state)
             for workpiece_id, state in sorted(sample.workpieces.items())
         }
         frames.append(
