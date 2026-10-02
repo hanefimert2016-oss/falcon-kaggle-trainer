@@ -34,7 +34,12 @@ def main(argv: list[str] | None = None) -> int:
     scene.render.fps = 24
     scene.render.image_settings.file_format = "PNG"
     scene.render.use_file_extension = True
-    scene.render.filepath = str(frames_dir / "frame_")
+    frame_pattern = args.frame_pattern.resolve()
+    if frame_pattern.parent != frames_dir:
+        raise RuntimeError("frame pattern must live inside frames directory")
+    if "####" not in frame_pattern.name:
+        raise RuntimeError("frame pattern must include ####")
+    scene.render.filepath = str(frame_pattern)
     if hasattr(scene.render, "use_persistent_data"):
         scene.render.use_persistent_data = True
 
