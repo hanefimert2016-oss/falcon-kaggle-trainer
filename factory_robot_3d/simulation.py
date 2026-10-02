@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
+from typing import Mapping
 
 import pybullet as p
 import pybullet_data
@@ -13,20 +14,19 @@ from .layout import FactoryLayout, build_factory_layout
 SIM_HZ = 240
 JOINT_COUNT = 7
 MAX_REACH_M = 1.45
-SHOWCASE_PARTS = 6
-PART_START_INTERVAL_S = 0.5
-SEGMENT_DURATION_S = 1.5
+PART_COUNT = 8
+PART_INTERVAL_S = 0.75
+PART_CYCLE_S = 6.0
 
-ROUTE = (
-    ("input", (-8.0, -2.3, 0.72)),
-    ("pick_place", (-4.5, -2.3, 0.72)),
-    ("assembly", (0.0, 0.0, 0.78)),
-    ("joining", (3.0, 0.0, 0.78)),
-    ("quality_control", (5.5, -1.25, 0.72)),
-    ("packaging", (6.6, 1.0, 0.72)),
-    ("output", (8.5, 2.3, 0.72)),
+PRODUCTION_WAYPOINTS = (
+    ("pick_place", (-8.0, -2.3, 0.72)),
+    ("assembly", (-1.2, 0.0, 0.78)),
+    ("joining", (2.2, 0.0, 0.78)),
+    ("quality_control", (5.45, -1.15, 0.74)),
+    ("packaging", (6.65, 1.0, 0.74)),
+    ("output", (8.35, 2.3, 0.72)),
+    ("complete", (9.0, 2.3, 0.72)),
 )
-ROUTE_DURATION_S = (len(ROUTE) - 1) * SEGMENT_DURATION_S
 
 
 @dataclass(frozen=True)
@@ -43,19 +43,11 @@ class TelemetryEvent:
 
 
 @dataclass(frozen=True)
-class WorkpieceFrameState:
-    position: tuple[float, float, float]
-    stage: str
-    owner_robot_id: str | None
-    state: str
-
-
-@dataclass(frozen=True)
 class FrameSample:
     frame_index: int
     time_s: float
-    joint_positions: dict[str, tuple[float, ...]]
-    workpieces: dict[str, WorkpieceFrameState]
+    joint_positions: Mapping[str, tuple[float, ...]]
+    workpieces: Mapping[str, dict[str, object]]
 
 
 @dataclass(frozen=True)
@@ -99,11 +91,7 @@ class FactorySimulation:
             quat = p.getQuaternionFromEuler([0.0, 0.0, robot.base_yaw])
             body = p.loadURDF(
                 "kuka_iiwa/model.urdf",
-                basePosition=[
-                    robot.base_position[0],
-                    robot.base_position[1],
-                    robot.base_position[2],
-                ],
+                basePosition=list(robot.base_position),
                 baseOrientation=quat,
                 useFixedBase=True,
                 physicsClientId=self.client_id,
@@ -129,7 +117,7 @@ class FactorySimulation:
     def get_joint_positions(self, robot_id: str) -> tuple[float, ...]:
         body = self.robot_bodies[robot_id]
         return tuple(
-            p.getJointState(body, joint, physicsClientId=self.client_id)[0]
+            float(p.getJointState(body, joint, physicsClientId=self.client_id)[0])
             for joint in range(JOINT_COUNT)
         )
 
@@ -176,17 +164,25 @@ class FactorySimulation:
         return True
 
     def _apply_showcase_motion(self, sim_time: float) -> None:
+        role_speed = {
+            "pick_place": 1.15,
+            "assembly": 0.82,
+            "joining": 0.92,
+            "quality_control": 0.68,
+            "packaging": 1.05,
+        }
         for index, robot in enumerate(self.layout.robots):
             body = self.robot_bodies[robot.robot_id]
             phase = index * 0.37
+            speed = role_speed[robot.role]
             targets = (
-                0.35 * math.sin(sim_time * 0.8 + phase),
-                0.45 * math.sin(sim_time * 0.65 + phase + 0.4),
-                0.40 * math.sin(sim_time * 0.70 + phase + 0.8),
-                0.55 * math.sin(sim_time * 0.60 + phase + 1.2),
-                0.30 * math.sin(sim_time * 0.90 + phase + 1.6),
-                0.35 * math.sin(sim_time * 0.75 + phase + 2.0),
-                0.25 * math.sin(sim_time * 1.00 + phase + 2.4),
+                0.38 * math.sin(sim_time * 0.8 * speed + phase),
+                0.34 + 0.34 * math.sin(sim_time * 0.65 * speed + phase + 0.4),
+                -0.30 + 0.30 * math.sin(sim_time * 0.70 * speed + phase + 0.8),
+                -0.82 + 0.42 * math.sin(sim_time * 0.60 * speed + phase + 1.2),
+                0.24 * math.sin(sim_time * 0.90 * speed + phase + 1.6),
+                0.48 + 0.28 * math.sin(sim_time * 0.75 * speed + phase + 2.0),
+                0.32 * math.sin(sim_time * 1.00 * speed + phase + 2.4),
             )
             for joint, angle in enumerate(targets):
                 p.setJointMotorControl2(
@@ -201,61 +197,50 @@ class FactorySimulation:
                 )
 
     @staticmethod
-    def _owner_for_stage(stage: str, part_index: int) -> str | None:
-        pools = {
-            "pick_place": tuple(f"R{i:02d}" for i in range(1, 9)),
-            "assembly": tuple(f"R{i:02d}" for i in range(9, 13)),
-            "joining": tuple(f"R{i:02d}" for i in range(13, 17)),
-            "quality_control": ("R17", "R18"),
-            "packaging": ("R19", "R20"),
-        }
-        pool = pools.get(stage)
-        if not pool:
-            return None
-        return pool[part_index % len(pool)]
+    def _lerp(a: tuple[float, float, float], b: tuple[float, float, float], u: float) -> list[float]:
+        return [round(a[i] * (1.0 - u) + b[i] * u, 8) for i in range(3)]
 
-    def _workpiece_state(self, part_index: int, sim_time: float) -> WorkpieceFrameState:
-        start_time = part_index * PART_START_INTERVAL_S
-        if sim_time < start_time:
-            return WorkpieceFrameState(
-                position=ROUTE[0][1],
-                stage="input",
-                owner_robot_id=None,
-                state="queued",
-            )
+    def _sample_workpieces(self, sim_time: float) -> dict[str, dict[str, object]]:
+        sampled: dict[str, dict[str, object]] = {}
+        for index in range(PART_COUNT):
+            workpiece_id = f"P{index + 1:03d}"
+            start = index * PART_INTERVAL_S
+            age = sim_time - start
+            if age < 0.0:
+                continue
 
-        elapsed = sim_time - start_time
-        if elapsed >= ROUTE_DURATION_S:
-            return WorkpieceFrameState(
-                position=ROUTE[-1][1],
-                stage="output",
-                owner_robot_id=None,
-                state="complete",
-            )
+            if age >= PART_CYCLE_S:
+                sampled[workpiece_id] = {
+                    "stage": "complete",
+                    "state": "complete",
+                    "position": list(PRODUCTION_WAYPOINTS[-1][1]),
+                }
+                continue
 
-        segment = min(int(elapsed // SEGMENT_DURATION_S), len(ROUTE) - 2)
-        local = (elapsed - segment * SEGMENT_DURATION_S) / SEGMENT_DURATION_S
-        start_pos = ROUTE[segment][1]
-        end_stage, end_pos = ROUTE[segment + 1]
-        position = tuple(
-            float(start_pos[i] * (1.0 - local) + end_pos[i] * local)
-            for i in range(3)
+            segment_length = PART_CYCLE_S / (len(PRODUCTION_WAYPOINTS) - 1)
+            segment = min(int(age / segment_length), len(PRODUCTION_WAYPOINTS) - 2)
+            local_u = (age - segment * segment_length) / segment_length
+            stage = PRODUCTION_WAYPOINTS[segment][0]
+            start_pos = PRODUCTION_WAYPOINTS[segment][1]
+            end_pos = PRODUCTION_WAYPOINTS[segment + 1][1]
+            sampled[workpiece_id] = {
+                "stage": stage,
+                "state": "active",
+                "position": self._lerp(start_pos, end_pos, local_u),
+            }
+        return sampled
+
+    def _completed_part_count(self, sim_time: float) -> int:
+        return sum(
+            1
+            for index in range(PART_COUNT)
+            if sim_time - index * PART_INTERVAL_S >= PART_CYCLE_S
         )
-        return WorkpieceFrameState(
-            position=position,
-            stage=end_stage,
-            owner_robot_id=self._owner_for_stage(end_stage, part_index),
-            state="processing",
-        )
-
-    def _sample_workpieces(self, sim_time: float) -> dict[str, WorkpieceFrameState]:
-        return {
-            f"P{index + 1:03d}": self._workpiece_state(index, sim_time)
-            for index in range(SHOWCASE_PARTS)
-        }
 
     def run(self) -> SimulationResult:
         total_steps = max(1, int(round(self.config.duration_s * SIM_HZ)))
+        if SIM_HZ % self.config.fps != 0:
+            raise ValueError("fps must divide 240 Hz simulation rate exactly")
         capture_every = SIM_HZ // self.config.fps
         frame_index = 0
 
@@ -270,38 +255,35 @@ class FactorySimulation:
                     robot_id: self.get_joint_positions(robot_id)
                     for robot_id in sorted(self.robot_bodies)
                 }
+                workpieces = self._sample_workpieces(sim_time)
                 self.frame_samples.append(
                     FrameSample(
                         frame_index=frame_index,
                         time_s=sim_time,
                         joint_positions=joints,
-                        workpieces=self._sample_workpieces(sim_time),
+                        workpieces=workpieces,
                     )
                 )
-                for robot_id in sorted(self.robot_bodies):
-                    spec = self._robot_specs[robot_id]
+
+                for robot in sorted(self.layout.robots, key=lambda item: item.robot_id):
                     self.telemetry.append(
                         TelemetryEvent(
                             time_s=sim_time,
-                            robot_id=robot_id,
+                            robot_id=robot.robot_id,
                             phase="showcase_motion",
                             result="sampled",
-                            cell_id=spec.cell_id,
+                            cell_id=robot.cell_id,
                         )
                     )
 
-        completed_parts = sum(
-            1
-            for index in range(SHOWCASE_PARTS)
-            if self.config.duration_s >= index * PART_START_INTERVAL_S + ROUTE_DURATION_S
-        )
+        final_time = total_steps / SIM_HZ
         return SimulationResult(
             config=self.config,
             robot_count=self.robot_count,
             fixed_base_robot_count=self.fixed_base_robot_count,
             frame_samples=tuple(self.frame_samples),
             telemetry=tuple(self.telemetry),
-            completed_parts=completed_parts,
+            completed_parts=self._completed_part_count(final_time),
             lost_parts=0,
             transfer_conflicts=0,
         )
