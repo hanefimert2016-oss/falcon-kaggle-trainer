@@ -29,14 +29,47 @@ class ProductionSummary:
     artifacts: ArtifactValidationReport
 
 
+def _surface_log_tail(log, *, max_lines: int = 240) -> None:
+    if log is None:
+        return
+    try:
+        log.flush()
+    except Exception:
+        pass
+    name = getattr(log, "name", None)
+    if not name:
+        return
+    try:
+        lines = Path(name).read_text(encoding="utf-8", errors="replace").splitlines()
+    except Exception as exc:
+        print(f"FACTORY_RENDER_LOG_UNREADABLE {exc}", file=sys.stderr, flush=True)
+        return
+
+    print("FACTORY_RENDER_LOG_TAIL_BEGIN", file=sys.stderr, flush=True)
+    for line in lines[-max_lines:]:
+        print(line, file=sys.stderr, flush=True)
+    print("FACTORY_RENDER_LOG_TAIL_END", file=sys.stderr, flush=True)
+
+
 def _run(command: Sequence[str], *, log=None, env=None) -> None:
-    subprocess.run(
-        list(command),
-        check=True,
-        stdout=log,
-        stderr=subprocess.STDOUT if log is not None else None,
-        env=env,
-    )
+    command_list = list(command)
+    try:
+        subprocess.run(
+            command_list,
+            check=True,
+            stdout=log,
+            stderr=subprocess.STDOUT if log is not None else None,
+            env=env,
+        )
+    except subprocess.CalledProcessError as exc:
+        print(
+            "FACTORY_COMMAND_FAILED "
+            f"rc={exc.returncode} command={json.dumps(command_list)}",
+            file=sys.stderr,
+            flush=True,
+        )
+        _surface_log_tail(log)
+        raise
 
 
 def run_production(
