@@ -24,6 +24,7 @@ jobs:
       KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
       KERNEL_SLUG: factory-robot-cinematic-t4
       ACCELERATOR: NvidiaTeslaT4
+      PYTHONPATH: ${{ github.workspace }}
 
     steps:
       - uses: actions/checkout@v4
