@@ -130,24 +130,25 @@ def run_production(
     ])
     print("FACTORY_STAGE_OK build_scene", flush=True)
 
-    with render_log.open("w", encoding="utf-8") as log:
-        print("FACTORY_STAGE_BEGIN render_frames", flush=True)
-        _run([
-            "bash",
-            "factory_robot_3d/pipeline/render_frames.sh",
-            str(blender_bin),
-            str(scene_path),
-            str(output_dir),
-        ], log=log)
+    render_log.write_text("", encoding="utf-8")
+    print("FACTORY_STAGE_BEGIN render_frames", flush=True)
+    _run([
+        "bash",
+        "factory_robot_3d/pipeline/render_frames.sh",
+        str(blender_bin),
+        str(scene_path),
+        str(output_dir),
+    ])
+    print("FACTORY_STAGE_OK render_frames", flush=True)
 
-        print("FACTORY_STAGE_OK render_frames", flush=True)
-        print("FACTORY_STAGE_BEGIN encode_video", flush=True)
+    print("FACTORY_STAGE_BEGIN encode_video", flush=True)
+    with render_log.open("a", encoding="utf-8") as log:
         _run([
             "bash",
             "factory_robot_3d/pipeline/encode_video.sh",
             str(output_dir),
         ], log=log)
-        print("FACTORY_STAGE_OK encode_video", flush=True)
+    print("FACTORY_STAGE_OK encode_video", flush=True)
 
     print("FACTORY_STAGE_BEGIN validate_video", flush=True)
     _run([
