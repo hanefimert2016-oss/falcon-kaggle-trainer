@@ -75,3 +75,14 @@ def test_primary_downloads_revalidates_and_keeps_artifact_at_least_seven_days():
     )
     retention = int(retention_line.split(":", 1)[1].strip())
     assert retention >= 7
+
+
+def test_primary_smokes_blender_before_kaggle_t4_push():
+    text = PRIMARY.read_text(encoding="utf-8")
+
+    smoke = "Smoke Blender 5.2.2 bootstrap before T4 push"
+    push = "Push private cinematic T4 kernel"
+    assert smoke in text
+    assert text.index(smoke) < text.index(push)
+    assert "BLENDER_ROOT" in text
+    assert "factory_robot_3d/pipeline/install_blender.sh" in text

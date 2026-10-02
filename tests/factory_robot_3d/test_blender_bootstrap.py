@@ -24,6 +24,7 @@ def test_blender_installer_contains_checksum_and_official_manifest_verification(
     assert "blender-5.2.2.sha256" in script
     assert "84098912789dc450e95697c4184fb8a90acbe5111c2ba4aede3fecb57806a168" in script
     assert "sha256sum -c" in script
+    assert 'grep -F "$ARCHIVE"' in script
     assert "blender-5.2.2-linux-x64.tar.xz" in script
 
 
