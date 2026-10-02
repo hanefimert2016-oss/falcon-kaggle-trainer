@@ -24,7 +24,7 @@ first_version_line() {
 
 if [[ -x "$BIN" ]]; then
   CACHED_VERSION="$(first_version_line || true)"
-  if [[ "$CACHED_VERSION" == "Blender $VERSION" ]]; then
+  if [[ "$CACHED_VERSION" == "Blender $VERSION"* ]]; then
     echo "BLENDER_CACHE_HIT $BIN"
     printf '%s\n' "$BIN"
     exit 0
@@ -74,7 +74,7 @@ fi
 
 echo "BLENDER_INSTALL_STAGE verify_binary" >&2
 VERSION_LINE="$(first_version_line)"
-if [[ "$VERSION_LINE" != "Blender $VERSION" ]]; then
+if [[ "$VERSION_LINE" != "Blender $VERSION"* ]]; then
   echo "Unexpected Blender version: $VERSION_LINE" >&2
   exit 1
 fi

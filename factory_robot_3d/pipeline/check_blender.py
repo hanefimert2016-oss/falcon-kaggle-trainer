@@ -16,7 +16,7 @@ BLENDER_SHA256 = "84098912789dc450e95697c4184fb8a90acbe5111c2ba4aede3fecb57806a1
 
 def verify_version_output(text: str) -> bool:
     first = text.strip().splitlines()[0] if text.strip() else ""
-    return first.strip() == f"Blender {BLENDER_VERSION}"
+    return first.strip().startswith(f"Blender {BLENDER_VERSION}")
 
 
 def check_blender(binary: Path) -> bool:

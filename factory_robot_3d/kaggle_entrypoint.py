@@ -114,7 +114,7 @@ def _install_blender() -> Path:
 
     version = _run([str(blender), "--version"], capture=True)
     first = version.stdout.splitlines()[0] if version.stdout else ""
-    if first.strip() != "Blender 5.2.2":
+    if not first.strip().startswith("Blender 5.2.2"):
         raise RuntimeError(f"expected Blender 5.2.2, got {first!r}")
     print("BLENDER_VERSION_OK", first, flush=True)
     return blender
