@@ -1,10 +1,6 @@
 name: Factory Robot Fast T4 MP4 Delivery
 
 on:
-  push:
-    branches: [factory-robot-cinematic-impl]
-    paths:
-      - '.github/workflows/factory-robot-fast-delivery.yml'
   workflow_dispatch:
 
 permissions:
@@ -71,24 +67,28 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for attempt in $(seq 1 120); do
-            set +e
-            OUT="$(kaggle kernels push -p kernel_factory_robot_fast --accelerator "$ACCELERATOR" --timeout 3600 2>&1)"
-            RC=$?
-            set -e
-            echo "$OUT"
-            if [[ "$RC" -eq 0 ]]; then
-              echo "FAST_GPU_SLOT_ACQUIRED attempt=$attempt"
-              exit 0
-            fi
-            if echo "$OUT" | grep -Fiq 'Maximum batch GPU session count'; then
-              echo "FAST_GPU_SLOT_RETRY attempt=$attempt/120"
-              sleep 30
-              continue
-            fi
+          set +e
+          OUT="$(kaggle kernels push -p kernel_factory_robot_fast --accelerator "$ACCELERATOR" --timeout 3600 2>&1)"
+          RC=$?
+          set -e
+          echo "$OUT"
+
+          if echo "$OUT" | grep -Fiq 'Maximum batch GPU session count'; then
+            echo 'quota_error: Maximum batch GPU session count reached; refusing to retry'
+            exit 86
+          fi
+
+          if [[ "$RC" -ne 0 ]]; then
+            echo "FAST_PUSH_FAILED rc=$RC"
             exit "$RC"
-          done
-          exit 86
+          fi
+
+          if ! echo "$OUT" | grep -Eqi 'successfully pushed|Kernel version'; then
+            echo 'FAST_PUSH_UNCONFIRMED: success exit code without confirmed push'
+            exit 1
+          fi
+
+          echo 'FAST_PUSH_CONFIRMED'
 
       - name: Wait for fast render
         shell: bash
