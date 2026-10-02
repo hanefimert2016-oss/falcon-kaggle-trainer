@@ -4,7 +4,7 @@ import json
 import sys
 from typing import Any, Iterable
 
-from .render_config import DeviceInfo, select_cycles_backend
+from factory_robot_3d.blender.render_config import DeviceInfo, select_cycles_backend
 
 
 def probe_payload(
