@@ -76,6 +76,15 @@ def run_production(
             "--factory-startup",
             "--disable-autoexec",
             "--python",
+            "factory_robot_3d/blender/probe_gpu.py",
+        ], log=log)
+
+        _run([
+            str(blender_bin),
+            "--background",
+            "--factory-startup",
+            "--disable-autoexec",
+            "--python",
             "factory_robot_3d/blender/build_scene.py",
             "--",
             "--input",
