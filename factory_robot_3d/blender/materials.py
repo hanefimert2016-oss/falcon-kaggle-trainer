@@ -62,7 +62,8 @@ def ensure_materials(bpy_module: Any | None = None) -> dict[str, Any]:
             material = bpy_module.data.materials.new(name=name)
         material.use_nodes = True
         material.diffuse_color = recipe.base_color
-        material.surface_render_method = "DITHERED" if recipe.alpha < 1.0 else "DITHERED"
+        if hasattr(material, "surface_render_method"):
+            material.surface_render_method = "DITHERED"
 
         tree = material.node_tree
         principled = tree.nodes.get("Principled BSDF")
