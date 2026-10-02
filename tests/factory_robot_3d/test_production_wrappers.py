@@ -16,7 +16,8 @@ def test_render_and_encode_wrappers_exist_with_production_contract():
     assert "preview_wide.png" in render
     assert "preview_close.png" in render
     assert "final_frame.png" in render
-    assert "-a" in render or "--render-anim" in render
+    assert "factory_robot_3d/blender/render_scene.py" in render
+    assert "--python" in render
 
     assert "set -euo pipefail" in encode
     assert "ffmpeg" in encode
@@ -134,3 +135,20 @@ def test_production_pipeline_runs_gpu_probe_before_scene_build(monkeypatch, tmp_
         if "factory_robot_3d/blender/build_scene.py" in cmd
     )
     assert probe_index < build_index
+
+
+def test_render_driver_reconfigures_gpu_and_renders_animation():
+    driver = Path("factory_robot_3d/blender/render_scene.py").read_text(encoding="utf-8")
+
+    assert "configure_cycles" in driver
+    assert "bpy.ops.render.render(animation=True)" in driver
+    assert "FACTORY_RENDER_RUNTIME_DEVICE" in driver
+    assert "frame_" in driver
+
+
+def test_production_surfaces_render_log_tail_on_blender_failure():
+    source = Path("factory_robot_3d/pipeline/run_production.py").read_text(encoding="utf-8")
+
+    assert "RENDER_LOG_TAIL_BEGIN" in source
+    assert "RENDER_LOG_TAIL_END" in source
+    assert "CalledProcessError" in source
