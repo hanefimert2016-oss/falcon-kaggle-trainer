@@ -35,3 +35,13 @@ def test_version_parser_accepts_only_blender_522():
     assert verify_version_output("Blender 5.2.2 LTS\n") is True
     assert verify_version_output("Blender 5.2.1\n") is False
     assert verify_version_output("not blender") is False
+
+
+def test_blender_installer_is_resilient_to_partial_or_transient_downloads():
+    script = Path("factory_robot_3d/pipeline/install_blender.sh").read_text()
+
+    assert "--retry-all-errors" in script
+    assert "--connect-timeout" in script
+    assert "--max-time" in script
+    assert '".part"' in script or ".part" in script
+    assert "stale_archive" in script
