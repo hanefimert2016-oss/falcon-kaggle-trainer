@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import shutil
 from typing import Sequence
 
 from .validate_artifacts import ArtifactValidationReport, validate_artifacts
@@ -117,4 +118,9 @@ def run_production(
     report = validate_artifacts(output_dir)
     if not report.ok:
         raise RuntimeError("artifact validation failed: " + "; ".join(report.errors))
+
+    frames_dir = output_dir / "frames"
+    if frames_dir.is_dir():
+        shutil.rmtree(frames_dir)
+
     return ProductionSummary(output_dir=output_dir, stages=PRODUCTION_STAGES, artifacts=report)
