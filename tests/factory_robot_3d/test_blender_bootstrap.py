@@ -32,5 +32,6 @@ def test_version_parser_accepts_only_blender_522():
     from factory_robot_3d.pipeline.check_blender import verify_version_output
 
     assert verify_version_output("Blender 5.2.2\n") is True
+    assert verify_version_output("Blender 5.2.2 LTS\n") is True
     assert verify_version_output("Blender 5.2.1\n") is False
     assert verify_version_output("not blender") is False
