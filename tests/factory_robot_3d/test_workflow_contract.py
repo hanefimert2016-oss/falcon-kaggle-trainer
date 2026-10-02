@@ -15,7 +15,8 @@ def test_primary_workflow_owns_one_cinematic_t4_slug_and_full_package():
 
     assert "factory-robot-cinematic-t4-production" in text
     assert "NvidiaTeslaT4" in text
-    assert "factory_robot_3d/**" in text
+    assert "workflow_dispatch:" in text
+    assert "\n  push:" not in text
     assert "pytest tests/factory_robot_3d" in text
     assert "factory_robot_3d.pipeline.build_kaggle_bundle" in text
     assert "kaggle_entrypoint.py" in text
@@ -40,13 +41,13 @@ def test_primary_wait_loop_distinguishes_quota_from_kernel_failure():
     assert "kaggle kernels logs" in text
 
 
-def test_status_probe_uses_same_production_slug_without_push():
+def test_status_probe_is_read_only_and_never_pushes():
     text = STATUS.read_text(encoding="utf-8")
 
-    assert "factory-robot-cinematic-t4-production" in text
-    assert "factory-robot-3d-t4-simulation" not in text
+    assert "factory-robot-cinematic" in text
     assert "kaggle kernels status" in text
     assert "kaggle kernels logs" in text
+    assert "kaggle kernels push" not in text
 
 
 def test_kernel_template_requests_private_t4_gpu_production():
@@ -88,10 +89,24 @@ def test_primary_smokes_blender_before_kaggle_t4_push():
     assert "factory_robot_3d/pipeline/install_blender.sh" in text
 
 
-def test_primary_retries_when_batch_gpu_slots_are_temporarily_full():
+def test_primary_refuses_quota_and_cancel_retries():
     text = PRIMARY.read_text(encoding="utf-8")
 
-    assert "GPU_SLOT_RETRY" in text
-    assert "seq 1 120" in text
-    assert "sleep 60" in text
-    assert "GPU_SLOT_TIMEOUT" in text
+    assert "refusing to retry" in text
+    assert "GPU_SLOT_RETRY" not in text
+    assert "KAGGLE_CANCEL_RECOVERY" not in text
+    assert "max_cancel_retries" not in text
+    assert "cancel_retries" not in text
+
+
+def test_fast_and_ultrafast_workflows_are_dispatch_only_and_single_shot():
+    for path in (
+        Path(".github/workflows/factory-robot-fast-delivery.yml"),
+        Path(".github/workflows/factory-robot-ultrafast-delivery.yml"),
+    ):
+        text = path.read_text(encoding="utf-8")
+        assert "workflow_dispatch:" in text
+        assert "\n  push:" not in text
+        assert "Maximum batch GPU session count" in text
+        assert "refusing to retry" in text
+        assert "GPU_SLOT_RETRY" not in text
