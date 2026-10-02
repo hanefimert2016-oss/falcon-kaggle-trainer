@@ -16,7 +16,7 @@ OUTPUT = Path("/kaggle/working/factory_robot_cinematic_output")
 
 
 def _prepare_project_root() -> Path:
-    if EMBEDDED_PROJECT_ZIP_B64 == "__EMBEDDED_PROJECT_ZIP_B64__":
+    if EMBEDDED_PROJECT_ZIP_B64.startswith("__EMBEDDED_"):
         root = Path(__file__).resolve().parent.parent
     else:
         root = Path("/kaggle/working/factory_robot_project")
