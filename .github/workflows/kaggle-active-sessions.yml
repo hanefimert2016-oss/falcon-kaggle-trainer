@@ -20,16 +20,41 @@ jobs:
         with:
           python-version: '3.11'
       - run: python -m pip install "kaggle>=2.2.1"
-      - name: List FLM kernels
+      - name: Enumerate all owned kernels and statuses
+        shell: bash
         run: |
           set -euo pipefail
-          kaggle kernels list --mine -s "Falcon FLM" -v --page-size 100 || true
-      - name: Probe known GPU candidates
-        run: |
-          set +e
-          for REF in             "$KAGGLE_OWNER/falcon-flm-v04-three-model-suite"             "$KAGGLE_OWNER/falcon-flm-v04-fast-gpu"             "$KAGGLE_OWNER/falcon-flm-v04-fast-gpu-trio"             "$KAGGLE_OWNER/falcon-flm-train"; do
+          kaggle kernels list --mine -v --page-size 100 > /tmp/kernels.csv
+          cat /tmp/kernels.csv
+          python - <<'PY' > /tmp/kernel_refs.txt
+          import csv
+          from pathlib import Path
+
+          rows = list(csv.reader(Path("/tmp/kernels.csv").read_text(encoding="utf-8").splitlines()))
+          if not rows:
+              raise SystemExit(0)
+          header = [cell.strip().lower() for cell in rows[0]]
+          try:
+              ref_idx = header.index("ref")
+          except ValueError:
+              ref_idx = 0
+          seen = set()
+          for row in rows[1:]:
+              if len(row) <= ref_idx:
+                  continue
+              ref = row[ref_idx].strip()
+              if "/" not in ref or ref in seen:
+                  continue
+              seen.add(ref)
+              print(ref)
+          PY
+
+          echo '=== per-kernel status ==='
+          while IFS= read -r REF; do
+            [[ -n "$REF" ]] || continue
             echo "=== $REF ==="
-            kaggle kernels status "$REF"
-          done
+            kaggle kernels status "$REF" || true
+          done < /tmp/kernel_refs.txt
+
       - name: Quota
         run: kaggle quota
