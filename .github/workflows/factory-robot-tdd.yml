@@ -26,3 +26,25 @@ jobs:
         run: python -m pip install -q pytest numpy pybullet
       - name: Run robot factory tests
         run: pytest tests/factory_robot_3d -q
+
+      - name: Run deterministic showcase CLI
+        run: |
+          rm -rf /tmp/factory-showcase
+          python -m factory_robot_3d.run_simulation --output /tmp/factory-showcase
+          test -s /tmp/factory-showcase/factory_config.json
+          test -s /tmp/factory-showcase/animation.json
+          test -s /tmp/factory-showcase/telemetry.csv
+          test -s /tmp/factory-showcase/summary.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          data=json.loads(Path('/tmp/factory-showcase/summary.json').read_text())
+          assert data['success'] is True, data
+          assert data['robot_count']==20, data
+          assert data['cell_count']==5, data
+          assert data['simulation_frames']==288, data
+          assert data['completed_parts']>=6, data
+          assert data['lost_parts']==0, data
+          assert data['transfer_conflicts']==0, data
+          print('SHOWCASE_OK',data)
+          PY
