@@ -13,11 +13,11 @@ TEMPLATE = Path("factory_robot_3d/kernel-metadata.template.json")
 def test_primary_workflow_owns_one_cinematic_t4_slug_and_full_package():
     text = PRIMARY.read_text(encoding="utf-8")
 
-    assert "factory-robot-cinematic-t4" in text
+    assert "factory-robot-cinematic-t4-production" in text
     assert "NvidiaTeslaT4" in text
     assert "factory_robot_3d/**" in text
     assert "pytest tests/factory_robot_3d" in text
-    assert "cp -R factory_robot_3d" in text
+    assert "factory_robot_3d.pipeline.build_kaggle_bundle" in text
     assert "kaggle_entrypoint.py" in text
     assert "factory-robot-cinematic-t4-output" in text
     assert "factory-robot-3d-t4-simulation" not in text
@@ -43,7 +43,7 @@ def test_primary_wait_loop_distinguishes_quota_from_kernel_failure():
 def test_status_probe_uses_same_production_slug_without_push():
     text = STATUS.read_text(encoding="utf-8")
 
-    assert "factory-robot-cinematic-t4" in text
+    assert "factory-robot-cinematic-t4-production" in text
     assert "factory-robot-3d-t4-simulation" not in text
     assert "kaggle kernels status" in text
     assert "kaggle kernels logs" in text
@@ -52,7 +52,7 @@ def test_status_probe_uses_same_production_slug_without_push():
 def test_kernel_template_requests_private_t4_gpu_production():
     data = json.loads(TEMPLATE.read_text(encoding="utf-8"))
 
-    assert data["id"].endswith("/factory-robot-cinematic-t4")
+    assert data["id"].endswith("/factory-robot-cinematic-t4-production")
     assert data["code_file"] == "kaggle_entrypoint.py"
     assert data["kernel_type"] == "script"
     assert data["is_private"] is True
