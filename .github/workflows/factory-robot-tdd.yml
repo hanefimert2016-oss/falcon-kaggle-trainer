@@ -7,6 +7,8 @@ on:
       - 'factory_robot_3d/**'
       - 'tests/factory_robot_3d/**'
       - '.github/workflows/factory-robot-tdd.yml'
+      - '.github/workflows/factory-robot-3d.yml'
+      - '.github/workflows/factory-robot-3d-status.yml'
   workflow_dispatch:
 
 permissions:
