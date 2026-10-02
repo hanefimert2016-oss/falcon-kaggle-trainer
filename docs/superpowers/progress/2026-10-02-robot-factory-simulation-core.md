@@ -17,3 +17,4 @@ Pre-flight shared interfaces:
 
 Task 1: complete (commits a4d0c33..cad6d2b, tests: Factory Robot TDD run 3 → success; 3/3 robot-factory tests pass)
 Task 2: RED verified at commit 1ffb9df — Factory Robot TDD run 4 → 4 failed, 3 passed; all four failures are expected ModuleNotFoundError for factory_robot_3d.layout.
+Task 2: complete (commits 1ffb9df..6bfaa31, tests: Factory Robot TDD run 5 → success; 7/7 robot-factory tests pass)
