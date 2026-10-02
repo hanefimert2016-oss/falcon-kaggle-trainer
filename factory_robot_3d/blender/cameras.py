@@ -4,6 +4,8 @@ from dataclasses import dataclass
 import math
 from typing import Any
 
+from .animation import _animation_fcurves
+
 
 @dataclass(frozen=True)
 class CameraShot:
@@ -69,6 +71,14 @@ def _look_at(obj: Any, target: tuple[float, float, float], mathutils: Any) -> No
     obj.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
 
 
+def _set_camera_bezier_interpolation(animated: Any) -> None:
+    for curve in _animation_fcurves(animated):
+        for point in curve.keyframe_points:
+            point.interpolation = "BEZIER"
+            point.handle_left_type = "AUTO_CLAMPED"
+            point.handle_right_type = "AUTO_CLAMPED"
+
+
 def _make_camera(bpy: Any, collection: Any, shot: CameraShot, mathutils: Any) -> Any:
     location, target, lens = _SHOT_POSES[shot.name]
     data = bpy.data.cameras.new(f"Cam_{shot.name}_Data")
@@ -94,13 +104,7 @@ def _make_camera(bpy: Any, collection: Any, shot: CameraShot, mathutils: Any) ->
     camera.keyframe_insert(data_path="location", frame=shot.end_frame)
     camera.keyframe_insert(data_path="rotation_euler", frame=shot.end_frame)
 
-    action = getattr(getattr(camera, "animation_data", None), "action", None)
-    if action is not None:
-        for curve in action.fcurves:
-            for point in curve.keyframe_points:
-                point.interpolation = "BEZIER"
-                point.handle_left_type = "AUTO_CLAMPED"
-                point.handle_right_type = "AUTO_CLAMPED"
+    _set_camera_bezier_interpolation(camera)
     return camera
 
 
