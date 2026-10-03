@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: ironman-nanotech-kaggle
@@ -23,6 +23,7 @@ jobs:
       KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
       KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
       REF: ${{ vars.KAGGLE_OWNER }}/ironman-nanotech-3d
+      RELEASE_TAG: ironman-nanotech-v1
     steps:
       - uses: actions/checkout@v4
 
@@ -86,10 +87,45 @@ jobs:
           test -s outputs/ironman_nanotech/ironman_nanotech_poster.png
           test -s outputs/ironman_nanotech/ironman_nanotech_transform.mp4
 
-      - name: Upload final assets
+      - name: Upload Actions artifact
         uses: actions/upload-artifact@v4
         with:
           name: ironman-nanotech-3d
           path: outputs/ironman_nanotech/
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish generated assets as GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release delete "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes || true
+          gh release create "$RELEASE_TAG" outputs/ironman_nanotech/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Iron Man Nanotech 3D - Kaggle T4" \
+            --notes "Procedurally generated Blender scene, animated GLB, poster and nanotech transformation preview. Rendered by the Kaggle GPU workflow."
+
+      - name: Record verifiable completion status
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, pathlib
+          root=pathlib.Path('outputs/ironman_nanotech')
+          files={p.name:p.stat().st_size for p in root.iterdir() if p.is_file()}
+          status={
+              'state':'complete',
+              'kaggle_kernel':os.environ['REF'],
+              'release_tag':os.environ['RELEASE_TAG'],
+              'github_run_id':os.environ.get('GITHUB_RUN_ID'),
+              'source_commit':os.environ.get('GITHUB_SHA'),
+              'files':files,
+          }
+          pathlib.Path('.ironman-nanotech-status.json').write_text(json.dumps(status,indent=2)+'\n')
+          print(json.dumps(status,indent=2))
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .ironman-nanotech-status.json
+          git commit -m "Record completed Iron Man nanotech Kaggle render"
+          git push
