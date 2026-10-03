@@ -14,12 +14,15 @@ jobs:
       KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
       KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
       REF: ${{ vars.KAGGLE_OWNER }}/ironman-nanotech-3d
+      EXPORT_REF: ${{ vars.KAGGLE_OWNER }}/ironman-nanotech-export
     steps:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
       - run: python -m pip install "kaggle>=2.2.1"
       - name: Status
-        run: kaggle kernels status "$REF"
+        run: |
+          kaggle kernels status "$REF"
+          kaggle kernels status "$EXPORT_REF"
       - name: Live logs
         run: kaggle kernels logs "$REF" || true
