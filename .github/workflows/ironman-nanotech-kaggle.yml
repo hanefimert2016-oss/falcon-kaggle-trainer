@@ -23,7 +23,7 @@ jobs:
       KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
       KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
       REF: ${{ vars.KAGGLE_OWNER }}/ironman-nanotech-3d
-      RELEASE_TAG: ironman-nanotech-v1
+      RELEASE_TAG: ironman-nanotech-hq-v1
     steps:
       - uses: actions/checkout@v4
 
@@ -91,9 +91,9 @@ jobs:
           mkdir -p outputs/ironman_nanotech
           kaggle kernels output "$REF" -p outputs/ironman_nanotech -o
           find outputs/ironman_nanotech -maxdepth 1 -type f -printf "%f %s bytes\n" | sort
-          test -s outputs/ironman_nanotech/ironman_nanotech_scene.blend
-          test -s outputs/ironman_nanotech/ironman_nanotech_animated.glb
-          test -s outputs/ironman_nanotech/ironman_nanotech_poster.png
+          test -s outputs/ironman_nanotech/ironman_nanotech_hq_scene.blend
+          test -s outputs/ironman_nanotech/ironman_nanotech_hq_animated.glb
+          test -s outputs/ironman_nanotech/ironman_nanotech_hq_poster.png
 
       - name: Upload Actions artifact
         uses: actions/upload-artifact@v4
