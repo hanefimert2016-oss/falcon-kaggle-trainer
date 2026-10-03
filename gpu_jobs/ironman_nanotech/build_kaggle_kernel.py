@@ -24,7 +24,12 @@ blender_dir = OUT / "blender"
 
 if not blender_dir.exists():
     print("Downloading Blender:", blender_url, flush=True)
-    urllib.request.urlretrieve(blender_url, archive)
+    req = urllib.request.Request(
+        blender_url,
+        headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131 Safari/537.36"}
+    )
+    with urllib.request.urlopen(req, timeout=120) as src, archive.open("wb") as dst:
+        shutil.copyfileobj(src, dst, length=1024 * 1024)
     with tarfile.open(archive, "r:xz") as tf:
         tf.extractall(OUT)
     extracted = sorted(OUT.glob("blender-4.5.*-linux-x64"))
