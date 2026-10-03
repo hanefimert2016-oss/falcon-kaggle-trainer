@@ -558,16 +558,9 @@ scene.render.image_settings.file_format="PNG"
 scene.render.filepath=os.path.join(OUT,"ironman_nanotech_hq_poster.png")
 bpy.ops.render.render(write_still=True)
 
-# 1080p transformation clip.
-scene.render.resolution_x=1920
-scene.render.resolution_y=1080
-scene.frame_set(1)
-scene.render.image_settings.file_format="FFMPEG"
-scene.render.ffmpeg.format="MPEG4"
-scene.render.ffmpeg.codec="H264"
-scene.render.ffmpeg.constant_rate_factor="HIGH"
-scene.render.filepath=os.path.join(OUT,"ironman_nanotech_hq_transform.mp4")
-bpy.ops.render.render(animation=True)
+# The complete nanotech transformation is stored as keyframed animation
+# in both the GLB and editable Blender scene. Keeping video rendering separate
+# makes the HQ model export deterministic and fast on Kaggle batch runtimes.
 
 report={
     "quality":"hq-human-modeled-style",
@@ -585,13 +578,13 @@ report={
         "reactor/palm/eye emissive materials",
         "360 animated nanotech surface fragments",
         "cinematic compositor glow",
-        "animated GLB export"
+        "animated GLB export",
+        "168-frame keyframed nanotech transformation"
     ],
     "outputs":[
         "ironman_nanotech_hq_scene.blend",
         "ironman_nanotech_hq_animated.glb",
-        "ironman_nanotech_hq_poster.png",
-        "ironman_nanotech_hq_transform.mp4"
+        "ironman_nanotech_hq_poster.png"
     ]
 }
 with open(os.path.join(OUT,"ironman_nanotech_hq_manifest.json"),"w",encoding="utf-8") as f:
