@@ -1,0 +1,95 @@
+name: Iron Man Nanotech 3D - Kaggle GPU
+
+on:
+  push:
+    paths:
+      - 'gpu_jobs/ironman_nanotech/**'
+      - '.github/workflows/ironman-nanotech-kaggle.yml'
+      - '.ironman-nanotech-trigger'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ironman-nanotech-kaggle
+  cancel-in-progress: true
+
+jobs:
+  launch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
+      REF: ${{ vars.KAGGLE_OWNER }}/ironman-nanotech-3d
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Validate Kaggle credentials
+        run: |
+          set -euo pipefail
+          test -n "$KAGGLE_API_TOKEN" || (echo "Missing KAGGLE_API_TOKEN secret" && exit 1)
+          test -n "$KAGGLE_OWNER" || (echo "Missing KAGGLE_OWNER variable" && exit 1)
+
+      - name: Install Kaggle CLI
+        run: python -m pip install --upgrade "kaggle>=2.2.1"
+
+      - name: Build and validate GPU kernel
+        run: |
+          set -euo pipefail
+          python -m py_compile gpu_jobs/ironman_nanotech/blender_scene.py
+          python -m py_compile gpu_jobs/ironman_nanotech/build_kaggle_kernel.py
+          python gpu_jobs/ironman_nanotech/build_kaggle_kernel.py --owner "$KAGGLE_OWNER" --out kernel_ironman_nanotech
+          python -m py_compile kernel_ironman_nanotech/kernel.py
+          cat kernel_ironman_nanotech/kernel-metadata.json
+
+      - name: Submit to Kaggle T4 GPU
+        run: |
+          set -euo pipefail
+          OUT="$(kaggle kernels push -p kernel_ironman_nanotech --accelerator NvidiaTeslaT4 --timeout 7200 2>&1)"
+          echo "$OUT"
+          if echo "$OUT" | grep -qi "Kernel push error"; then exit 1; fi
+
+      - name: Wait for render
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 120); do
+            STATUS="$(kaggle kernels status "$REF" 2>&1 || true)"
+            echo "[$attempt] $STATUS"
+            if echo "$STATUS" | grep -q "KernelWorkerStatus.COMPLETE"; then
+              exit 0
+            fi
+            if echo "$STATUS" | grep -Eq "KernelWorkerStatus.(ERROR|CANCELLED)"; then
+              kaggle kernels logs "$REF" || true
+              exit 1
+            fi
+            sleep 30
+          done
+          echo "Timed out waiting for Kaggle render"
+          kaggle kernels logs "$REF" || true
+          exit 1
+
+      - name: Download generated 3D assets
+        run: |
+          set -euo pipefail
+          mkdir -p outputs/ironman_nanotech
+          kaggle kernels output "$REF" -p outputs/ironman_nanotech -o
+          find outputs/ironman_nanotech -maxdepth 1 -type f -printf "%f %s bytes\n" | sort
+          test -s outputs/ironman_nanotech/ironman_nanotech_scene.blend
+          test -s outputs/ironman_nanotech/ironman_nanotech_animated.glb
+          test -s outputs/ironman_nanotech/ironman_nanotech_poster.png
+          test -s outputs/ironman_nanotech/ironman_nanotech_transform.mp4
+
+      - name: Upload final assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: ironman-nanotech-3d
+          path: outputs/ironman_nanotech/
+          if-no-files-found: error
+          retention-days: 14
