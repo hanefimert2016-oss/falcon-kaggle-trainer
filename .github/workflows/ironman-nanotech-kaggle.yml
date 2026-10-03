@@ -52,6 +52,11 @@ jobs:
       - name: Submit to Kaggle T4 GPU
         run: |
           set -uo pipefail
+          # Recreate only this generated Iron Man kernel so an obsolete render
+          # cannot keep one of the account's two batch-GPU session slots occupied.
+          kaggle kernels delete "$REF" -y >/tmp/ironman_delete.log 2>&1 || true
+          cat /tmp/ironman_delete.log || true
+          sleep 3
           set +e
           OUT="$(kaggle kernels push -p kernel_ironman_nanotech --accelerator NvidiaTeslaT4 --timeout 7200 2>&1)"
           RC=$?
