@@ -221,6 +221,67 @@ def armorize(o, phase, region, accent=False):
     return o
 
 # ------------------------------
+# CC0 human-proportion underbody
+# ------------------------------
+def import_cc0_human_underbody():
+    import urllib.request
+    src = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/3dobjs/base.obj"
+    dst = os.path.join(OUT, "makehuman_cc0_base.obj")
+    if not os.path.exists(dst):
+        req = urllib.request.Request(src, headers={"User-Agent":"Mozilla/5.0 Blender-HQ-Asset"})
+        with urllib.request.urlopen(req, timeout=120) as r, open(dst, "wb") as w:
+            while True:
+                chunk = r.read(1024 * 1024)
+                if not chunk:
+                    break
+                w.write(chunk)
+
+    before = set(bpy.data.objects)
+    bpy.ops.wm.obj_import(filepath=dst)
+    imported = [o for o in bpy.data.objects if o not in before and o.type == "MESH"]
+    if not imported:
+        raise RuntimeError("MakeHuman CC0 base mesh import failed")
+    body = max(imported, key=lambda o: len(o.data.vertices))
+    for other in imported:
+        if other != body:
+            bpy.data.objects.remove(other, do_unlink=True)
+
+    body.name = "CC0_Human_Nanotech_Undersuit"
+    body.rotation_euler.x = math.radians(90.0)
+    bpy.context.view_layer.objects.active = body
+    body.select_set(True)
+    bpy.ops.object.transform_apply(location=False, rotation=True, scale=False)
+
+    def bounds(obj):
+        pts=[obj.matrix_world @ v.co for v in obj.data.vertices]
+        mn=Vector((min(p.x for p in pts), min(p.y for p in pts), min(p.z for p in pts)))
+        mx=Vector((max(p.x for p in pts), max(p.y for p in pts), max(p.z for p in pts)))
+        return mn,mx
+
+    mn,mx=bounds(body)
+    h=max(0.001,mx.z-mn.z)
+    s=3.46/h
+    body.scale=(s,s,s)
+    bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+    mn,mx=bounds(body)
+    body.location.x -= (mn.x+mx.x)*0.5
+    body.location.y -= (mn.y+mx.y)*0.5
+    body.location.z -= mn.z
+
+    body.data.materials.clear()
+    body.data.materials.append(BLACK)
+    smooth(body)
+    sub=body.modifiers.new("AnatomySmooth","SUBSURF")
+    sub.subdivision_type="CATMULL_CLARK"
+    sub.levels=1
+    sub.render_levels=1
+    mark(body)
+    body["source_asset"]="MakeHuman CC0 base.obj"
+    return body
+
+human_underbody = import_cc0_human_underbody()
+
+# ------------------------------
 # Anatomical undersuit
 # ------------------------------
 # Torso core
@@ -243,6 +304,12 @@ for side in (-1,1):
     cone_between(f"Undersuit_Thigh_{s}",(0.25*side,0,1.31),(0.30*side,0,0.78),0.215,0.185,BLACK)
     cone_between(f"Undersuit_Shin_{s}",(0.30*side,0,0.74),(0.27*side,0,0.22),0.18,0.145,BLACK)
     add_ico(f"Undersuit_Foot_{s}",(0.27*side,-0.12,0.08),(0.18,0.29,0.10),BLACK,2)
+
+# Remove the primitive mannequin underbody; realistic CC0 human base replaces it.
+for _o in list(character):
+    if _o.name.startswith("Undersuit_"):
+        character.remove(_o)
+        bpy.data.objects.remove(_o, do_unlink=True)
 
 # ------------------------------
 # Chest: layered hard-surface design
@@ -307,12 +374,12 @@ for side in (-1,1):
     armor[-1].rotation_euler.z=math.radians(9)*side
 
     # upper arm armor sleeve + bicep outer panel
-    armorize(cone_between(f"UpperArmShell_{s}",(0.64*side,-0.005,2.39),(0.77*side,-0.005,2.08),0.218,0.180,RED),10,"arm")
+    armorize(cone_between(f"UpperArmShell_{s}",(0.64*side,-0.005,2.39),(0.77*side,-0.005,2.08),0.190,0.158,RED),10,"arm")
     bp=armorize(add_panel(f"Bicep_Outer_{s}",(0.76*side,-0.185,2.22),
         [(-0.13,0.20),(0.13,0.17),(0.15,-0.16),(0,-0.22),(-0.13,-0.12)],0.055,GOLD,0.014),11,"arm",True)
     bp.rotation_euler.z=math.radians(4)*side
     armorize(add_cube(f"ElbowGuard_{s}",(0.79*side,-0.12,1.97),(0.15,0.09,0.12),GUN,rot=(0,0,math.radians(7)*side),bev=0.025),12,"arm")
-    armorize(cone_between(f"ForearmShell_{s}",(0.80*side,-0.01,1.92),(0.83*side,-0.015,1.56),0.192,0.151,RED),13,"arm")
+    armorize(cone_between(f"ForearmShell_{s}",(0.80*side,-0.01,1.92),(0.83*side,-0.015,1.56),0.170,0.135,RED),13,"arm")
     fp=armorize(add_panel(f"ForearmBlade_{s}",(0.83*side,-0.19,1.74),
         [(-0.11,0.18),(0.10,0.15),(0.13,-0.17),(0,-0.22),(-0.10,-0.14)],0.050,GOLD,0.013),14,"arm",True)
     armorize(add_ico(f"Gauntlet_{s}",(0.84*side,-0.015,1.43),(0.17,0.20,0.15),RED,3),15,"arm")
@@ -323,11 +390,11 @@ for side in (-1,1):
 # ------------------------------
 for side in (-1,1):
     s="L" if side<0 else "R"
-    armorize(cone_between(f"ThighShell_{s}",(0.24*side,-0.01,1.28),(0.29*side,-0.01,0.87),0.245,0.205,RED),11,"leg")
+    armorize(cone_between(f"ThighShell_{s}",(0.24*side,-0.01,1.28),(0.29*side,-0.01,0.87),0.215,0.180,RED),11,"leg")
     tp=armorize(add_panel(f"ThighFront_{s}",(0.28*side,-0.225,1.08),
         [(-0.14,0.20),(0.14,0.18),(0.16,-0.16),(0,-0.23),(-0.14,-0.15)],0.050,GOLD,0.012),12,"leg",True)
     armorize(add_ico(f"KneeCap_{s}",(0.29*side,-0.10,0.77),(0.19,0.16,0.15),GOLD,3),13,"leg",True)
-    armorize(cone_between(f"ShinShell_{s}",(0.29*side,-0.01,0.70),(0.27*side,-0.02,0.27),0.198,0.155,RED),14,"leg")
+    armorize(cone_between(f"ShinShell_{s}",(0.29*side,-0.01,0.70),(0.27*side,-0.02,0.27),0.175,0.137,RED),14,"leg")
     sp=armorize(add_panel(f"ShinFront_{s}",(0.28*side,-0.195,0.49),
         [(-0.11,0.20),(0.11,0.17),(0.13,-0.17),(0,-0.23),(-0.11,-0.13)],0.048,GOLD,0.012),15,"leg",True)
     armorize(add_cube(f"AnkleGuard_{s}",(0.27*side,-0.09,0.18),(0.17,0.13,0.08),GUN,bev=0.020),16,"leg")
@@ -339,23 +406,23 @@ for side in (-1,1):
 # ------------------------------
 # Helmet: hand-authored layered face
 # ------------------------------
-armorize(add_ico("Helmet_Shell",(0,0,3.22),(0.315,0.292,0.405),RED,4),19,"helmet")
-armorize(add_ico("Faceplate",(0,-0.245,3.22),(0.235,0.082,0.315),GOLD,3),22,"helmet",True)
+armorize(add_ico("Helmet_Shell",(0,-0.005,3.20),(0.255,0.225,0.295),RED,4),19,"helmet")
+armorize(add_ico("Faceplate",(0,-0.205,3.19),(0.190,0.060,0.230),GOLD,3),22,"helmet",True)
 armorize(add_panel("Faceplate_Center",(0,-0.332,3.20),
     [(-0.08,0.24),(0.08,0.24),(0.12,0.02),(0.08,-0.22),(0,-0.30),(-0.08,-0.22),(-0.12,0.02)],
     0.020,RED_DARK,0.008),23,"helmet")
 armorize(add_panel("Helmet_Jaw",(0,-0.300,3.00),
-    [(-0.185,0.075),(0.185,0.075),(0.155,-0.065),(0.072,-0.125),(-0.072,-0.125),(-0.155,-0.065)],
+    [(-0.150,0.060),(0.150,0.060),(0.125,-0.052),(0.058,-0.098),(-0.058,-0.098),(-0.125,-0.052)],
     0.070,RED,0.017),23,"helmet")
 armorize(add_panel("Helmet_Brow",(0,-0.340,3.39),
-    [(-0.19,0.038),(0.19,0.038),(0.15,-0.038),(-0.15,-0.038)],0.035,RED_DARK,0.010),21,"helmet")
+    [(-0.155,0.030),(0.155,0.030),(0.125,-0.030),(-0.125,-0.030)],0.035,RED_DARK,0.010),21,"helmet")
 
 for side in (-1,1):
     s="L" if side<0 else "R"
     ep=armorize(add_panel(f"Eye_{s}",(0,-0.372,3.31),
         [(0.035*side,0.035),(0.18*side,0.025),(0.15*side,-0.035),(0.045*side,-0.028)],0.015,WHITE,0.005),24,"helmet",True)
-    armorize(add_cube(f"Temple_{s}",(0.285*side,-0.13,3.23),(0.055,0.11,0.18),RED_DARK,rot=(0,0,math.radians(4)*side),bev=0.018),21,"helmet")
-    armorize(add_cyl(f"EarDisc_{s}",(0.322*side,-0.02,3.23),0.080,0.035,GOLD,rot=(0,math.radians(90),0),vertices=48),21,"helmet",True)
+    armorize(add_cube(f"Temple_{s}",(0.225*side,-0.10,3.20),(0.040,0.075,0.125),RED_DARK,rot=(0,0,math.radians(4)*side),bev=0.018),21,"helmet")
+    armorize(add_cyl(f"EarDisc_{s}",(0.252*side,-0.015,3.20),0.058,0.028,GOLD,rot=(0,math.radians(90),0),vertices=48),21,"helmet",True)
 
 # ------------------------------
 # Micro panel detailing
@@ -576,6 +643,7 @@ bpy.ops.render.render(write_still=True)
 report={
     "quality":"hq-human-modeled-style",
     "renderer":"Blender Eevee Next",
+    "human_underbody":"MakeHuman CC0 base mesh",
     "frames":[scene.frame_start,scene.frame_end],
     "fps":scene.render.fps,
     "armor_objects":len(armor),
