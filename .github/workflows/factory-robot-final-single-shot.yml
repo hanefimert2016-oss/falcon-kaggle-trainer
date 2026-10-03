@@ -1,0 +1,210 @@
+name: Factory Robot Final Single Shot MP4
+
+on:
+  push:
+    branches: [factory-robot-cinematic-impl]
+    paths:
+      - '.github/workflows/factory-robot-final-single-shot.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
+      KERNEL_SLUG: factory-robot-final-single-shot
+      REF: ${{ vars.KAGGLE_OWNER }}/factory-robot-final-single-shot
+      ACCELERATOR: NvidiaTeslaT4
+      PYTHONPATH: ${{ github.workspace }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install local simulation and Kaggle tooling
+        run: python -m pip install -q "kaggle>=2.2.1" numpy pybullet
+
+      - name: Precompute simulation on GitHub CPU
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf precomputed_sim
+          python -m factory_robot_3d.run_simulation --output precomputed_sim
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          summary = json.loads(Path("precomputed_sim/summary.json").read_text(encoding="utf-8"))
+          assert summary["success"] is True, summary
+          assert summary["robot_count"] == 20, summary
+          assert summary["simulation_frames"] == 288, summary
+          print("FINAL_PRECOMPUTE_OK", summary)
+          PY
+
+      - name: Build final render-only Kaggle bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p = Path("factory_robot_3d/blender/render_config.py")
+          text = p.read_text(encoding="utf-8")
+          text = text.replace("samples=64,", "samples=2,", 1)
+          text = text.replace("motion_blur=True,", "motion_blur=False,", 1)
+          p.write_text(text, encoding="utf-8")
+          print("FINAL_RENDER_SETTINGS samples=2 motion_blur=false resolution=1920x1080 fps=24 frames=288")
+          PY
+
+          rm -rf kernel_factory_robot_final
+          mkdir -p kernel_factory_robot_final
+
+          python -m factory_robot_3d.pipeline.build_precomputed_kaggle_bundle \
+            --template factory_robot_3d/kaggle_render_entrypoint.py \
+            --package-root factory_robot_3d \
+            --simulation-dir precomputed_sim \
+            --output kernel_factory_robot_final/kaggle_entrypoint.py
+
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          data = json.loads(Path("factory_robot_3d/kernel-metadata.template.json").read_text(encoding="utf-8"))
+          data["id"] = f"{os.environ['KAGGLE_OWNER']}/{os.environ['KERNEL_SLUG']}"
+          data["title"] = "Factory Robot Final Single Shot"
+          Path("kernel_factory_robot_final/kernel-metadata.json").write_text(
+              json.dumps(data, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          print(json.dumps(data, indent=2))
+          PY
+
+      - name: Refuse to push while any robot GPU kernel is active
+        shell: bash
+        run: |
+          set -euo pipefail
+          ACTIVE=0
+          for REF_TO_CHECK in \
+            "$KAGGLE_OWNER/factory-robot-cinematic-t4-production-r37" \
+            "$KAGGLE_OWNER/factory-robot-cinematic-ultrafast-delivery" \
+            "$KAGGLE_OWNER/factory-robot-cinematic-fast-delivery" \
+            "$KAGGLE_OWNER/factory-robot-cinematic-t4-production-r34"; do
+            STATUS="$(kaggle kernels status "$REF_TO_CHECK" 2>&1 || true)"
+            echo "$REF_TO_CHECK -> $STATUS"
+            if echo "$STATUS" | grep -Eqi 'RUNNING|QUEUED'; then
+              ACTIVE=1
+            fi
+          done
+          kaggle quota || true
+          if [[ "$ACTIVE" != "0" ]]; then
+            echo "ACTIVE_GPU_SESSION_PRESENT: refusing final push"
+            exit 87
+          fi
+
+      - name: Push final Kaggle kernel exactly once
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          OUT="$(kaggle kernels push -p kernel_factory_robot_final --accelerator "$ACCELERATOR" --timeout 3600 2>&1)"
+          RC=$?
+          set -e
+          echo "$OUT"
+
+          if echo "$OUT" | grep -Fiq 'Maximum batch GPU session count'; then
+            echo "FINAL_QUOTA_BLOCKED: refusing to retry"
+            exit 86
+          fi
+
+          if [[ "$RC" -ne 0 ]]; then
+            echo "FINAL_PUSH_FAILED rc=$RC"
+            exit "$RC"
+          fi
+
+          if ! echo "$OUT" | grep -Eqi 'successfully pushed|Kernel version'; then
+            echo "FINAL_PUSH_UNCONFIRMED: refusing to retry"
+            exit 1
+          fi
+
+          echo "FINAL_PUSH_CONFIRMED"
+
+      - name: Wait for final render without repush
+        shell: bash
+        run: |
+          set -euo pipefail
+          NOT_FOUND=0
+          for i in $(seq 1 720); do
+            STATUS="$(kaggle kernels status "$REF" 2>&1 || true)"
+            echo "[$i] $STATUS"
+
+            if echo "$STATUS" | grep -Fiq '404 Client Error'; then
+              NOT_FOUND=$((NOT_FOUND + 1))
+              if [[ "$NOT_FOUND" -gt 24 ]]; then
+                echo "FINAL_KERNEL_NOT_VISIBLE"
+                exit 1
+              fi
+              sleep 5
+              continue
+            fi
+
+            if echo "$STATUS" | grep -Eqi 'COMPLETE|FINISHED'; then
+              echo "FINAL_RENDER_COMPLETE"
+              exit 0
+            fi
+
+            if echo "$STATUS" | grep -Eqi 'CANCEL_ACKNOWLEDGED|CANCELLED|ERROR|FAILED'; then
+              echo "FINAL_RENDER_STOPPED: refusing automatic restart"
+              kaggle kernels logs "$REF" || true
+              exit 1
+            fi
+
+            sleep 15
+          done
+
+          echo "FINAL_RENDER_TIMEOUT"
+          kaggle kernels logs "$REF" || true
+          exit 1
+
+      - name: Show final Kaggle logs
+        if: always()
+        shell: bash
+        run: kaggle kernels logs "$REF" 2>&1 | tail -n 400 || true
+
+      - name: Download final MP4
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf final_output
+          mkdir -p final_output
+          kaggle kernels output "$REF" -p final_output -o
+          find final_output -type f -printf '%p %s bytes\n' | sort
+          MP4="$(find final_output -type f -name 'factory_robot_cinematic.mp4' | head -n1)"
+          test -n "$MP4"
+          echo "MP4=$MP4" >> "$GITHUB_ENV"
+          ROOT="$(dirname "$MP4")"
+          echo "ROOT=$ROOT" >> "$GITHUB_ENV"
+
+      - name: Validate final MP4
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m factory_robot_3d.pipeline.validate_video "$MP4"
+          ffprobe -v error -select_streams v:0 \
+            -show_entries stream=codec_name,width,height,r_frame_rate,nb_frames \
+            -show_entries format=duration \
+            -of json "$MP4"
+
+      - name: Upload final MP4 artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: factory-robot-final-single-shot-mp4
+          path: ${{ env.ROOT }}/
+          if-no-files-found: error
+          retention-days: 14
