@@ -1,4 +1,5 @@
 name: Iron Man Nanotech Animated 3D Export - Kaggle GPU
+# activated: 2026-10-03
 
 on:
   push:
