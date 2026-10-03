@@ -51,10 +51,14 @@ jobs:
 
       - name: Submit to Kaggle T4 GPU
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          set +e
           OUT="$(kaggle kernels push -p kernel_ironman_nanotech --accelerator NvidiaTeslaT4 --timeout 7200 2>&1)"
+          RC=$?
+          set -e
           echo "$OUT"
           if echo "$OUT" | grep -qi "Kernel push error"; then exit 1; fi
+          exit "$RC"
 
       - name: Wait for render
         shell: bash
