@@ -43,8 +43,8 @@ rl = nt.nodes.new("CompositorNodeRLayers")
 glare = nt.nodes.new("CompositorNodeGlare")
 glare.glare_type = "FOG_GLOW"
 glare.quality = "HIGH"
-glare.threshold = 0.8
-glare.size = 7
+glare.threshold = 1.45
+glare.size = 6
 comp = nt.nodes.new("CompositorNodeComposite")
 nt.links.new(rl.outputs["Image"], glare.inputs["Image"])
 nt.links.new(glare.outputs["Image"], comp.inputs["Image"])
@@ -227,6 +227,11 @@ def armorize(o, phase, region, accent=False):
 add_ico("Undersuit_Ribcage",(0,0,2.24),(0.60,0.30,0.76),BLACK,4)
 add_ico("Undersuit_Abdomen",(0,0,1.72),(0.45,0.25,0.48),BLACK,3)
 add_ico("Undersuit_Pelvis",(0,0,1.34),(0.48,0.28,0.34),BLACK,3)
+
+# Smooth sculpted armor masses under the hard-surface panel stack.
+# These preserve human anatomy while panels provide mechanical design language.
+armorize(add_ico("Chest_Armor_SculptBase",(0,-0.035,2.28),(0.595,0.305,0.705),RED_DARK,4),1,"chest")
+armorize(add_ico("Pelvis_Armor_SculptBase",(0,-0.025,1.33),(0.455,0.285,0.325),RED_DARK,3),8,"pelvis")
 add_ico("Undersuit_Head",(0,0,3.22),(0.31,0.285,0.40),BLACK,4)
 add_cyl("Undersuit_Neck",(0,0,2.83),0.19,0.28,BLACK,vertices=48)
 
@@ -295,7 +300,7 @@ for side in (-1,1):
     # shoulder shell plus separate layered cap = less toy-like silhouette
     armorize(add_ico(f"Shoulder_Base_{s}",(0.62*side,0,2.53),(0.25,0.23,0.24),RED,3),7,"arm")
     armorize(add_panel(f"Shoulder_Cap_{s}",(0.70*side,-0.22,2.58),
-        [(-0.23,0.11),(0.20,0.14),(0.25,0.01),(0.15,-0.13),(-0.16,-0.14),(-0.25,-0.02)],0.070,RED,0.020),8,"arm")
+        [(-0.20,0.10),(0.18,0.125),(0.215,0.01),(0.135,-0.115),(-0.145,-0.12),(-0.215,-0.02)],0.070,RED,0.020),8,"arm")
     armor[-1].rotation_euler.z=math.radians(9)*side
     armorize(add_panel(f"Shoulder_Gold_{s}",(0.70*side,-0.265,2.57),
         [(-0.15,0.06),(0.13,0.08),(0.16,0.00),(0.09,-0.07),(-0.10,-0.07),(-0.16,0.0)],0.025,GOLD,0.010),9,"arm",True)
@@ -326,7 +331,7 @@ for side in (-1,1):
     sp=armorize(add_panel(f"ShinFront_{s}",(0.28*side,-0.195,0.49),
         [(-0.11,0.20),(0.11,0.17),(0.13,-0.17),(0,-0.23),(-0.11,-0.13)],0.048,GOLD,0.012),15,"leg",True)
     armorize(add_cube(f"AnkleGuard_{s}",(0.27*side,-0.09,0.18),(0.17,0.13,0.08),GUN,bev=0.020),16,"leg")
-    armorize(add_cube(f"BootShell_{s}",(0.27*side,-0.13,0.08),(0.19,0.30,0.105),RED,bev=0.035),17,"leg")
+    armorize(add_ico(f"BootShell_{s}",(0.27*side,-0.13,0.08),(0.185,0.285,0.105),RED,3),17,"leg")
     armorize(add_panel(f"BootToeGold_{s}",(0.27*side,-0.43,0.085),
         [(-0.15,0.05),(0.15,0.05),(0.14,-0.05),(-0.14,-0.05)],0.045,GOLD,0.010),18,"leg",True)
     armorize(add_cyl(f"FootThruster_{s}",(0.27*side,0.13,0.055),0.055,0.020,CYAN,vertices=40),18,"leg",True)
@@ -334,18 +339,18 @@ for side in (-1,1):
 # ------------------------------
 # Helmet: hand-authored layered face
 # ------------------------------
-armorize(add_ico("Helmet_Shell",(0,0,3.22),(0.345,0.31,0.43),RED,4),19,"helmet")
+armorize(add_ico("Helmet_Shell",(0,0,3.22),(0.315,0.292,0.405),RED,4),19,"helmet")
 armorize(add_panel("Faceplate",(0,-0.293,3.22),
-    [(-0.22,0.28),(0.22,0.28),(0.27,0.11),(0.22,-0.25),(0.08,-0.36),(-0.08,-0.36),(-0.22,-0.25),(-0.27,0.11)],
+    [(-0.19,0.28),(0.19,0.28),(0.235,0.11),(0.19,-0.20),(0.105,-0.31),(0,-0.36),(-0.105,-0.31),(-0.19,-0.20),(-0.235,0.11)],
     0.062,GOLD,0.020),22,"helmet",True)
 armorize(add_panel("Faceplate_Center",(0,-0.332,3.20),
     [(-0.08,0.24),(0.08,0.24),(0.12,0.02),(0.08,-0.22),(0,-0.30),(-0.08,-0.22),(-0.12,0.02)],
     0.020,RED_DARK,0.008),23,"helmet")
 armorize(add_panel("Helmet_Jaw",(0,-0.300,3.00),
-    [(-0.22,0.09),(0.22,0.09),(0.18,-0.08),(0.08,-0.14),(-0.08,-0.14),(-0.18,-0.08)],
+    [(-0.185,0.075),(0.185,0.075),(0.155,-0.065),(0.072,-0.125),(-0.072,-0.125),(-0.155,-0.065)],
     0.070,RED,0.017),23,"helmet")
 armorize(add_panel("Helmet_Brow",(0,-0.340,3.39),
-    [(-0.23,0.05),(0.23,0.05),(0.18,-0.05),(-0.18,-0.05)],0.035,RED_DARK,0.010),21,"helmet")
+    [(-0.19,0.038),(0.19,0.038),(0.15,-0.038),(-0.15,-0.038)],0.035,RED_DARK,0.010),21,"helmet")
 
 for side in (-1,1):
     s="L" if side<0 else "R"
@@ -476,7 +481,7 @@ for i,(final,bias) in enumerate(targets):
     o.scale=(0.45*s,0.45*s,0.45*s)
     o.keyframe_insert("scale",frame=end)
     o.scale=(0.01,0.01,0.01)
-    o.keyframe_insert("scale",frame=end+10)
+    o.keyframe_insert("scale",frame=min(154,end+10))
 
 # ------------------------------
 # Studio / camera
@@ -506,8 +511,8 @@ def area(name,loc,energy,size,color):
 
 area("Key",(-4.2,-4.6,6.3),1450,4.5,(1.0,0.56,0.42))
 area("Fill",(4.1,-3.2,4.8),1000,3.8,(0.28,0.48,1.0))
-area("Rim",(0,3.6,5.4),1600,3.2,(1.0,0.12,0.05))
-area("Top",(0,-0.5,7.0),1100,2.8,(0.65,0.78,1.0))
+area("Rim",(0,3.6,5.4),780,3.2,(0.72,0.055,0.025))
+area("Top",(0,-0.5,7.0),850,2.8,(0.58,0.70,1.0))
 area("LowFill",(0,-4.5,1.1),500,2.0,(0.16,0.42,0.90))
 
 bpy.ops.object.empty_add(type="PLAIN_AXES",location=(0,0,1.82))
