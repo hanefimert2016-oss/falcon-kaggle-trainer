@@ -85,7 +85,7 @@ def main() -> int:
 
     meta = {
         "id": f"{ns.owner}/{SLUG}",
-        "title": "Iron Man Nanotech 3D Blender GPU",
+        "title": "Ironman Nanotech 3D",
         "code_file": "kernel.py",
         "language": "python",
         "kernel_type": "script",
