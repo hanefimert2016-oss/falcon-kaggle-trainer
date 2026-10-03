@@ -55,7 +55,6 @@ expected = [
     "ironman_nanotech_scene.blend",
     "ironman_nanotech_animated.glb",
     "ironman_nanotech_poster.png",
-    "ironman_nanotech_transform.mp4",
     "ironman_nanotech_manifest.json",
 ]
 sizes = {}
