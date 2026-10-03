@@ -18,7 +18,14 @@ scene.render.resolution_x = 1920
 scene.render.resolution_y = 1080
 scene.render.resolution_percentage = 100
 scene.render.image_settings.file_format = "PNG"
+if scene.world is None:
+    scene.world = bpy.data.worlds.new("Nanotech World")
+scene.world.use_nodes = True
 scene.world.color = (0.003, 0.004, 0.008)
+_bg = scene.world.node_tree.nodes.get("Background")
+if _bg:
+    _bg.inputs["Color"].default_value = (0.003, 0.004, 0.008, 1.0)
+    _bg.inputs["Strength"].default_value = 0.08
 
 # Color management
 try:
