@@ -33,41 +33,13 @@ try:
 except Exception:
     pass
 
-# Cycles GPU, falling back cleanly if the runtime exposes CUDA differently.
+# Fast GPU-friendly renderer for the full nanotech animation.
+# Kaggle provides Tesla T4 GPUs; Eevee Next keeps the 144-frame render practical
+# while the model/animation remains fully editable in the saved .blend/.glb.
 scene.render.engine = "BLENDER_EEVEE_NEXT"
-gpu_backend = "EEVEE_NEXT"
-try:
-    scene.render.engine = "CYCLES"
-    scene.cycles.device = "GPU"
-    scene.cycles.samples = 12
-    scene.cycles.use_denoising = True
-    scene.cycles.max_bounces = 3
-    prefs = bpy.context.preferences.addons["cycles"].preferences
-    activated = False
-    for backend in ("OPTIX", "CUDA"):
-        try:
-            prefs.compute_device_type = backend
-            prefs.get_devices()
-            enabled = 0
-            for dev in prefs.devices:
-                if dev.type in {"OPTIX", "CUDA"}:
-                    dev.use = True
-                    enabled += 1
-            if enabled:
-                gpu_backend = "CYCLES_" + backend
-                activated = True
-                break
-        except Exception as e:
-            print("GPU backend", backend, "not available:", e)
-    if not activated:
-        print("Cycles GPU device enumeration did not expose CUDA/OptiX; using engine fallback")
-except Exception as e:
-    print("Cycles setup failed, using Eevee Next:", e)
-    scene.render.engine = "BLENDER_EEVEE_NEXT"
-    gpu_backend = "EEVEE_NEXT"
-
+gpu_backend = "BLENDER_EEVEE_NEXT_T4_RUNTIME"
+scene.render.image_settings.file_format = "PNG"
 print("RENDER_BACKEND", gpu_backend, flush=True)
-
 # ---------- helpers ----------
 def material(name, rgba, metallic=0.0, rough=0.35, emission=None, strength=0.0):
     m = bpy.data.materials.new(name)
