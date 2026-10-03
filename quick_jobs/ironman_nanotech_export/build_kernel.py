@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# trigger: 2026-10-03T20:50Z
 from __future__ import annotations
 import argparse, base64, json
 from pathlib import Path
