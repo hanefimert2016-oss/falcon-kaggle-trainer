@@ -280,16 +280,16 @@ armorize(add_panel("Pelvis_Main",(0,-0.20,1.28),
     [(-0.42,0.16),(-0.32,0.25),(0.32,0.25),(0.42,0.16),(0.36,-0.15),(0,-0.23),(-0.36,-0.15)],0.12,RED,0.025),9,"pelvis")
 
 # reactor
-bpy.ops.mesh.primitive_torus_add(major_radius=0.135,minor_radius=0.023,major_segments=64,minor_segments=16,location=(0,-0.438,2.39),rotation=(math.radians(90),0,0))
+bpy.ops.mesh.primitive_torus_add(major_radius=0.118,minor_radius=0.020,major_segments=64,minor_segments=16,location=(0,-0.438,2.39),rotation=(math.radians(90),0,0))
 reactor_ring=mark(bpy.context.object); reactor_ring.name="Arc_Reactor_Rim"; reactor_ring.data.materials.append(GUN)
 armor.append(reactor_ring); reactor_ring["nano_phase"]=0; reactor_ring["armor_region"]="chest"
-core=add_cyl("Arc_Reactor_Core",(0,-0.455,2.39),0.112,0.030,CYAN,rot=(math.radians(90),0,0),vertices=64)
+core=add_cyl("Arc_Reactor_Core",(0,-0.455,2.39),0.093,0.030,CYAN,rot=(math.radians(90),0,0),vertices=64)
 armorize(core,0,"chest",True)
 
 for i in range(12):
     a=2*math.pi*i/12.0
-    x=0.18*math.cos(a); z=2.39+0.18*math.sin(a)
-    p=add_cube(f"Reactor_Fin_{i}",(x,-0.425,z),(0.035,0.018,0.070),GOLD,rot=(0,0,-a),bev=0.010)
+    x=0.155*math.cos(a); z=2.39+0.155*math.sin(a)
+    p=add_cube(f"Reactor_Fin_{i}",(x,-0.425,z),(0.030,0.016,0.058),GOLD,rot=(0,0,-a),bev=0.010)
     armorize(p,1,"chest",True)
 
 # ------------------------------
@@ -307,12 +307,12 @@ for side in (-1,1):
     armor[-1].rotation_euler.z=math.radians(9)*side
 
     # upper arm armor sleeve + bicep outer panel
-    armorize(cone_between(f"UpperArmShell_{s}",(0.64*side,-0.005,2.39),(0.77*side,-0.005,2.08),0.205,0.172,RED),10,"arm")
+    armorize(cone_between(f"UpperArmShell_{s}",(0.64*side,-0.005,2.39),(0.77*side,-0.005,2.08),0.218,0.180,RED),10,"arm")
     bp=armorize(add_panel(f"Bicep_Outer_{s}",(0.76*side,-0.185,2.22),
         [(-0.13,0.20),(0.13,0.17),(0.15,-0.16),(0,-0.22),(-0.13,-0.12)],0.055,GOLD,0.014),11,"arm",True)
     bp.rotation_euler.z=math.radians(4)*side
     armorize(add_cube(f"ElbowGuard_{s}",(0.79*side,-0.12,1.97),(0.15,0.09,0.12),GUN,rot=(0,0,math.radians(7)*side),bev=0.025),12,"arm")
-    armorize(cone_between(f"ForearmShell_{s}",(0.80*side,-0.01,1.92),(0.83*side,-0.015,1.56),0.182,0.145,RED),13,"arm")
+    armorize(cone_between(f"ForearmShell_{s}",(0.80*side,-0.01,1.92),(0.83*side,-0.015,1.56),0.192,0.151,RED),13,"arm")
     fp=armorize(add_panel(f"ForearmBlade_{s}",(0.83*side,-0.19,1.74),
         [(-0.11,0.18),(0.10,0.15),(0.13,-0.17),(0,-0.22),(-0.10,-0.14)],0.050,GOLD,0.013),14,"arm",True)
     armorize(add_ico(f"Gauntlet_{s}",(0.84*side,-0.015,1.43),(0.17,0.20,0.15),RED,3),15,"arm")
@@ -340,9 +340,7 @@ for side in (-1,1):
 # Helmet: hand-authored layered face
 # ------------------------------
 armorize(add_ico("Helmet_Shell",(0,0,3.22),(0.315,0.292,0.405),RED,4),19,"helmet")
-armorize(add_panel("Faceplate",(0,-0.293,3.22),
-    [(-0.19,0.28),(0.19,0.28),(0.235,0.11),(0.19,-0.20),(0.105,-0.31),(0,-0.36),(-0.105,-0.31),(-0.19,-0.20),(-0.235,0.11)],
-    0.062,GOLD,0.020),22,"helmet",True)
+armorize(add_ico("Faceplate",(0,-0.245,3.22),(0.235,0.082,0.315),GOLD,3),22,"helmet",True)
 armorize(add_panel("Faceplate_Center",(0,-0.332,3.20),
     [(-0.08,0.24),(0.08,0.24),(0.12,0.02),(0.08,-0.22),(0,-0.30),(-0.08,-0.22),(-0.12,0.02)],
     0.020,RED_DARK,0.008),23,"helmet")
@@ -443,6 +441,9 @@ for o in armor:
 # Create a shared beveled diamond nanite mesh and place hundreds of linked instances.
 base_mesh=None
 tmp=add_cube("_NanoTemplate",(0,0,0),(0.018,0.009,0.030),RED,rot=(0,0,math.radians(45)),bev=0.006)
+bpy.context.view_layer.objects.active=tmp
+tmp.select_set(True)
+bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
 base_mesh=tmp.data
 character.remove(tmp)
 bpy.data.objects.remove(tmp,do_unlink=True)
@@ -553,6 +554,11 @@ bpy.ops.export_scene.gltf(
     export_animations=True,
     export_apply=True
 )
+
+# Hide nanites only for the clean final poster. The editable .blend and
+# exported GLB were already saved/exported with full nanotech animation.
+for _nano_obj in nano:
+    _nano_obj.hide_render=True
 
 # Poster at higher quality.
 scene.render.resolution_x=1280
