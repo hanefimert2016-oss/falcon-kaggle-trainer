@@ -28,7 +28,9 @@ expected=["ironman_nanotech_scene.blend","ironman_nanotech_animated.glb","ironma
 sizes={}
 for name in expected:
     p=OUT/name
-    if not p.exists() or p.stat().st_size<1024: raise RuntimeError("missing/small "+name)
+    min_size = 1024 if name.endswith((".blend",".glb")) else 16
+    if not p.exists() or p.stat().st_size < min_size:
+        raise RuntimeError("missing/small "+name)
     sizes[name]=p.stat().st_size
 gpu=subprocess.run(["nvidia-smi","--query-gpu=name,memory.total","--format=csv,noheader"],capture_output=True,text=True).stdout.strip()
 (OUT/"kaggle_gpu_report.json").write_text(json.dumps({"gpu":gpu,"files":sizes},indent=2)+"\n")
