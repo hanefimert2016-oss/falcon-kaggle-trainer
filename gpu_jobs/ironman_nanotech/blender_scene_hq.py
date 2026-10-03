@@ -550,8 +550,8 @@ bpy.ops.export_scene.gltf(
 )
 
 # Poster at higher quality.
-scene.render.resolution_x=2160
-scene.render.resolution_y=2160
+scene.render.resolution_x=1280
+scene.render.resolution_y=1280
 scene.render.resolution_percentage=100
 scene.frame_set(168)
 scene.render.image_settings.file_format="PNG"
