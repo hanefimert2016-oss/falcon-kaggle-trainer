@@ -1,30 +1,69 @@
-name: Iron Man Nanotech Live Status
+name: Iron Man Nanotech Render Collector
 
 on:
   push:
     paths:
       - '.ironman-live-status-trigger'
       - '.github/workflows/ironman-nanotech-status.yml'
+      - 'quick_jobs/ironman_nanotech_collect/**'
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  status:
+  collect:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     env:
       KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
       KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
-      REF: ${{ vars.KAGGLE_OWNER }}/ironman-nanotech-3d
-      EXPORT_REF: ${{ vars.KAGGLE_OWNER }}/ironman-nanotech-export
+      REF: ${{ vars.KAGGLE_OWNER }}/ironman-nanotech-render-collect
+      TAG: ironman-nanotech-render-v1
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
       - run: python -m pip install --quiet "kaggle>=2.2.1"
-      - name: Main render status
-        run: kaggle kernels status "$REF" || true
-      - name: Fast export status
-        run: kaggle kernels status "$EXPORT_REF" || true
+      - name: Build collector kernel
+        run: |
+          python -m py_compile quick_jobs/ironman_nanotech_collect/build_kernel.py
+          python quick_jobs/ironman_nanotech_collect/build_kernel.py --owner "$KAGGLE_OWNER" --out kernel_collect
+          python -m py_compile kernel_collect/kernel.py
+          cat kernel_collect/kernel-metadata.json
+      - name: Push collector
+        run: kaggle kernels push -p kernel_collect --timeout 7200
+      - name: Wait for collector
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 40); do
+            S="$(kaggle kernels status "$REF" 2>&1 || true)"
+            echo "[$i] $S"
+            if echo "$S" | grep -q 'KernelWorkerStatus.COMPLETE'; then exit 0; fi
+            if echo "$S" | grep -Eq 'KernelWorkerStatus.(ERROR|CANCELLED)'; then
+              kaggle kernels logs "$REF" || true
+              exit 1
+            fi
+            sleep 10
+          done
+          kaggle kernels logs "$REF" || true
+          exit 1
+      - name: Download render outputs
+        run: |
+          mkdir -p outputs/ironman_render
+          kaggle kernels output "$REF" -p outputs/ironman_render -o
+          find outputs/ironman_render -maxdepth 1 -type f -printf '%f %s bytes\n' | sort
+          test -s outputs/ironman_render/ironman_nanotech_transform.mp4
+          test -s outputs/ironman_render/ironman_nanotech_poster.png
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ironman-nanotech-render
+          path: outputs/ironman_render/
+          retention-days: 14
+      - name: Publish render release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes || true
+          gh release create "$TAG" outputs/ironman_render/* --repo "$GITHUB_REPOSITORY" --title "Iron Man Nanotech Render" --notes "1080p nanotech transformation render and poster collected from the completed Kaggle render kernel."
