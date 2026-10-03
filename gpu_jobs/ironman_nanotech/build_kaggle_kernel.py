@@ -51,6 +51,18 @@ cmd = [str(blender), "-b", "--python", str(scene_py)]
 print("+", " ".join(cmd), flush=True)
 subprocess.check_call(cmd, env=env)
 
+# Keep Kaggle outputs small: Blender itself is only a runtime dependency.
+# Without cleanup, "kaggle kernels output" would download hundreds of MB.
+try:
+    if blender_dir.exists():
+        shutil.rmtree(blender_dir)
+    if archive.exists():
+        archive.unlink()
+    if scene_py.exists():
+        scene_py.unlink()
+except Exception as e:
+    print("cleanup warning:", e, flush=True)
+
 expected = [
     "ironman_nanotech_scene.blend",
     "ironman_nanotech_animated.glb",
