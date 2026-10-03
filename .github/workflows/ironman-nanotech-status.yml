@@ -1,27 +1,69 @@
 name: Iron Man Nanotech Live Status
+
 on:
   push:
     paths:
       - '.ironman-live-status-trigger'
       - '.github/workflows/ironman-nanotech-status.yml'
+      - 'quick_jobs/ironman_nanotech_export/**'
+  workflow_dispatch:
+
 permissions:
-  contents: read
+  contents: write
+
 jobs:
-  status:
+  export:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     env:
       KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
       KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
-      REF: ${{ vars.KAGGLE_OWNER }}/ironman-nanotech-3d
+      REF: ${{ vars.KAGGLE_OWNER }}/ironman-nanotech-export
+      TAG: ironman-nanotech-model-v1
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: python -m pip install "kaggle>=2.2.1"
-      - name: Status
+      - run: python -m pip install --quiet "kaggle>=2.2.1"
+      - name: Build fast animated 3D export kernel
         run: |
-          kaggle kernels status "$REF"
-      - name: Live logs
-        if: always()
-        run: kaggle kernels logs "$REF" || true
+          python -m py_compile quick_jobs/ironman_nanotech_export/blender_scene_export.py
+          python quick_jobs/ironman_nanotech_export/build_kernel.py --owner "$KAGGLE_OWNER" --out kernel_export
+          python -m py_compile kernel_export/kernel.py
+          cat kernel_export/kernel-metadata.json
+      - name: Push Kaggle T4 export
+        run: kaggle kernels push -p kernel_export --accelerator NvidiaTeslaT4 --timeout 7200
+      - name: Wait for animated model export
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 50); do
+            S="$(kaggle kernels status "$REF" 2>&1 || true)"
+            echo "[$i] $S"
+            if echo "$S" | grep -q 'KernelWorkerStatus.COMPLETE'; then exit 0; fi
+            if echo "$S" | grep -Eq 'KernelWorkerStatus.(ERROR|CANCELLED)'; then
+              kaggle kernels logs "$REF" || true
+              exit 1
+            fi
+            sleep 12
+          done
+          kaggle kernels logs "$REF" || true
+          exit 1
+      - name: Download animated 3D outputs
+        run: |
+          mkdir -p outputs/ironman_export
+          kaggle kernels output "$REF" -p outputs/ironman_export -o
+          find outputs/ironman_export -maxdepth 1 -type f -printf '%f %s bytes\n' | sort
+          test -s outputs/ironman_export/ironman_nanotech_scene.blend
+          test -s outputs/ironman_export/ironman_nanotech_animated.glb
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ironman-nanotech-animated-3d
+          path: outputs/ironman_export/
+          retention-days: 14
+      - name: Publish animated model release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes || true
+          gh release create "$TAG" outputs/ironman_export/* --repo "$GITHUB_REPOSITORY" --title "Iron Man Nanotech Animated 3D" --notes "Animated GLB and editable Blender scene generated in a Kaggle Tesla T4 runtime."
