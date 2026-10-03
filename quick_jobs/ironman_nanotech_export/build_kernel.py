@@ -34,6 +34,22 @@ for name in expected:
     sizes[name]=p.stat().st_size
 gpu=subprocess.run(["nvidia-smi","--query-gpu=name,memory.total","--format=csv,noheader"],capture_output=True,text=True).stdout.strip()
 (OUT/"kaggle_gpu_report.json").write_text(json.dumps({"gpu":gpu,"files":sizes},indent=2)+"\n")
+# Keep Kaggle output tiny: only final model artifacts and reports.
+try:
+    if archive.exists():
+        archive.unlink()
+except Exception as e:
+    print("cleanup archive warning:", e, flush=True)
+try:
+    if bd.exists():
+        shutil.rmtree(bd)
+except Exception as e:
+    print("cleanup blender dir warning:", e, flush=True)
+try:
+    if scene.exists():
+        scene.unlink()
+except Exception as e:
+    print("cleanup scene warning:", e, flush=True)
 print("EXPORT_DONE",json.dumps({"gpu":gpu,"files":sizes}),flush=True)
 '''
 
