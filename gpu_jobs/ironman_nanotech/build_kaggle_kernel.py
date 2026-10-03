@@ -64,10 +64,10 @@ except Exception as e:
     print("cleanup warning:", e, flush=True)
 
 expected = [
-    "ironman_nanotech_scene.blend",
-    "ironman_nanotech_animated.glb",
-    "ironman_nanotech_poster.png",
-    "ironman_nanotech_manifest.json",
+    "ironman_nanotech_hq_scene.blend",
+    "ironman_nanotech_hq_animated.glb",
+    "ironman_nanotech_hq_poster.png",
+    "ironman_nanotech_hq_manifest.json",
 ]
 sizes = {}
 for name in expected:
@@ -90,7 +90,7 @@ def main() -> int:
     ns = ap.parse_args()
 
     root = Path(__file__).resolve().parents[2]
-    scene_path = root / "gpu_jobs" / "ironman_nanotech" / "blender_scene.py"
+    scene_path = root / "gpu_jobs" / "ironman_nanotech" / "blender_scene_hq.py"
     scene = scene_path.read_bytes()
     kernel = KERNEL_TEMPLATE.replace("__BLENDER_URL__", repr(BLENDER_URL))
     kernel = kernel.replace("__SCENE_B64__", repr(base64.b64encode(scene).decode("ascii")))
