@@ -1,0 +1,26 @@
+name: Iron Man HQ Live Probe
+on:
+  push:
+    paths:
+      - '.ironman-hq-probe'
+      - '.github/workflows/ironman-hq-live-probe.yml'
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
+      REF: ${{ vars.KAGGLE_OWNER }}/ironman-nanotech-3d
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --quiet "kaggle>=2.2.1"
+      - name: Status
+        run: kaggle kernels status "$REF"
+      - name: Logs
+        if: always()
+        run: kaggle kernels logs "$REF" || true
