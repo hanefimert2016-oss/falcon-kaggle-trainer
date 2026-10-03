@@ -349,35 +349,27 @@ bpy.ops.export_scene.gltf(
     export_apply=True,
 )
 
-# Final poster.
+# Render a single verification poster; the complete 144-frame nanotech
+# transformation is stored as keyframed animation in the GLB and BLEND files.
+scene.frame_set(144)
 scene.render.filepath=os.path.join(OUT,"ironman_nanotech_poster.png")
 scene.render.image_settings.file_format="PNG"
-scene.render.resolution_x=1920
-scene.render.resolution_y=1080
+scene.render.resolution_x=1280
+scene.render.resolution_y=720
+scene.render.resolution_percentage=100
 bpy.ops.render.render(write_still=True)
 
-# Full 6 second nanotech transformation preview.
-scene.frame_set(1)
-scene.render.image_settings.file_format="FFMPEG"
-scene.render.ffmpeg.format="MPEG4"
-scene.render.ffmpeg.codec="H264"
-scene.render.ffmpeg.constant_rate_factor="MEDIUM"
-scene.render.filepath=os.path.join(OUT,"ironman_nanotech_transform.mp4")
-bpy.ops.render.render(animation=True)
-
-# Human-readable report.
 report = {
     "render_backend": gpu_backend,
+    "animation_storage": "keyframed GLB + Blender scene",
     "frames": [scene.frame_start, scene.frame_end],
     "fps": scene.render.fps,
-    "resolution": [scene.render.resolution_x, scene.render.resolution_y],
     "armor_piece_count": len(armor),
     "nano_tile_count": len(nano_final_regions),
     "outputs": [
         "ironman_nanotech_scene.blend",
         "ironman_nanotech_animated.glb",
         "ironman_nanotech_poster.png",
-        "ironman_nanotech_transform.mp4",
     ],
 }
 import json
