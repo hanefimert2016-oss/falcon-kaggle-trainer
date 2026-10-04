@@ -1,0 +1,95 @@
+name: Factory Robot R34 MP4 Delivery
+
+on:
+  push:
+    branches: [factory-robot-cinematic-impl]
+    paths:
+      - '.github/workflows/factory-robot-r34-delivery.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deliver:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
+      KERNEL_SLUG: factory-robot-cinematic-t4-production-r34
+      REF: ${{ vars.KAGGLE_OWNER }}/factory-robot-cinematic-t4-production-r34
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install delivery tooling
+        run: python -m pip install -q "kaggle>=2.2.1"
+
+      - name: Wait for isolated r34 kernel
+        shell: bash
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 1200); do
+            STATUS="$(kaggle kernels status "$REF" 2>&1 || true)"
+            echo "[$i] $STATUS"
+            if echo "$STATUS" | grep -Eqi 'COMPLETE|FINISHED'; then
+              echo "R34_COMPLETE"
+              exit 0
+            fi
+            if echo "$STATUS" | grep -Eqi 'ERROR|FAILED|CANCEL_ACKNOWLEDGED|CANCELLED'; then
+              echo "R34_FAILED"
+              kaggle kernels logs "$REF" || true
+              exit 1
+            fi
+            sleep 15
+          done
+          echo "R34_TIMEOUT"
+          exit 1
+
+      - name: Download r34 output
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf delivery_output
+          mkdir -p delivery_output
+          kaggle kernels output "$REF" -p delivery_output -o
+          find delivery_output -type f -printf '%p %s bytes\n' | sort
+          MP4="$(find delivery_output -type f -name 'factory_robot_cinematic.mp4' | head -n1)"
+          test -n "$MP4"
+          echo "MP4=$MP4" >> "$GITHUB_ENV"
+          ROOT="$(dirname "$MP4")"
+          echo "ROOT=$ROOT" >> "$GITHUB_ENV"
+
+      - name: Verify MP4
+        shell: bash
+        run: |
+          set -euo pipefail
+          ffprobe -v error -select_streams v:0             -show_entries stream=codec_name,width,height,r_frame_rate,avg_frame_rate,nb_frames,pix_fmt             -show_entries format=duration             -of json "$MP4"
+          python -m factory_robot_3d.pipeline.validate_video "$MP4"
+
+      - name: Verify output bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          from factory_robot_3d.pipeline.validate_artifacts import validate_artifacts
+          root=Path(os.environ['ROOT'])
+          report=validate_artifacts(root)
+          print(report)
+          if not report.ok:
+              raise SystemExit('; '.join(report.errors))
+          PY
+
+      - name: Upload final robot factory MP4 bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: factory-robot-r34-final-mp4
+          path: ${{ env.ROOT }}/
+          if-no-files-found: error
+          retention-days: 14
