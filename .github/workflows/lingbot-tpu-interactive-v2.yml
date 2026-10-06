@@ -32,31 +32,54 @@ jobs:
           set -euo pipefail
           rm -rf kernel_lingbot_interactive
           mkdir -p kernel_lingbot_interactive
-          cp lingbot_tpu/apply_tpu_patch.py kernel_lingbot_interactive/
-          cp lingbot_tpu/generate_tpu.py kernel_lingbot_interactive/
-          cp lingbot_tpu/kaggle_tpu_v5e_test.py kernel_lingbot_interactive/
-          cat > kernel_lingbot_interactive/kernel.py <<'PY'
+
+          # Kaggle script kernels only guarantee the declared code_file is
+          # materialized in /kaggle/src. Embed our helper files into kernel.py
+          # so the exact tested revision is self-contained.
+          python - <<'PY'
+          import base64
           from pathlib import Path
-          import subprocess, sys
-          cmd=[
+
+          src = Path("lingbot_tpu")
+          names = ["apply_tpu_patch.py", "generate_tpu.py", "kaggle_tpu_v5e_test.py"]
+          payload = {
+              name: base64.b64encode((src / name).read_bytes()).decode("ascii")
+              for name in names
+          }
+
+          wrapper = f'''from pathlib import Path
+          import base64
+          import subprocess
+          import sys
+
+          PAYLOAD = {payload!r}
+          runtime = Path("/kaggle/working/lingbot_tpu_runtime")
+          runtime.mkdir(parents=True, exist_ok=True)
+          for name, encoded in PAYLOAD.items():
+              (runtime / name).write_bytes(base64.b64decode(encoded))
+
+          cmd = [
               sys.executable,
-              str(Path(__file__).with_name("kaggle_tpu_v5e_test.py")),
-              "--profile","interactive",
-              "--size","480*832",
+              str(runtime / "kaggle_tpu_v5e_test.py"),
+              "--profile", "interactive",
+              "--size", "480*832",
           ]
-          p=subprocess.run(cmd,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
-          print(p.stdout,flush=True)
+          p = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+          print(p.stdout, flush=True)
           Path("/kaggle/working/lingbot_tpu_benchmark.log").write_text(p.stdout)
-          Path("/kaggle/working/lingbot_tpu_exit_code.txt").write_text(str(p.returncode)+"\n")
+          Path("/kaggle/working/lingbot_tpu_exit_code.txt").write_text(str(p.returncode) + "\\n")
           raise SystemExit(p.returncode)
+          '''
+          Path("kernel_lingbot_interactive/kernel.py").write_text(wrapper)
           PY
+
           python - <<'PY'
           import json, os
           from pathlib import Path
           owner=os.environ["KAGGLE_OWNER"]; slug=os.environ["KERNEL_SLUG"]
           meta={
             "id":f"{owner}/{slug}",
-            "title":"LingBot World V2 TPU v5e Interactive V2",
+            "title":"LingBot World V2 Interactive TPU V2",
             "code_file":"kernel.py",
             "language":"python",
             "kernel_type":"script",
@@ -72,7 +95,7 @@ jobs:
           Path("kernel_lingbot_interactive/kernel-metadata.json").write_text(json.dumps(meta,indent=2)+"\n")
           print(json.dumps(meta,indent=2))
           PY
-          python -m py_compile kernel_lingbot_interactive/*.py
+          python -m py_compile kernel_lingbot_interactive/kernel.py
 
       - name: Push Kaggle TPU v5e-8 interactive run
         run: |
