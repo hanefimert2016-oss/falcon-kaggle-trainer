@@ -23,7 +23,15 @@ jobs:
         with:
           python-version: '3.11'
       - run: python -m pip install -q "kaggle>=2.2.1"
-      - name: Status
+      - name: Status and logs
         run: |
+          set -x
           kaggle kernels list --user "$KAGGLE_OWNER" --search lingbot --page-size 50 || true
           kaggle kernels status "$KAGGLE_OWNER/$KERNEL_SLUG" || true
+          echo "=== KAGGLE LOGS ==="
+          kaggle kernels logs "$KAGGLE_OWNER/$KERNEL_SLUG" || true
+          echo "=== KAGGLE OUTPUT ==="
+          mkdir -p /tmp/lingbot-output
+          kaggle kernels output "$KAGGLE_OWNER/$KERNEL_SLUG" -p /tmp/lingbot-output -o || true
+          find /tmp/lingbot-output -maxdepth 3 -type f -printf '%p %s bytes\n' || true
+          test ! -f /tmp/lingbot-output/lingbot_tpu_benchmark.log || cat /tmp/lingbot-output/lingbot_tpu_benchmark.log
