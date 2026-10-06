@@ -1,0 +1,127 @@
+name: LingBot TPU v5e-8 Smoke
+
+on:
+  push:
+    branches:
+      - lingbot-tpu-v5e-port
+    paths:
+      - '.lingbot-tpu-trigger'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  launch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
+      KERNEL_SLUG: lingbot-world-v2-tpu-v5e-smoke
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install Kaggle CLI
+        run: python -m pip install -q "kaggle>=2.2.1"
+
+      - name: Verify Kaggle auth
+        run: |
+          test -n "$KAGGLE_API_TOKEN"
+          test -n "$KAGGLE_OWNER"
+          kaggle kernels list --user "$KAGGLE_OWNER" --page-size 1
+
+      - name: Build LingBot TPU kernel
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf kernel_lingbot_tpu
+          mkdir -p kernel_lingbot_tpu
+          cp lingbot_tpu/apply_tpu_patch.py kernel_lingbot_tpu/
+          cp lingbot_tpu/generate_tpu.py kernel_lingbot_tpu/
+          cp lingbot_tpu/kaggle_tpu_v5e_test.py kernel_lingbot_tpu/
+          cat > kernel_lingbot_tpu/kernel.py <<'PY'
+          from pathlib import Path
+          import subprocess
+          import sys
+
+          cmd = [
+              sys.executable,
+              str(Path(__file__).with_name("kaggle_tpu_v5e_test.py")),
+              "--size", "480*832",
+              "--frames", "17",
+          ]
+          p = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+          print(p.stdout, flush=True)
+          Path("/kaggle/working/lingbot_tpu_benchmark.log").write_text(p.stdout)
+          Path("/kaggle/working/lingbot_tpu_exit_code.txt").write_text(str(p.returncode) + "\n")
+          raise SystemExit(p.returncode)
+          PY
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          owner=os.environ["KAGGLE_OWNER"]
+          slug=os.environ["KERNEL_SLUG"]
+          meta={
+              "id": f"{owner}/{slug}",
+              "title": "LingBot World V2 1.3B TPU v5e-8 Smoke",
+              "code_file": "kernel.py",
+              "language": "python",
+              "kernel_type": "script",
+              "is_private": True,
+              "enable_gpu": False,
+              "enable_internet": True,
+              "machine_shape": "TpuV5E8",
+              "dataset_sources": [],
+              "competition_sources": [],
+              "kernel_sources": [],
+              "model_sources": []
+          }
+          Path("kernel_lingbot_tpu/kernel-metadata.json").write_text(json.dumps(meta, indent=2)+"\n")
+          print(json.dumps(meta, indent=2))
+          PY
+          python -m py_compile kernel_lingbot_tpu/*.py
+
+      - name: Push TPU v5e-8 kernel
+        shell: bash
+        run: |
+          set -euo pipefail
+          kaggle kernels push             -p kernel_lingbot_tpu             --accelerator TpuV5E8             --timeout 43200
+
+      - name: Wait for Kaggle result
+        shell: bash
+        run: |
+          set -euo pipefail
+          REF="$KAGGLE_OWNER/$KERNEL_SLUG"
+          for i in $(seq 1 180); do
+            STATUS="$(kaggle kernels status "$REF" 2>&1 || true)"
+            echo "[$i] $STATUS"
+            if echo "$STATUS" | grep -Eq '(KernelWorkerStatus\.)?COMPLETE'; then
+              exit 0
+            fi
+            if echo "$STATUS" | grep -Eq '(KernelWorkerStatus\.)?(ERROR|CANCELLED)'; then
+              exit 1
+            fi
+            sleep 20
+          done
+          echo "Timed out waiting for Kaggle"
+          exit 1
+
+      - name: Download benchmark output
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p outputs
+          kaggle kernels output "$KAGGLE_OWNER/$KERNEL_SLUG" -p outputs -o || true
+          find outputs -maxdepth 3 -type f -printf '%p %s bytes\n' || true
+          test ! -f outputs/lingbot_tpu_benchmark.log || cat outputs/lingbot_tpu_benchmark.log
+
+      - name: Upload benchmark artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lingbot-tpu-v5e-smoke
+          path: outputs/
+          if-no-files-found: ignore
