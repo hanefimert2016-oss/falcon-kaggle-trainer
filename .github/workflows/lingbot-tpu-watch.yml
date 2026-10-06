@@ -1,0 +1,68 @@
+name: LingBot TPU Canonical Watch
+
+on:
+  push:
+    branches:
+      - lingbot-tpu-v5e-port
+    paths:
+      - '.lingbot-tpu-watch-trigger'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
+      KERNEL_SLUG: lingbot-world-v2-1-3b-tpu-v5e-8-smoke
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -q "kaggle>=2.2.1"
+      - name: Wait for canonical Kaggle TPU run
+        shell: bash
+        run: |
+          set -euo pipefail
+          REF="$KAGGLE_OWNER/$KERNEL_SLUG"
+          for i in $(seq 1 300); do
+            STATUS="$(kaggle kernels status "$REF" 2>&1 || true)"
+            echo "[$i] $STATUS"
+            if echo "$STATUS" | grep -Eq '(KernelWorkerStatus\.)?COMPLETE'; then
+              echo "KAGGLE_FINAL_STATUS=COMPLETE" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            if echo "$STATUS" | grep -Eq '(KernelWorkerStatus\.)?(ERROR|CANCELLED)'; then
+              echo "KAGGLE_FINAL_STATUS=ERROR" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            sleep 20
+          done
+          echo "KAGGLE_FINAL_STATUS=TIMEOUT" >> "$GITHUB_ENV"
+          exit 1
+      - name: Download Kaggle output
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p outputs
+          kaggle kernels output "$KAGGLE_OWNER/$KERNEL_SLUG" -p outputs -o || true
+          find outputs -maxdepth 4 -type f -printf '%p %s bytes\n' || true
+          if [ -f outputs/lingbot_tpu_benchmark.log ]; then
+            echo "=== LINGBOT TPU BENCHMARK ==="
+            cat outputs/lingbot_tpu_benchmark.log
+          fi
+          if [ -f outputs/lingbot_tpu_exit_code.txt ]; then
+            echo "=== EXIT CODE ==="
+            cat outputs/lingbot_tpu_exit_code.txt
+          fi
+      - name: Upload TPU output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lingbot-tpu-canonical-output
+          path: outputs/
+          if-no-files-found: ignore
