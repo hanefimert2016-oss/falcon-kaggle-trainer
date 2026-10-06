@@ -14,6 +14,7 @@ This is an experimental inference port, not an upstream-supported configuration.
 from __future__ import annotations
 
 import argparse
+import py_compile
 import shutil
 from pathlib import Path
 
@@ -231,7 +232,7 @@ def patch(root: Path) -> None:
         if not p.exists():
             continue
         backup(p)
-        insert_after(p, 'import math\n', 'from contextib import nullcontext\\n')
+        insert_after(p, 'import math\n', 'from contextlib import nullcontext\n')
         replace(p, "with torch.amp.autocast('cuda', dtype=torch.float32):", 'with nullcontext():', required=False)
 
     # CUDA-disabled autocast decorators are no-ops for our explicit dtypes;
@@ -285,7 +286,7 @@ def _portable_sync(device):
     replace(p, 'torch.cuda.empty_cache()', '_portable_empty_cache()', required=False)
     replace(p, 'torch.cuda.synchronize()', '_portable_sync(self.device)', required=False)
     old_seed = '''seed_g = torch.Generator(device=self.device)\n        seed_g.manual_seed(seed)'''
-    new_seed = '''if self.device.type == 'xla':\n            torch.manual_seed(seed)\n            seed_g = None\n        else:\n            seed_g = torch.Generator(device=self.device)\n            seed_g.manual_seed(seed)'''
+    new_seed = '''if self.device.type == 'xla':\n            import torch_xla.core.xla_model as xm\n            xm.set_rng_state(seed, self.device)\n            seed_g = None\n        else:\n            seed_g = torch.Generator(device=self.device)\n            seed_g.manual_seed(seed)'''
     replace(p, old_seed, new_seed, required=False)
 
     # 4) T5: avoid evaluating torch.cuda.current_device() at import time.
@@ -320,6 +321,23 @@ def _vae_autocast(device, dtype):
         backup(req)
         lines = [ln for ln in req.read_text().splitlines() if ln.strip() != 'flash_attn']
         req.write_text('\n'.join(lines) + '\n')
+
+    # Syntax-check every file modified by this patch before TPU model loading.
+    # This catches patch drift against newer upstream commits without spending
+    # accelerator time on an avoidable import failure.
+    for rel in [
+        'wan/modules/attention.py',
+        'wan/modules/model_fast.py',
+        'wan/modules/model_causal.py',
+        'wan/modules/model.py',
+        'wan/distributed/sequence_parallel.py',
+        'wan/image2video.py',
+        'wan/modules/t5.py',
+        'wan/modules/vae2_1.py',
+    ]:
+        target = root / rel
+        if target.exists():
+            py_compile.compile(str(target), doraise=True)
 
     marker = root / '.lingbot_tpu_patch_v1'
     marker.write_text('PyTorch/XLA TPU patch v1 applied\n')
