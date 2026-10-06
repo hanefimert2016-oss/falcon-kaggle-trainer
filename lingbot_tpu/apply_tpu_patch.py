@@ -325,6 +325,12 @@ def _portable_sync(device):
 '''
     insert_after(p, 'import torch\n', helper)
     replace(p, 'self.device = torch.device(f"cuda:{device_id}")', 'self.device = _portable_device(device_id)')
+    replace(
+        p,
+        "            device=self.device)",
+        "            device=self.device,\n            dtype=(self.param_dtype if self.device.type == 'xla' else torch.float32))",
+        required=False,
+    )
     replace(p, "torch.amp.autocast('cuda', dtype=self.param_dtype)", '_portable_autocast(self.device, self.param_dtype)', required=False)
     replace(p, 'torch.cuda.empty_cache()', '_portable_empty_cache()', required=False)
     replace(p, 'torch.cuda.synchronize()', '_portable_sync(self.device)', required=False)
