@@ -87,10 +87,16 @@ def download_models():
 
 def verify_tpu():
     os.environ.setdefault('PJRT_DEVICE', 'TPU')
-    import torch
-    import torch_xla
-    import torch_xla.core.xla_model as xm
-    import torch_xla.runtime as xr
+    try:
+        import torch
+        import torch_xla
+        import torch_xla.core.xla_model as xm
+        import torch_xla.runtime as xr
+    except Exception as exc:
+        raise RuntimeError(
+            'No real Kaggle TPU runtime detected. Open this notebook in the Kaggle editor, '
+            'select Settings -> Accelerator -> TPU v5e-8, then Save & Run All.'
+        ) from exc
 
     dev = xm.xla_device()
     print('torch:', torch.__version__)
@@ -133,8 +139,10 @@ def main():
     args = ap.parse_args()
     vals = profile_values(args)
 
-    ensure_python_deps()
+    # Verify the accelerator before downloads or pip work. The Kaggle CLI
+    # push path can silently start a CPU image even when TPU is requested.
     verify_tpu()
+    ensure_python_deps()
     ensure_checkout()
     if not args.skip_download:
         download_models()
