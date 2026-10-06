@@ -1,0 +1,30 @@
+name: LingBot TPU Status Probe
+
+on:
+  push:
+    branches:
+      - lingbot-tpu-v5e-port
+    paths:
+      - '.lingbot-tpu-status-trigger'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
+      KERNEL_SLUG: lingbot-world-v2-tpu-v5e-smoke
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -q "kaggle>=2.2.1"
+      - name: Kaggle kernel status
+        run: |
+          set -x
+          kaggle kernels status "$KAGGLE_OWNER/$KERNEL_SLUG" || true
