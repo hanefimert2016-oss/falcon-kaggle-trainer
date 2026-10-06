@@ -18,7 +18,7 @@ jobs:
     env:
       KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
       KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
-      KERNEL_SLUG: lingbot-world-v2-tpu-v5e-smoke-public
+      KERNEL_SLUG: lingbot-world-v2-1-3b-tpu-v5e-8-smoke
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -66,11 +66,11 @@ jobs:
           slug=os.environ["KERNEL_SLUG"]
           meta={
               "id": f"{owner}/{slug}",
-              "title": "lingbot world v2 tpu v5e smoke public",
+              "title": "LingBot World V2 1.3B TPU v5e-8 Smoke",
               "code_file": "kernel.py",
               "language": "python",
               "kernel_type": "script",
-              "is_private": False,
+              "is_private": True,
               "enable_gpu": False,
               "enable_internet": True,
               "machine_shape": "TpuV5E8",
