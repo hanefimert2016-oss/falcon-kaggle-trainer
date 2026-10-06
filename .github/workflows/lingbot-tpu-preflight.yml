@@ -1,0 +1,36 @@
+name: LingBot TPU Port Preflight
+
+on:
+  push:
+    branches:
+      - lingbot-tpu-v5e-port
+    paths:
+      - 'lingbot_tpu/**'
+      - '.lingbot-tpu-preflight-trigger'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Clone upstream
+        run: git clone --depth 1 https://github.com/Robbyant/lingbot-world-v2.git upstream
+      - name: Apply TPU patch
+        run: python lingbot_tpu/apply_tpu_patch.py upstream
+      - name: Compile patched upstream
+        run: |
+          python -m py_compile             upstream/wan/modules/attention.py             upstream/wan/modules/model_fast.py             upstream/wan/modules/model_causal.py             upstream/wan/modules/model.py             upstream/wan/distributed/sequence_parallel.py             upstream/wan/image2video.py             upstream/wan/modules/t5.py             upstream/wan/modules/vae2_1.py
+      - name: Assert TPU patch markers
+        run: |
+          grep -q "torch_xla.experimental.custom_kernel" upstream/wan/modules/attention.py
+          grep -q "_portable_device" upstream/wan/image2video.py
+          grep -q "contextlib import nullcontext" upstream/wan/modules/model_fast.py
+          grep -q "set_rng_state" upstream/wan/image2video.py
