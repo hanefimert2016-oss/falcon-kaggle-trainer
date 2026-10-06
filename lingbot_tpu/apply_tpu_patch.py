@@ -69,9 +69,7 @@ def _sdpa(q, k, v, *, dropout_p=0.0, softmax_scale=None, q_scale=None,
 
 def _xla_attention(q, k, v, *, dropout_p=0.0, softmax_scale=None,
                    q_scale=None, causal=False, dtype=torch.bfloat16):
-    # Pallas flash_attention uses [B, H, S, D]. It does not implement
-    # dropout; inference uses dropout_p=0. For unusual shapes/options we
-    # deliberately fall back to XLA-lowered SDPA for correctness.
+    # Pallas flash_attention uses [B, H, S, D].
     if dropout_p != 0.0 or not XLA_FLASH_ATTN_AVAILABLE:
         return _sdpa(q, k, v, dropout_p=dropout_p,
                      softmax_scale=softmax_scale, q_scale=q_scale,
@@ -83,14 +81,59 @@ def _xla_attention(q, k, v, *, dropout_p=0.0, softmax_scale=None,
     vh = v.transpose(1, 2).to(dtype)
     if q_scale is not None:
         qh = qh * q_scale
+
     sm_scale = softmax_scale if softmax_scale is not None else 1.0 / math.sqrt(qh.shape[-1])
+
+    # LingBot 1.3B uses 12 attention heads. A v5e-8 host has 8 TPU cores,
+    # so direct head sharding would only use gcd(12, 8)=4 cores. For ordinary
+    # MHA (same q/k/v head count), pad four all-zero heads to 16, shard the
+    # head axis 8 ways, then slice back to the original 12 heads. Heads are
+    # independent, therefore this preserves the original 12 outputs exactly.
+    original_heads = qh.shape[1]
+    qhp, khp, vhp = qh, kh, vh
+    partition_spec = None
+    padded_heads = original_heads
+
     try:
-        out = xla_flash_attention(qh, kh, vh, causal=causal, sm_scale=sm_scale)
+        import numpy as np
+        import torch_xla.runtime as xr
+        import torch_xla.distributed.spmd as xs
+        from torch_xla.distributed.spmd import Mesh
+
+        ndev = xr.global_runtime_device_count()
+        if ndev > 1 and qh.shape[1] == kh.shape[1] == vh.shape[1]:
+            mesh = xs.get_global_mesh()
+            if mesh is None:
+                mesh = Mesh(np.arange(ndev), (ndev,), ('model',))
+                xs.set_global_mesh(mesh)
+
+            padded_heads = int(math.ceil(original_heads / ndev) * ndev)
+            if padded_heads != original_heads:
+                pad = padded_heads - original_heads
+                qhp = torch.cat([qh, qh.new_zeros((qh.shape[0], pad, qh.shape[2], qh.shape[3]))], dim=1)
+                khp = torch.cat([kh, kh.new_zeros((kh.shape[0], pad, kh.shape[2], kh.shape[3]))], dim=1)
+                vhp = torch.cat([vh, vh.new_zeros((vh.shape[0], pad, vh.shape[2], vh.shape[3]))], dim=1)
+            partition_spec = (None, 'model', None, None)
+    except Exception as exc:
+        warnings.warn(f'XLA head sharding setup failed; using unsharded Pallas attention: {exc}')
+        qhp, khp, vhp = qh, kh, vh
+        padded_heads = original_heads
+        partition_spec = None
+
+    try:
+        out = xla_flash_attention(
+            qhp, khp, vhp,
+            causal=causal,
+            sm_scale=sm_scale,
+            partition_spec=partition_spec)
     except TypeError:
-        # Older/newer torch-xla builds have slightly different kwargs.
-        if softmax_scale is not None:
-            qh = qh * (softmax_scale * math.sqrt(qh.shape[-1]))
-        out = xla_flash_attention(qh, kh, vh, causal=causal)
+        # Compatibility fallback for torch-xla builds whose Pallas wrapper
+        # does not expose partition_spec/sm_scale with this exact signature.
+        out = xla_flash_attention(qh, kh, vh, causal=causal, sm_scale=sm_scale)
+        padded_heads = original_heads
+
+    if padded_heads != original_heads:
+        out = out[:, :original_heads]
     return out.transpose(1, 2).contiguous().to(out_dtype)
 
 
@@ -339,8 +382,8 @@ def _vae_autocast(device, dtype):
         if target.exists():
             py_compile.compile(str(target), doraise=True)
 
-    marker = root / '.lingbot_tpu_patch_v1'
-    marker.write_text('PyTorch/XLA TPU patch v1 applied\n')
+    marker = root / '.lingbot_tpu_patch_v2'
+    marker.write_text('PyTorch/XLA TPU patch v2 applied\n')
     print(f'Patched LingBot TPU runtime at: {root}')
 
 
