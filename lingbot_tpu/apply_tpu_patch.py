@@ -327,8 +327,15 @@ def _portable_sync(device):
     replace(p, 'self.device = torch.device(f"cuda:{device_id}")', 'self.device = _portable_device(device_id)')
     replace(
         p,
-        "            device=self.device)",
-        "            device=self.device,\n            dtype=(self.param_dtype if self.device.type == 'xla' else torch.float32))",
+        """        self.vae = Wan2_1_VAE(
+            vae_pth=_resolve_asset_path(
+                config.vae_checkpoint, checkpoint_dir, assets_dir),
+            device=self.device)""",
+        """        self.vae = Wan2_1_VAE(
+            vae_pth=_resolve_asset_path(
+                config.vae_checkpoint, checkpoint_dir, assets_dir),
+            dtype=(self.param_dtype if self.device.type == 'xla' else torch.float32),
+            device=self.device)""",
         required=False,
     )
     replace(p, "torch.amp.autocast('cuda', dtype=self.param_dtype)", '_portable_autocast(self.device, self.param_dtype)', required=False)
