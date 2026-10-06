@@ -15,17 +15,24 @@ from pathlib import Path
 # Must be set before XLA runtime initialization.
 os.environ.setdefault('PJRT_DEVICE', 'TPU')
 os.environ.setdefault('XLA_USE_BF16', '1')
-os.environ.setdefault('XLA_AUTO_SPMD_MESH', '2,4')
+os.environ.setdefault('XLA_AUTO_SPMD_MESH', '8,1')
 os.environ.setdefault('XLA_AUTO_USE_GROUP_SHARDING', '1')
 
+import numpy as np
 import torch
 import torch_xla.core.xla_model as xm
 import torch_xla.runtime as xr
+import torch_xla.distributed.spmd as xs
+from torch_xla.distributed.spmd import Mesh
 from PIL import Image
 
-# Auto-SPMD lets XLA choose sharding for a first functional port. Manual
-# activation/weight sharding is the next optimization stage.
+# Enable SPMD before any XLA tensors are created. Auto-sharding handles the
+# DiT/VAE graph, while a named 1-D 8-core mesh is also exposed to the Pallas
+# attention wrapper for explicit head parallelism.
 xr.use_spmd(auto=True)
+_NDEV = xr.global_runtime_device_count()
+_GLOBAL_MESH = Mesh(np.arange(_NDEV), (_NDEV,), ('model',))
+xs.set_global_mesh(_GLOBAL_MESH)
 
 import wan
 from wan.configs import MAX_AREA_CONFIGS, SUPPORTED_SIZES, WAN_CONFIGS
@@ -47,6 +54,10 @@ def parse_args():
     p.add_argument('--prompt', default='A serene lakeside scene with a lone tree standing in calm water, surrounded by distant snow-capped mountains under a bright blue sky.')
     p.add_argument('--output', default='output/lingbot_tpu.mp4')
     p.add_argument('--warmup_only', action='store_true')
+    p.add_argument('--steady_runs', type=int, default=1,
+                   help='Number of same-shape steady-state runs after compilation.')
+    p.add_argument('--no_save', action='store_true',
+                   help='Benchmark without writing the final MP4.')
     return p.parse_args()
 
 
@@ -111,6 +122,7 @@ def main():
     print('Global runtime devices:', xr.global_runtime_device_count())
     print('SPMD:', xr.is_spmd())
     print('Auto mesh:', os.environ.get('XLA_AUTO_SPMD_MESH'))
+    print('Pallas global mesh:', _GLOBAL_MESH)
 
     pipe, cfg = build_pipeline(args, device)
 
@@ -120,11 +132,41 @@ def main():
     if args.warmup_only:
         return
 
-    # Same shape/prompt path: this is the useful steady-state figure.
-    elapsed, frames, fps, video = run_once(pipe, cfg, args, device, save=True)
-    print(f'STEADY_STATE seconds={elapsed:.3f} frames={frames} fps={fps:.3f} size={args.size}')
-    print(f'OUTPUT={args.output}')
-    del video
+    # Same shape/prompt path: report all runs plus median steady-state FPS.
+    steady = []
+    last_video = None
+    runs = max(1, args.steady_runs)
+    for idx in range(runs):
+        should_save = (idx == runs - 1) and (not args.no_save)
+        elapsed, frames, fps, video = run_once(
+            pipe, cfg, args, device, save=should_save)
+        steady.append((elapsed, frames, fps))
+        last_video = video
+        print(f'STEADY_RUN index={idx} seconds={elapsed:.3f} frames={frames} fps={fps:.3f} size={args.size}')
+
+    fps_values = sorted(v[2] for v in steady)
+    elapsed_values = sorted(v[0] for v in steady)
+    mid = len(fps_values) // 2
+    if len(fps_values) % 2:
+        median_fps = fps_values[mid]
+        median_elapsed = elapsed_values[mid]
+    else:
+        median_fps = 0.5 * (fps_values[mid - 1] + fps_values[mid])
+        median_elapsed = 0.5 * (elapsed_values[mid - 1] + elapsed_values[mid])
+
+    print(f'STEADY_STATE_MEDIAN seconds={median_elapsed:.3f} frames={steady[-1][1]} fps={median_fps:.3f} size={args.size} runs={runs}')
+    if not args.no_save:
+        print(f'OUTPUT={args.output}')
+
+    try:
+        import torch_xla.debug.metrics as met
+        print('XLA_METRICS_BEGIN')
+        print(met.metrics_report())
+        print('XLA_METRICS_END')
+    except Exception as exc:
+        print(f'XLA_METRICS_UNAVAILABLE={exc}')
+
+    del last_video
 
 
 if __name__ == '__main__':
