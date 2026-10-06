@@ -25,5 +25,5 @@ jobs:
       - run: python -m pip install -q "kaggle>=2.2.1"
       - name: Status
         run: |
-          kaggle kernels list --user "$KAGGLE_OWNER" --search "LingBot World V2 TPU v5e Interactive V2" --page-size 20 || true
+          kaggle kernels list --user "$KAGGLE_OWNER" --search lingbot --page-size 50 || true
           kaggle kernels status "$KAGGLE_OWNER/$KERNEL_SLUG" || true
