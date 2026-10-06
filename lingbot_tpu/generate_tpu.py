@@ -20,16 +20,24 @@ from pathlib import Path
 # Must be set before XLA runtime initialization.
 os.environ.setdefault('PJRT_DEVICE', 'TPU')
 os.environ.setdefault('XLA_USE_BF16', '1')
-os.environ.setdefault('XLA_AUTO_SPMD_MESH', '2,4')
+os.environ.setdefault('XLA_AUTO_SPMD_MESH', '8,1')
 os.environ.setdefault('XLA_AUTO_USE_GROUP_SHARDING', '1')
 
+import numpy as np
 import torch
 import torch_xla.core.xla_model as xm
 import torch_xla.runtime as xr
+import torch_xla.distributed.spmd as xs
+from torch_xla.distributed.spmd import Mesh
 from PIL import Image
 
-# Auto-SPMD lets XLA choose sharding for the first functional port.
+# Enable SPMD before creating XLA tensors. The 1-D mesh is used by the
+# Pallas attention patch for 8-way head parallelism; auto-sharding remains
+# enabled for the rest of the DiT/VAE graph.
 xr.use_spmd(auto=True)
+_NDEV = xr.global_runtime_device_count()
+_GLOBAL_MESH = Mesh(np.arange(_NDEV), (_NDEV,), ('model',))
+xs.set_global_mesh(_GLOBAL_MESH)
 
 import wan
 from wan.configs import MAX_AREA_CONFIGS, SUPPORTED_SIZES, WAN_CONFIGS
@@ -118,7 +126,10 @@ def run_once(pipe, cfg, args, device, save=False):
     elapsed = time.perf_counter() - t0
 
     frames = int(video.shape[1]) if video is not None and video.ndim >= 2 else args.frame_num
-    fps = frames / elapsed
+    # I2V returns the conditioning/initial frame as part of the clip. For
+    # real-time world-model throughput, count only newly generated frames.
+    generated_frames = max(frames - 1, 1)
+    fps = generated_frames / elapsed
     if save and video is not None:
         Path(args.output).parent.mkdir(parents=True, exist_ok=True)
         save_video(
@@ -152,6 +163,7 @@ def main():
     print('Global runtime devices:', xr.global_runtime_device_count())
     print('SPMD:', xr.is_spmd())
     print('Auto mesh:', os.environ.get('XLA_AUTO_SPMD_MESH'))
+    print('Pallas global mesh:', _GLOBAL_MESH)
     print('Requested frame_num:', args.frame_num)
     print('Chunk size:', args.chunk_size)
     print('Requested max_area:', args.max_area if args.max_area else MAX_AREA_CONFIGS[args.size])
