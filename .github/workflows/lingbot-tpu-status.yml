@@ -24,7 +24,10 @@ jobs:
         with:
           python-version: '3.11'
       - run: python -m pip install -q "kaggle>=2.2.1"
-      - name: Kaggle kernel status
+      - name: Kaggle kernel discovery and status
         run: |
           set -x
+          echo "=== user kernels matching lingbot ==="
+          kaggle kernels list --user "$KAGGLE_OWNER" --search lingbot --page-size 50 || true
+          echo "=== requested slug status ==="
           kaggle kernels status "$KAGGLE_OWNER/$KERNEL_SLUG" || true
