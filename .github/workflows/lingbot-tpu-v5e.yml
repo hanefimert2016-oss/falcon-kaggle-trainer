@@ -70,7 +70,7 @@ jobs:
               "code_file": "kernel.py",
               "language": "python",
               "kernel_type": "script",
-              "is_private": True,
+              "is_private": False,
               "enable_gpu": False,
               "enable_internet": True,
               "machine_shape": "TpuV5E8",
