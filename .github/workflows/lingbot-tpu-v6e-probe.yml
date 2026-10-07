@@ -1,0 +1,112 @@
+name: LingBot TPU v6e Interactive Probe
+
+on:
+  push:
+    branches:
+      - lingbot-tpu-v5e-port
+    paths:
+      - '.lingbot-tpu-v6e-trigger'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
+      KERNEL_SLUG: lingbot-world-v2-interactive-tpu-v2
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -q "kaggle>=2.2.1" kagglesdk
+      - name: Probe TPU v6e-8 interactive allocation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, time
+          from pathlib import Path
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          from kagglesdk.kernels.types.kernels_api_service import (
+              ApiCancelKernelSessionRequest,
+              ApiCreateKernelSessionRequest,
+              ApiGetAcceleratorQuotaStatisticsRequest,
+          )
+
+          api=KaggleApi(); api.authenticate()
+          full=f'{os.environ["KAGGLE_OWNER"]}/{os.environ["KERNEL_SLUG"]}'
+          state={"kernel":full,"requested_shape":"TpuV6E8"}
+
+          with api.build_kaggle_client() as client:
+              req=ApiCreateKernelSessionRequest()
+              req.slug=full
+              req.language="python"
+              req.kernel_type="notebook"
+              req.machine_shape="TpuV6E8"
+              req.enable_internet=True
+              try:
+                  op=client.kernels.kernels_api_client.create_kernel_session(req)
+              except Exception as exc:
+                  print("CREATE_V6E_EXCEPTION", type(exc).__name__, str(exc), flush=True)
+                  state["create_exception"]=str(exc)
+                  Path("lingbot_tpu_v6e_probe.json").write_text(json.dumps(state,indent=2)+"\n")
+                  raise
+
+              sid=int(op.name.rsplit("/",1)[1])
+              state.update({
+                  "operation":op.name,"session_id":sid,"initial_done":op.done,
+                  "initial_metadata":op.metadata or {},"initial_response":op.response or {},
+              })
+              print("V6E_OP",op.name,"done=",op.done,
+                    "metadata=",json.dumps(op.metadata or {},default=str),
+                    "response=",json.dumps(op.response or {},default=str),
+                    "error=",getattr(op.error,"code",None),
+                    getattr(op.error,"message",None),flush=True)
+
+              allocated=False
+              for i in range(12):
+                  if op.done: break
+                  time.sleep(5)
+                  op=client.common.operations_client.get_operation(name=op.name)
+                  q=client.kernels.kernels_api_client.get_accelerator_quota_statistics(
+                      ApiGetAcceleratorQuotaStatisticsRequest())
+                  reserved=q.tpu_quota.time_reserved
+                  allocated = allocated or reserved.total_seconds()>0
+                  print("POLL",i+1,"done=",op.done,"reserved=",reserved,
+                        "metadata=",json.dumps(op.metadata or {},default=str),
+                        "response=",json.dumps(op.response or {},default=str),
+                        "error=",getattr(op.error,"code",None),
+                        getattr(op.error,"message",None),flush=True)
+                  state.update({
+                      "last_done":op.done,"last_metadata":op.metadata or {},
+                      "last_response":op.response or {},
+                      "error_code":getattr(op.error,"code",None),
+                      "error_message":getattr(op.error,"message",None),
+                      "tpu_reserved":str(reserved),"allocated":allocated,
+                  })
+
+              if not allocated and not op.done:
+                  c=ApiCancelKernelSessionRequest(); c.kernel_session_id=sid
+                  cr=client.kernels.kernels_api_client.cancel_kernel_session(c)
+                  print("CANCEL_V6E_UNALLOCATED",sid,"error=",cr.error_message,flush=True)
+                  state["cancelled_unallocated"]=sid
+                  state["cancel_error"]=cr.error_message
+
+              Path("lingbot_tpu_v6e_probe.json").write_text(
+                  json.dumps(state,indent=2,default=str)+"\n")
+
+              if getattr(op.error,"code",None):
+                  raise SystemExit(f"v6e failed: {op.error.code} {op.error.message}")
+          PY
+      - name: Upload probe
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lingbot-tpu-v6e-probe
+          path: lingbot_tpu_v6e_probe.json
+          if-no-files-found: warn
