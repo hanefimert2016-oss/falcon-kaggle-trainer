@@ -41,7 +41,7 @@ jobs:
           from pathlib import Path
 
           src = Path("lingbot_tpu")
-          names = ["apply_tpu_patch.py", "generate_tpu.py", "kaggle_tpu_v5e_test.py"]
+          names = ["apply_tpu_patch.py", "generate_tpu.py", "kaggle_tpu_v5e_test.py", "wasd_camera.py"]
           payload = {
               name: base64.b64encode((src / name).read_bytes()).decode("ascii")
               for name in names
