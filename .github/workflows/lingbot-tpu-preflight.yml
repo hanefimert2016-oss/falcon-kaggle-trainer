@@ -34,3 +34,18 @@ jobs:
           grep -q "_portable_device" upstream/wan/image2video.py
           grep -q "contextlib import nullcontext" upstream/wan/modules/model_fast.py
           grep -q "set_rng_state" upstream/wan/image2video.py
+
+      - name: Test WASD camera control
+        run: |
+          python -m py_compile lingbot_tpu/*.py
+          python lingbot_tpu/wasd_camera.py --out /tmp/lingbot-action --keys w,d,right --frames 5
+          python - <<'PY'
+          import numpy as np
+          p=np.load('/tmp/lingbot-action/poses.npy')
+          k=np.load('/tmp/lingbot-action/intrinsics.npy')
+          assert p.shape == (5,4,4), p.shape
+          assert k.shape[-1] == 4, k.shape
+          assert np.isfinite(p).all() and np.isfinite(k).all()
+          assert np.linalg.norm(p[-1,:3,3]-p[0,:3,3]) > 0
+          print('WASD_CONTROL_OK', p[-1,:3,3].tolist(), k[0].tolist())
+          PY
