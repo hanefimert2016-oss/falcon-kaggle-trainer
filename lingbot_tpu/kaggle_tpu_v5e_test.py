@@ -22,6 +22,7 @@ HERE = Path(__file__).resolve().parent
 UPSTREAM = ROOT / 'lingbot-world-v2'
 CKPT = ROOT / 'lingbot-world-v2-1.3b-causal-fast'
 ASSETS = ROOT / 'lingbot-world-v2-assets'
+LIVE_ACTION = ROOT / 'lingbot-live-action'
 
 
 def run(cmd, cwd=None, env=None):
@@ -152,6 +153,23 @@ def main():
     run([sys.executable, patch, UPSTREAM])
     shutil.copy2(generator, UPSTREAM / 'generate_tpu.py')
 
+    action_path = UPSTREAM / 'examples/03'
+    if args.profile == 'interactive':
+        # Exercise the same control path the final live UI will use:
+        # current frame + four new frames driven by a short WASD camera move.
+        sys.path.insert(0, str(HERE))
+        from wasd_camera import WasdCamera, write_action_dir
+        ctl = WasdCamera(move_per_frame=0.08, yaw_per_frame_deg=2.0)
+        poses = ctl.trajectory(['w'], frame_num=vals['frames'])
+        action_path = write_action_dir(
+            LIVE_ACTION,
+            poses,
+            intrinsics_source=UPSTREAM / 'examples/03/intrinsics.npy',
+        )
+        print('INTERACTIVE_ACTION_PATH:', action_path)
+        print('INTERACTIVE_POSE_START:', poses[0, :3, 3].tolist())
+        print('INTERACTIVE_POSE_END:', poses[-1, :3, 3].tolist())
+
     output = ROOT / (
         f'lingbot_tpu_{args.profile}_{args.size.replace("*","x")}_'
         f'{vals["frames"]}f.mp4'
@@ -161,6 +179,7 @@ def main():
         '--ckpt_dir', str(CKPT),
         '--assets_dir', str(ASSETS),
         '--size', args.size,
+        '--action_path', str(action_path),
         '--frame_num', str(vals['frames']),
         '--chunk_size', str(vals['chunk_size']),
         '--passes', str(vals['passes']),
