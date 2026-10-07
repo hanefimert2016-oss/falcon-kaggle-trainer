@@ -1,0 +1,131 @@
+name: LingBot TPU v6e Batch Benchmark
+
+on:
+  push:
+    branches:
+      - lingbot-tpu-v5e-port
+    paths:
+      - '.lingbot-tpu-v6e-batch-trigger'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
+      OLD_SLUG: lingbot-world-v2-interactive-tpu-v2
+      KERNEL_SLUG: lingbot-world-v2-interactive-tpu-v6e-v1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -q "kaggle>=2.2.1"
+
+      - name: Remove old queued v5e test
+        run: |
+          kaggle kernels delete "$KAGGLE_OWNER/$OLD_SLUG" -y || true
+
+      - name: Build self-contained v6e kernel
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf kernel_lingbot_v6e
+          mkdir -p kernel_lingbot_v6e
+          python - <<'PY'
+          import base64
+          from pathlib import Path
+
+          src=Path("lingbot_tpu")
+          names=["apply_tpu_patch.py","generate_tpu.py","kaggle_tpu_v5e_test.py","wasd_camera.py"]
+          payload={n:base64.b64encode((src/n).read_bytes()).decode("ascii") for n in names}
+          wrapper=f'''from pathlib import Path
+          import base64, subprocess, sys
+
+          PAYLOAD={payload!r}
+          runtime=Path("/kaggle/working/lingbot_tpu_runtime")
+          runtime.mkdir(parents=True,exist_ok=True)
+          for name,encoded in PAYLOAD.items():
+              (runtime/name).write_bytes(base64.b64decode(encoded))
+
+          cmd=[
+              sys.executable,
+              str(runtime/"kaggle_tpu_v5e_test.py"),
+              "--profile","interactive",
+              "--size","480*832",
+          ]
+          p=subprocess.run(cmd,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+          print(p.stdout,flush=True)
+          Path("/kaggle/working/lingbot_tpu_benchmark.log").write_text(p.stdout)
+          Path("/kaggle/working/lingbot_tpu_exit_code.txt").write_text(str(p.returncode)+"\\n")
+          raise SystemExit(p.returncode)
+          '''
+          Path("kernel_lingbot_v6e/kernel.py").write_text(wrapper)
+          PY
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          owner=os.environ["KAGGLE_OWNER"]; slug=os.environ["KERNEL_SLUG"]
+          meta={
+            "id":f"{owner}/{slug}",
+            "title":"LingBot World V2 Interactive TPU v6e V1",
+            "code_file":"kernel.py",
+            "language":"python",
+            "kernel_type":"script",
+            "is_private":True,
+            "enable_gpu":False,
+            "enable_internet":True,
+            "machine_shape":"TpuV6E8",
+            "dataset_sources":[],
+            "competition_sources":[],
+            "kernel_sources":[],
+            "model_sources":[]
+          }
+          Path("kernel_lingbot_v6e/kernel-metadata.json").write_text(json.dumps(meta,indent=2)+"\n")
+          print(json.dumps(meta,indent=2))
+          PY
+          python -m py_compile kernel_lingbot_v6e/kernel.py
+
+      - name: Push TPU v6e-8 batch
+        run: |
+          kaggle kernels push -p kernel_lingbot_v6e --accelerator TpuV6E8 --timeout 43200
+
+      - name: Poll for 10 minutes
+        shell: bash
+        run: |
+          set -euo pipefail
+          REF="$KAGGLE_OWNER/$KERNEL_SLUG"
+          for i in $(seq 1 60); do
+            STATUS="$(kaggle kernels status "$REF" 2>&1 || true)"
+            echo "[$i] $STATUS"
+            if echo "$STATUS" | grep -Eq '(KernelWorkerStatus\.)?COMPLETE'; then exit 0; fi
+            if echo "$STATUS" | grep -Eq '(KernelWorkerStatus\.)?(ERROR|CANCELLED)'; then
+              kaggle kernels logs "$REF" || true
+              exit 1
+            fi
+            sleep 10
+          done
+          echo "V6E_BATCH_STILL_QUEUED_OR_RUNNING"
+          exit 2
+
+      - name: Download output
+        if: always()
+        run: |
+          mkdir -p outputs
+          kaggle kernels logs "$KAGGLE_OWNER/$KERNEL_SLUG" || true
+          kaggle kernels output "$KAGGLE_OWNER/$KERNEL_SLUG" -p outputs -o || true
+          find outputs -maxdepth 4 -type f -printf '%p %s bytes\n' || true
+          test ! -f outputs/lingbot_tpu_benchmark.log || cat outputs/lingbot_tpu_benchmark.log
+
+      - name: Upload output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lingbot-tpu-v6e-batch
+          path: outputs/
+          if-no-files-found: ignore
