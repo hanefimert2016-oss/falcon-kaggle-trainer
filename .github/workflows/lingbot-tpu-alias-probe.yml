@@ -1,0 +1,151 @@
+name: LingBot TPU Interactive Alias Probe
+
+on:
+  push:
+    branches:
+      - lingbot-tpu-v5e-port
+    paths:
+      - '.lingbot-tpu-alias-trigger'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
+      KERNEL_SLUG: lingbot-world-v2-interactive-tpu-v2
+      STALE_SESSION_ID: '355946706'
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -q "kaggle>=2.2.1" kagglesdk
+
+      - name: Cancel stale session and probe TPU alias
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, time
+          from pathlib import Path
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          from kagglesdk.kernels.types.kernels_api_service import (
+              ApiCancelKernelSessionRequest,
+              ApiCreateKernelSessionRequest,
+              ApiGetAcceleratorQuotaStatisticsRequest,
+          )
+
+          api=KaggleApi(); api.authenticate()
+          owner=os.environ["KAGGLE_OWNER"]
+          slug=os.environ["KERNEL_SLUG"]
+          full=f"{owner}/{slug}"
+          stale=int(os.environ["STALE_SESSION_ID"])
+          state={"kernel":full,"cancelled_stale":stale}
+
+          with api.build_kaggle_client() as client:
+              # Best-effort cleanup of the prior never-allocated session.
+              creq=ApiCancelKernelSessionRequest()
+              creq.kernel_session_id=stale
+              try:
+                  cres=client.kernels.kernels_api_client.cancel_kernel_session(creq)
+                  print("CANCEL_STALE", stale, "error=", cres.error_message, flush=True)
+                  state["cancel_error"]=cres.error_message
+              except Exception as exc:
+                  print("CANCEL_STALE_EXCEPTION", type(exc).__name__, str(exc), flush=True)
+                  state["cancel_exception"]=str(exc)
+
+              q=client.kernels.kernels_api_client.get_accelerator_quota_statistics(
+                  ApiGetAcceleratorQuotaStatisticsRequest())
+              print("QUOTA_BEFORE used=", q.tpu_quota.time_used,
+                    "reserved=", q.tpu_quota.time_reserved,
+                    "total=", q.tpu_quota.total_time_allowed, flush=True)
+
+              # Official interactive-session SDK schema still recognizes this
+              # retired TPU shape. Kaggle's backend replaces retired v3 TPU
+              # requests with the current default TPU generation.
+              req=ApiCreateKernelSessionRequest()
+              req.slug=full
+              req.language="python"
+              req.kernel_type="notebook"
+              req.machine_shape="Tpu1VmV38"
+              req.enable_internet=True
+
+              op=client.kernels.kernels_api_client.create_kernel_session(req)
+              session_id=int(op.name.rsplit("/",1)[1])
+              state.update({
+                  "requested_shape":"Tpu1VmV38",
+                  "operation":op.name,
+                  "session_id":session_id,
+                  "initial_done":op.done,
+                  "initial_metadata":op.metadata or {},
+                  "initial_response":op.response or {},
+              })
+              print("ALIAS_OP", op.name, "done=", op.done,
+                    "metadata=", json.dumps(op.metadata or {}, default=str),
+                    "response=", json.dumps(op.response or {}, default=str),
+                    "error=", getattr(op.error,"code",None),
+                    getattr(op.error,"message",None), flush=True)
+
+              # Give allocator up to 100 seconds. If it never allocates,
+              # cancel immediately so it cannot occupy a future TPU slot.
+              allocated=False
+              for i in range(20):
+                  if op.done:
+                      break
+                  time.sleep(5)
+                  op=client.common.operations_client.get_operation(name=op.name)
+                  q=client.kernels.kernels_api_client.get_accelerator_quota_statistics(
+                      ApiGetAcceleratorQuotaStatisticsRequest())
+                  print("POLL", i+1,
+                        "done=",op.done,
+                        "reserved=",q.tpu_quota.time_reserved,
+                        "metadata=",json.dumps(op.metadata or {},default=str),
+                        "response=",json.dumps(op.response or {},default=str),
+                        "error=",getattr(op.error,"code",None),
+                        getattr(op.error,"message",None),flush=True)
+                  if q.tpu_quota.time_reserved.total_seconds() > 0:
+                      allocated=True
+                  state.update({
+                      "last_done":op.done,
+                      "last_metadata":op.metadata or {},
+                      "last_response":op.response or {},
+                      "error_code":getattr(op.error,"code",None),
+                      "error_message":getattr(op.error,"message",None),
+                      "tpu_reserved":str(q.tpu_quota.time_reserved),
+                      "tpu_used":str(q.tpu_quota.time_used),
+                      "allocated":allocated,
+                  })
+                  Path("lingbot_tpu_alias_probe.json").write_text(
+                      json.dumps(state,indent=2,default=str)+"\n")
+
+              if getattr(op.error,"code",None):
+                  raise SystemExit(
+                      f"alias session failed: {op.error.code} {op.error.message}")
+
+              # Keep only a genuinely allocated session. Cancel a no-worker
+              # pending request so it does not block later tests.
+              if not allocated and not op.done:
+                  creq=ApiCancelKernelSessionRequest()
+                  creq.kernel_session_id=session_id
+                  cres=client.kernels.kernels_api_client.cancel_kernel_session(creq)
+                  print("CANCEL_UNALLOCATED", session_id,
+                        "error=",cres.error_message,flush=True)
+                  state["cancelled_unallocated"]=session_id
+                  state["cancel_unallocated_error"]=cres.error_message
+
+              Path("lingbot_tpu_alias_probe.json").write_text(
+                  json.dumps(state,indent=2,default=str)+"\n")
+          PY
+
+      - name: Upload probe state
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lingbot-tpu-alias-probe
+          path: lingbot_tpu_alias_probe.json
+          if-no-files-found: warn
