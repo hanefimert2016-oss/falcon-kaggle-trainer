@@ -102,12 +102,16 @@ def memory_snapshot(device, label):
         print(f'MEMORY {label}: unavailable ({exc})', flush=True)
 
 
-def run_once(pipe, cfg, args, device, save=False):
+def run_once(pipe, cfg, args, device, save=False, max_area_override=None):
     img = Image.open(args.image).convert('RGB')
     xm.mark_step()
     xm.wait_device_ops()
 
-    max_area = args.max_area if args.max_area > 0 else MAX_AREA_CONFIGS[args.size]
+    max_area = (
+        int(max_area_override)
+        if max_area_override is not None
+        else (args.max_area if args.max_area > 0 else MAX_AREA_CONFIGS[args.size])
+    )
     t0 = time.perf_counter()
     video = pipe.generate(
         args.prompt,
@@ -175,35 +179,93 @@ def main():
     xm.wait_device_ops()
     memory_snapshot(device, 'after_pipeline')
 
-    steady_fps = []
-    steady_seconds = []
+    if args.area_ladder.strip():
+        areas = [int(x.strip()) for x in args.area_ladder.split(',') if x.strip()]
+        if not areas:
+            raise SystemExit('--area_ladder contained no valid areas')
+        if any(x <= 0 for x in areas):
+            raise SystemExit('--area_ladder values must be positive')
+    else:
+        areas = [args.max_area if args.max_area > 0 else MAX_AREA_CONFIGS[args.size]]
+
     total_passes = 1 if args.warmup_only else args.passes
+    ladder_results = []
 
-    for idx in range(total_passes):
-        save = (idx == total_passes - 1) and (not args.no_save) and (not args.warmup_only)
-        elapsed, frames, fps, video = run_once(pipe, cfg, args, device, save=save)
-        if idx == 0:
-            print(f'COMPILE_RUN seconds={elapsed:.3f} frames={frames} fps={fps:.3f}', flush=True)
-        else:
-            steady_fps.append(fps)
-            steady_seconds.append(elapsed)
-            print(
-                f'STEADY_STATE_{idx} seconds={elapsed:.3f} frames={frames} '
-                f'fps={fps:.3f} size={args.size} max_area={args.max_area or MAX_AREA_CONFIGS[args.size]} '
-                f'chunk={args.chunk_size}',
-                flush=True,
-            )
-        memory_snapshot(device, f'after_pass_{idx}')
-        del video
-
-    if steady_fps:
-        avg_fps = sum(steady_fps) / len(steady_fps)
-        avg_seconds = sum(steady_seconds) / len(steady_seconds)
+    for area_index, area in enumerate(areas):
+        steady_fps = []
+        steady_seconds = []
         print(
-            f'STEADY_SUMMARY passes={len(steady_fps)} avg_seconds={avg_seconds:.3f} '
-            f'avg_fps={avg_fps:.3f} best_fps={max(steady_fps):.3f}',
+            f'LADDER_BEGIN index={area_index} max_area={area} '
+            f'target_fps={args.target_fps:.3f}',
             flush=True,
         )
+
+        for idx in range(total_passes):
+            # Save only the final pass of the final requested area. Benchmark
+            # ladder output is otherwise kept on-device and freed immediately.
+            save = (
+                area_index == len(areas) - 1
+                and idx == total_passes - 1
+                and not args.no_save
+                and not args.warmup_only
+            )
+            elapsed, frames, fps, video = run_once(
+                pipe, cfg, args, device, save=save, max_area_override=area)
+            if idx == 0:
+                print(
+                    f'COMPILE_RUN area={area} seconds={elapsed:.3f} '
+                    f'frames={frames} fps={fps:.3f}',
+                    flush=True,
+                )
+            else:
+                steady_fps.append(fps)
+                steady_seconds.append(elapsed)
+                print(
+                    f'STEADY_STATE_{idx} seconds={elapsed:.3f} frames={frames} '
+                    f'fps={fps:.3f} size={args.size} max_area={area} '
+                    f'chunk={args.chunk_size}',
+                    flush=True,
+                )
+            memory_snapshot(device, f'area_{area}_after_pass_{idx}')
+            del video
+
+        if steady_fps:
+            avg_fps = sum(steady_fps) / len(steady_fps)
+            avg_seconds = sum(steady_seconds) / len(steady_seconds)
+            best_fps = max(steady_fps)
+            meets = avg_fps >= args.target_fps
+            ladder_results.append((area, avg_fps, best_fps, avg_seconds, meets))
+            print(
+                f'STEADY_SUMMARY max_area={area} passes={len(steady_fps)} '
+                f'avg_seconds={avg_seconds:.3f} avg_fps={avg_fps:.3f} '
+                f'best_fps={best_fps:.3f} target_fps={args.target_fps:.3f} '
+                f'meets_target={int(meets)}',
+                flush=True,
+            )
+            if args.stop_below_target and not meets:
+                print(
+                    f'LADDER_STOP max_area={area} reason=below_target '
+                    f'avg_fps={avg_fps:.3f}',
+                    flush=True,
+                )
+                break
+
+    if ladder_results:
+        passing = [x for x in ladder_results if x[4]]
+        if passing:
+            best_area = max(passing, key=lambda x: x[0])
+            print(
+                f'LADDER_BEST_TARGET_AREA max_area={best_area[0]} '
+                f'avg_fps={best_area[1]:.3f} target_fps={args.target_fps:.3f}',
+                flush=True,
+            )
+        else:
+            print(
+                f'LADDER_BEST_TARGET_AREA max_area=0 avg_fps=0 '
+                f'target_fps={args.target_fps:.3f}',
+                flush=True,
+            )
+
     if not args.no_save and not args.warmup_only:
         print(f'OUTPUT={args.output}', flush=True)
 
