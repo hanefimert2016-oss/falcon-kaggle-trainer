@@ -1,0 +1,97 @@
+name: Iron Man Systems Lab v3 - Kaggle T4
+
+on:
+  push:
+    paths:
+      - 'gpu_jobs/ironman_systems_v3/**'
+      - '.github/workflows/ironman-systems-v3.yml'
+      - '.ironman-systems-v3-trigger'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ironman-systems-v3
+  cancel-in-progress: true
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 210
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
+      REF: ${{ vars.KAGGLE_OWNER }}/ironman-systems-v3
+      RELEASE_TAG: ironman-systems-v3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate Kaggle link
+        run: |
+          set -euo pipefail
+          test -n "$KAGGLE_API_TOKEN" || (echo 'Missing KAGGLE_API_TOKEN' && exit 1)
+          test -n "$KAGGLE_OWNER" || (echo 'Missing KAGGLE_OWNER' && exit 1)
+      - name: Install Kaggle CLI
+        run: python -m pip install --upgrade 'kaggle>=2.2.1'
+      - name: Build kernel
+        run: |
+          set -euo pipefail
+          python -m py_compile gpu_jobs/ironman_systems_v3/blender_systems_v3.py
+          python -m py_compile gpu_jobs/ironman_systems_v3/build_kaggle_kernel.py
+          python gpu_jobs/ironman_systems_v3/build_kaggle_kernel.py --owner "$KAGGLE_OWNER" --out kernel_ironman_systems_v3
+          python -m py_compile kernel_ironman_systems_v3/kernel.py
+          cat kernel_ironman_systems_v3/kernel-metadata.json
+      - name: Submit Kaggle T4 render
+        run: |
+          set -uo pipefail
+          kaggle kernels delete "$REF" -y >/tmp/delete.log 2>&1 || true
+          cat /tmp/delete.log || true
+          sleep 3
+          set +e
+          OUT="$(kaggle kernels push -p kernel_ironman_systems_v3 --accelerator NvidiaTeslaT4 --timeout 7200 2>&1)"
+          RC=$?
+          set -e
+          echo "$OUT"
+          if echo "$OUT" | grep -qi 'Kernel push error'; then exit 1; fi
+          exit "$RC"
+      - name: Wait for Kaggle render
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 180); do
+            S="$(kaggle kernels status "$REF" 2>&1 || true)"
+            echo "[$i] $S"
+            if echo "$S" | grep -q 'KernelWorkerStatus.COMPLETE'; then exit 0; fi
+            if echo "$S" | grep -Eq 'KernelWorkerStatus.(ERROR|CANCELLED)'; then kaggle kernels logs "$REF" || true; exit 1; fi
+            sleep 30
+          done
+          kaggle kernels logs "$REF" || true
+          exit 1
+      - name: Download outputs
+        run: |
+          set -euo pipefail
+          mkdir -p outputs/ironman_systems_v3
+          kaggle kernels output "$REF" -p outputs/ironman_systems_v3 -o
+          find outputs/ironman_systems_v3 -maxdepth 1 -type f -printf '%f %s bytes\n' | sort
+          test -s outputs/ironman_systems_v3/ironman_systems_v3_editable.blend
+          test -s outputs/ironman_systems_v3/ironman_systems_v3_interactive.glb
+          test -s outputs/ironman_systems_v3/ironman_systems_v3_presentation.mp4
+          test -s outputs/ironman_systems_v3/ironman_systems_v3_poster.png
+          test -s outputs/ironman_systems_v3/ironman_systems_v3_manifest.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ironman-systems-v3
+          path: outputs/ironman_systems_v3/
+          retention-days: 14
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release delete "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes || true
+          gh release create "$RELEASE_TAG" outputs/ironman_systems_v3/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title 'Iron Man Systems Lab v3 — 3D + MP4' \
+            --notes 'Fan-made non-canon engineering visualization. Includes six CC BY 4.0 external suit assets, external arc-reactor asset, editable Blender scene, animated GLB, high-resolution poster and 1080p MP4 systems tour.'
