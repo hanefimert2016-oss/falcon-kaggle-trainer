@@ -118,6 +118,7 @@ def profile_values(args):
             'chunk_size': args.chunk_size or 2,
             'max_area': args.max_area or (256 * 448),
             'passes': args.passes or 3,
+            'area_ladder': '114688,184320,230400,399360,921600',
         }
     return {
         'frames': args.frames or 17,
@@ -185,7 +186,14 @@ def main():
         '--passes', str(vals['passes']),
         '--output', str(output),
     ]
-    if vals['max_area'] > 0:
+    if args.profile == 'interactive':
+        cmd.extend([
+            '--area_ladder', vals['area_ladder'],
+            '--target_fps', '16',
+            '--stop_below_target',
+            '--no_save',
+        ])
+    elif vals['max_area'] > 0:
         cmd.extend(['--max_area', str(vals['max_area'])])
 
     print('PROFILE:', args.profile)
