@@ -12,7 +12,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: ironman-systems-v3
+  group: ironman-systems-v3-fixed
   cancel-in-progress: true
 
 jobs:
