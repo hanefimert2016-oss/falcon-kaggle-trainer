@@ -22,7 +22,7 @@ jobs:
     env:
       KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
       KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
-      REF: ${{ vars.KAGGLE_OWNER }}/iron-man-systems-lab-v3
+      REF: ${{ vars.KAGGLE_OWNER }}/iron-man-systems-lab-v4
       RELEASE_TAG: ironman-systems-v3
     steps:
       - uses: actions/checkout@v4
@@ -36,6 +36,8 @@ jobs:
           test -n "$KAGGLE_OWNER" || (echo 'Missing KAGGLE_OWNER' && exit 1)
       - name: Install Kaggle CLI
         run: python -m pip install --upgrade 'kaggle>=2.2.1'
+      - name: Kaggle accelerator quota
+        run: kaggle quota || true
       - name: Build kernel
         run: |
           set -euo pipefail
@@ -57,7 +59,7 @@ jobs:
           cat /tmp/delete.log || true
           sleep 3
           set +e
-          OUT="$(kaggle kernels push -p kernel_ironman_systems_v3 --accelerator NvidiaTeslaT4 --timeout 21600 2>&1)"
+          OUT="$(kaggle kernels push -p kernel_ironman_systems_v3 --accelerator NvidiaTeslaT4 --timeout 7200 2>&1)"
           RC=$?
           set -e
           echo "$OUT"
