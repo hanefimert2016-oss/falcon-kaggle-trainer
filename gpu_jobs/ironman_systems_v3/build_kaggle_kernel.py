@@ -4,7 +4,7 @@ import argparse, base64, json
 from pathlib import Path
 
 BLENDER_URL='https://download.blender.org/release/Blender4.5/blender-4.5.14-linux-x64.tar.xz'
-SLUG='ironman-systems-v3'
+SLUG='iron-man-systems-lab-v3'
 
 KERNEL=r'''import base64, json, os, pathlib, shutil, subprocess, tarfile, urllib.request
 OUT=pathlib.Path('/kaggle/working'); OUT.mkdir(parents=True,exist_ok=True)
