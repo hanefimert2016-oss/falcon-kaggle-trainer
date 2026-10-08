@@ -70,7 +70,7 @@ jobs:
             S="$(kaggle kernels status "$REF" 2>&1 || true)"
             echo "[$i] $S"
             if echo "$S" | grep -q 'KernelWorkerStatus.COMPLETE'; then exit 0; fi
-            if echo "$S" | grep -Eq 'KernelWorkerStatus.(ERROR|CANCELLED)'; then kaggle kernels logs "$REF" || true; exit 1; fi
+            if echo "$S" | grep -Eq 'KernelWorkerStatus.(ERROR|CANCELLED|CANCEL_ACKNOWLEDGED)'; then kaggle kernels logs "$REF" || true; exit 1; fi
             sleep 30
           done
           kaggle kernels logs "$REF" || true
