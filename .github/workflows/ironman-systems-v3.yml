@@ -49,8 +49,8 @@ jobs:
           set -euo pipefail
           STATUS="$(kaggle kernels status "$REF" 2>&1 || true)"
           echo "Existing kernel status: $STATUS"
-          if echo "$STATUS" | grep -Eq 'KernelWorkerStatus.(COMPLETE|RUNNING|QUEUED)'; then
-            echo "Existing usable kernel found; keeping it."
+          if echo "$STATUS" | grep -q 'KernelWorkerStatus.COMPLETE'; then
+            echo "Existing completed render found; keeping it."
             exit 0
           fi
           kaggle kernels delete "$REF" -y >/tmp/delete.log 2>&1 || true
