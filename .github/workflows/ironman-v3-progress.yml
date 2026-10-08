@@ -21,7 +21,7 @@ jobs:
       - name: Current Kaggle status and logs
         run: |
           set +e
-          REF="$KAGGLE_OWNER/iron-man-systems-lab-v3"
+          REF="$KAGGLE_OWNER/iron-man-systems-lab-v4"
           echo "=== STATUS ==="
           kaggle kernels status "$REF"
           echo "=== LOGS ==="
