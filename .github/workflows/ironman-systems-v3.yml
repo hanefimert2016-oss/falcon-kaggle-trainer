@@ -22,7 +22,7 @@ jobs:
     env:
       KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
       KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
-      REF: ${{ vars.KAGGLE_OWNER }}/ironman-systems-v3
+      REF: ${{ vars.KAGGLE_OWNER }}/iron-man-systems-lab-v3
       RELEASE_TAG: ironman-systems-v3
     steps:
       - uses: actions/checkout@v4
@@ -44,9 +44,15 @@ jobs:
           python gpu_jobs/ironman_systems_v3/build_kaggle_kernel.py --owner "$KAGGLE_OWNER" --out kernel_ironman_systems_v3
           python -m py_compile kernel_ironman_systems_v3/kernel.py
           cat kernel_ironman_systems_v3/kernel-metadata.json
-      - name: Submit Kaggle T4 render
+      - name: Reuse completed render or submit Kaggle T4
         run: |
-          set -uo pipefail
+          set -euo pipefail
+          STATUS="$(kaggle kernels status "$REF" 2>&1 || true)"
+          echo "Existing kernel status: $STATUS"
+          if echo "$STATUS" | grep -Eq 'KernelWorkerStatus.(COMPLETE|RUNNING|QUEUED)'; then
+            echo "Existing usable kernel found; keeping it."
+            exit 0
+          fi
           kaggle kernels delete "$REF" -y >/tmp/delete.log 2>&1 || true
           cat /tmp/delete.log || true
           sleep 3
