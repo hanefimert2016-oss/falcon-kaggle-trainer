@@ -18,7 +18,7 @@ concurrency:
 jobs:
   render:
     runs-on: ubuntu-latest
-    timeout-minutes: 210
+    timeout-minutes: 350
     env:
       KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
       KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
@@ -57,7 +57,7 @@ jobs:
           cat /tmp/delete.log || true
           sleep 3
           set +e
-          OUT="$(kaggle kernels push -p kernel_ironman_systems_v3 --accelerator NvidiaTeslaT4 --timeout 7200 2>&1)"
+          OUT="$(kaggle kernels push -p kernel_ironman_systems_v3 --accelerator NvidiaTeslaT4 --timeout 21600 2>&1)"
           RC=$?
           set -e
           echo "$OUT"
@@ -66,7 +66,7 @@ jobs:
       - name: Wait for Kaggle render
         run: |
           set -euo pipefail
-          for i in $(seq 1 180); do
+          for i in $(seq 1 660); do
             S="$(kaggle kernels status "$REF" 2>&1 || true)"
             echo "[$i] $S"
             if echo "$S" | grep -q 'KernelWorkerStatus.COMPLETE'; then exit 0; fi
