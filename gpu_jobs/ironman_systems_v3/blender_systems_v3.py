@@ -48,6 +48,34 @@ def _ironman_lowlevel_op_call(idname_py, *args, **kwargs):
             if key not in _ironman_decoded_paths:
                 _ironman_decode_meshopt(key)
                 _ironman_decoded_paths.add(key)
+    if idname_py == "render.render":
+        scene = bpy.context.scene
+        if scene.render.engine == "CYCLES":
+            try:
+                prefs = bpy.context.preferences.addons["cycles"].preferences
+                chosen = None
+                for backend in ("OPTIX", "CUDA"):
+                    try:
+                        prefs.compute_device_type = backend
+                        prefs.get_devices()
+                        gpu_devices = [d for d in prefs.devices if d.type != "CPU"]
+                        if gpu_devices:
+                            for d in prefs.devices:
+                                d.use = (d.type != "CPU")
+                            chosen = backend
+                            break
+                    except Exception as exc:
+                        print("GPU_BACKEND_FAIL", backend, repr(exc), flush=True)
+                scene.cycles.device = "GPU"
+                scene.cycles.samples = min(int(scene.cycles.samples), 32)
+                scene.cycles.use_denoising = True
+                try:
+                    scene.cycles.use_persistent_data = True
+                except Exception:
+                    pass
+                print("GPU_RENDER_CONFIG", chosen, [(d.name, d.type, d.use) for d in prefs.devices], "samples", scene.cycles.samples, flush=True)
+            except Exception as exc:
+                print("GPU_RENDER_SETUP_FAILED", repr(exc), flush=True)
     return _ironman_orig_op_call(idname_py, *args, **kwargs)
 
 _ironman_ops_module._op_call = _ironman_lowlevel_op_call
