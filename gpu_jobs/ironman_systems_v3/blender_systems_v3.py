@@ -50,32 +50,44 @@ def _ironman_lowlevel_op_call(idname_py, *args, **kwargs):
                 _ironman_decoded_paths.add(key)
     if idname_py == "render.render":
         scene = bpy.context.scene
-        if scene.render.engine == "CYCLES":
-            try:
-                prefs = bpy.context.preferences.addons["cycles"].preferences
-                chosen = None
-                for backend in ("OPTIX", "CUDA"):
-                    try:
-                        prefs.compute_device_type = backend
-                        prefs.get_devices()
-                        gpu_devices = [d for d in prefs.devices if d.type != "CPU"]
-                        if gpu_devices:
-                            for d in prefs.devices:
-                                d.use = (d.type != "CPU")
-                            chosen = backend
-                            break
-                    except Exception as exc:
-                        print("GPU_BACKEND_FAIL", backend, repr(exc), flush=True)
-                scene.cycles.device = "GPU"
-                scene.cycles.samples = min(int(scene.cycles.samples), 32)
-                scene.cycles.use_denoising = True
+        animation = bool(op_kwargs and op_kwargs.get("animation"))
+        try:
+            # Eevee requires a working headless EGL/OpenGL context on Kaggle.
+            # Force Cycles X so the T4 can render directly through OptiX/CUDA.
+            scene.render.engine = "CYCLES"
+            prefs = bpy.context.preferences.addons["cycles"].preferences
+            chosen = None
+            for backend in ("OPTIX", "CUDA"):
                 try:
-                    scene.cycles.use_persistent_data = True
-                except Exception:
-                    pass
-                print("GPU_RENDER_CONFIG", chosen, [(d.name, d.type, d.use) for d in prefs.devices], "samples", scene.cycles.samples, flush=True)
-            except Exception as exc:
-                print("GPU_RENDER_SETUP_FAILED", repr(exc), flush=True)
+                    prefs.compute_device_type = backend
+                    prefs.get_devices()
+                    gpu_devices = [d for d in prefs.devices if d.type in {"OPTIX", "CUDA"}]
+                    if gpu_devices:
+                        for d in prefs.devices:
+                            d.use = (d.type in {"OPTIX", "CUDA"})
+                        chosen = backend
+                        break
+                except Exception as exc:
+                    print("GPU_BACKEND_FAIL", backend, repr(exc), flush=True)
+            if not chosen:
+                raise RuntimeError("No OptiX/CUDA Cycles device found")
+            scene.cycles.device = "GPU"
+            scene.cycles.samples = 16 if animation else 64
+            scene.cycles.use_denoising = True
+            scene.cycles.max_bounces = 6
+            scene.cycles.diffuse_bounces = 3
+            scene.cycles.glossy_bounces = 3
+            scene.cycles.transmission_bounces = 4
+            try:
+                scene.cycles.use_persistent_data = True
+            except Exception:
+                pass
+            print("GPU_RENDER_CONFIG", "animation="+str(animation), chosen,
+                  [(d.name, d.type, d.use) for d in prefs.devices],
+                  "samples", scene.cycles.samples, flush=True)
+        except Exception as exc:
+            print("GPU_RENDER_SETUP_FAILED", repr(exc), flush=True)
+            raise
     return _ironman_orig_op_call(idname_py, *args, **kwargs)
 
 _ironman_ops_module._op_call = _ironman_lowlevel_op_call
