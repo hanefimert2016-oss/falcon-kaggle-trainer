@@ -1,4 +1,4 @@
-import os, subprocess, urllib.request
+import os, subprocess, urllib.request, bpy
 
 # Blender 4.5 cannot import EXT_meshopt_compression directly.
 # Transparently decode downloaded GLBs with glTF-Transform before bpy imports them.
