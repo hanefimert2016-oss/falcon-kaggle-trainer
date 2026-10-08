@@ -49,7 +49,7 @@ def main():
     out=root/ns.out; out.mkdir(parents=True,exist_ok=True)
     (out/'kernel.py').write_text(kernel,encoding='utf-8')
     meta={
-      'id':f'{ns.owner}/{SLUG}','title':'Iron Man Systems Lab v3','code_file':'kernel.py','language':'python','kernel_type':'script',
+      'id':f'{ns.owner}/{SLUG}','title':'Iron Man Systems Lab v4','code_file':'kernel.py','language':'python','kernel_type':'script',
       'is_private':True,'enable_gpu':True,'enable_internet':True,'machine_shape':'NvidiaTeslaT4',
       'dataset_sources':[],'competition_sources':[],'kernel_sources':[],'model_sources':[]
     }
