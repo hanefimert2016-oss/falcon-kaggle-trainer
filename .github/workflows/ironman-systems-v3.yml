@@ -59,7 +59,7 @@ jobs:
           cat /tmp/delete.log || true
           sleep 3
           set +e
-          OUT="$(kaggle kernels push -p kernel_ironman_systems_v3 --accelerator NvidiaTeslaT4 --timeout 7200 2>&1)"
+          OUT="$(kaggle kernels push -p kernel_ironman_systems_v3 --accelerator NvidiaTeslaT4 --timeout 18000 2>&1)"
           RC=$?
           set -e
           echo "$OUT"
