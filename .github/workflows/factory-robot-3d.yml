@@ -1,0 +1,209 @@
+name: Factory Robot Cinematic T4 Production
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: factory-robot-cinematic-t4
+  cancel-in-progress: false
+
+jobs:
+  production:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
+      KERNEL_SLUG: factory-robot-cinematic-t4-production-r${{ github.run_number }}
+      ACCELERATOR: NvidiaTeslaT4
+      PYTHONPATH: ${{ github.workspace }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Validate Kaggle bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$KAGGLE_API_TOKEN" || (echo 'Missing KAGGLE_API_TOKEN secret' && exit 1)
+          test -n "$KAGGLE_OWNER" || (echo 'Missing KAGGLE_OWNER repository variable' && exit 1)
+          echo "Kaggle owner=$KAGGLE_OWNER"
+          echo "Production slug=$KERNEL_SLUG"
+          echo "Requested accelerator=$ACCELERATOR"
+
+      - name: Install validation and Kaggle tooling
+        run: python -m pip install -q "kaggle>=2.2.1" pytest numpy pybullet
+
+      - name: Run robot-factory regression suite
+        run: pytest tests/factory_robot_3d -q
+
+      - name: Build full cinematic Kaggle kernel bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf kernel_factory_robot
+          mkdir -p kernel_factory_robot
+          python -m factory_robot_3d.pipeline.build_kaggle_bundle \
+            --template factory_robot_3d/kaggle_entrypoint.py \
+            --package-root factory_robot_3d \
+            --output kernel_factory_robot/kaggle_entrypoint.py
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          source = Path('factory_robot_3d/kernel-metadata.template.json')
+          target = Path('kernel_factory_robot/kernel-metadata.json')
+          data = json.loads(source.read_text(encoding='utf-8'))
+          data['id'] = f"{os.environ['KAGGLE_OWNER']}/{os.environ['KERNEL_SLUG']}"
+          data['title'] = f"Factory Robot Cinematic T4 Production R{os.environ['GITHUB_RUN_NUMBER']}"
+          target.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
+          print(json.dumps(data, indent=2))
+          PY
+          test -s kernel_factory_robot/kaggle_entrypoint.py
+          test -s kernel_factory_robot/kernel-metadata.json
+          ! grep -Fq '__EMBEDDED_PROJECT_ZIP_B64__' kernel_factory_robot/kaggle_entrypoint.py
+
+      - name: Smoke Blender 5.2.2 bootstrap before T4 push
+        shell: bash
+        env:
+          BLENDER_ROOT: ${{ runner.temp }}/factory-blender-runtime
+          BLENDER_CACHE: ${{ runner.temp }}/factory-blender-cache
+        run: |
+          set -euo pipefail
+          rm -f /tmp/factory-blender-bootstrap.log
+          bash factory_robot_3d/pipeline/install_blender.sh | tee /tmp/factory-blender-bootstrap.log
+          BLENDER_BIN="$(tail -n1 /tmp/factory-blender-bootstrap.log)"
+          test -x "$BLENDER_BIN"
+          "$BLENDER_BIN" --background --factory-startup --disable-autoexec \
+            --python-expr "import bpy; assert bpy.app.version_string.startswith('5.2.2'); print('BLENDER_HEADLESS_SMOKE_OK', bpy.app.version_string)"
+
+      - name: Show Kaggle quota
+        shell: bash
+        run: |
+          set -euo pipefail
+          kaggle kernels list --mine --page-size 1
+          kaggle quota || true
+
+      - name: Push private cinematic T4 kernel
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          PUSH_OUTPUT="$(kaggle kernels push -p kernel_factory_robot --accelerator "$ACCELERATOR" --timeout 3600 2>&1)"
+          RC=$?
+          set -e
+          echo "$PUSH_OUTPUT"
+
+          if echo "$PUSH_OUTPUT" | grep -Fiq 'Maximum batch GPU session count'; then
+            echo 'quota_error: Maximum batch GPU session count reached; refusing to retry'
+            exit 86
+          fi
+
+          if [[ "$RC" -ne 0 ]]; then
+            echo "kernel_error: Kaggle kernel push failed rc=$RC"
+            exit "$RC"
+          fi
+
+          if ! echo "$PUSH_OUTPUT" | grep -Eqi 'successfully pushed|Kernel version'; then
+            echo 'kernel_error: Kaggle push returned success code without a confirmed kernel push'
+            exit 1
+          fi
+
+          echo 'KAGGLE_PUSH_CONFIRMED'
+
+      - name: Wait for cinematic production
+        shell: bash
+        run: |
+          set -euo pipefail
+          REF="$KAGGLE_OWNER/$KERNEL_SLUG"
+          complete=0
+          for i in $(seq 1 1200); do
+            STATUS="$(kaggle kernels status "$REF" 2>&1 || true)"
+            echo "[$i] $STATUS"
+
+            if echo "$STATUS" | grep -Fiq 'Maximum batch GPU session count'; then
+              echo 'quota_error: Maximum batch GPU session count reached'
+              exit 86
+            fi
+
+            if echo "$STATUS" | grep -Fiq "Permission 'kernels.get' was denied"; then
+              echo "kernel_error: Kaggle kernel ref is inaccessible: $REF"
+              exit 1
+            fi
+
+            if echo "$STATUS" | grep -Eqi 'COMPLETE|FINISHED'; then
+              complete=1
+              break
+            fi
+
+            if echo "$STATUS" | grep -Eqi 'CANCEL_ACKNOWLEDGED|CANCELLED|ERROR|FAILED'; then
+              echo 'kernel_error: Kaggle production stopped; refusing automatic restart'
+              kaggle kernels logs "$REF" || true
+              exit 1
+            fi
+
+            sleep 15
+          done
+
+          if [[ "$complete" != "1" ]]; then
+            echo 'kernel_error: timed out waiting for Kaggle production'
+            kaggle kernels logs "$REF" || true
+            exit 1
+          fi
+
+      - name: Show recent Kaggle logs
+        if: always()
+        shell: bash
+        run: |
+          kaggle kernels logs "$KAGGLE_OWNER/$KERNEL_SLUG" 2>&1 | tail -n 160 || true
+
+      - name: Download Kaggle production output
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf outputs
+          mkdir -p outputs
+          kaggle kernels output "$KAGGLE_OWNER/$KERNEL_SLUG" -p outputs -o
+          find outputs -type f -printf '%p %s bytes\n' | sort
+          ARTIFACT_DIR="$(find outputs -type f -name factory_robot_cinematic.mp4 -printf '%h\n' | head -n1)"
+          test -n "$ARTIFACT_DIR" || (echo 'kernel_error: MP4 not found in Kaggle output' && exit 1)
+          echo "ARTIFACT_DIR=$ARTIFACT_DIR" >> "$GITHUB_ENV"
+
+      - name: Revalidate downloaded video and artifacts
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m factory_robot_3d.pipeline.validate_video "$ARTIFACT_DIR/factory_robot_cinematic.mp4"
+          python - <<'PY'
+          import os, shutil
+          from pathlib import Path
+          from factory_robot_3d.pipeline.validate_artifacts import REQUIRED_ARTIFACTS, validate_artifacts
+          root = Path(os.environ['ARTIFACT_DIR'])
+          report = validate_artifacts(root)
+          print('ARTIFACT_VALIDATION', report)
+          if not report.ok:
+              raise SystemExit('; '.join(report.errors))
+          verified = Path('verified_output')
+          if verified.exists():
+              shutil.rmtree(verified)
+          verified.mkdir()
+          for name in REQUIRED_ARTIFACTS:
+              shutil.copy2(root / name, verified / name)
+          PY
+
+      - name: Upload verified cinematic artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: factory-robot-cinematic-t4-output
+          path: verified_output/
+          if-no-files-found: error
+          retention-days: 14

@@ -1,0 +1,168 @@
+name: Factory Robot UltraFast T4 MP4 Delivery
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: factory-robot-ultrafast-delivery
+  cancel-in-progress: false
+
+jobs:
+  render-deliver:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      KAGGLE_OWNER: ${{ vars.KAGGLE_OWNER }}
+      KERNEL_SLUG: factory-robot-cinematic-ultrafast-delivery
+      ACCELERATOR: NvidiaTeslaT4
+      REF: ${{ vars.KAGGLE_OWNER }}/factory-robot-cinematic-ultrafast-delivery
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install tooling
+        run: python -m pip install -q "kaggle>=2.2.1" pytest numpy pybullet
+
+      - name: Verify robot suite
+        run: pytest tests/factory_robot_3d -q
+
+      - name: Precompute simulation on GitHub CPU
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf precomputed_sim
+          python -m factory_robot_3d.run_simulation --output precomputed_sim
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          s=json.loads(Path('precomputed_sim/summary.json').read_text(encoding='utf-8'))
+          assert s['success'] is True, s
+          assert s['robot_count'] == 20, s
+          assert s['simulation_frames'] == 288, s
+          print('PRECOMPUTE_OK', s)
+          PY
+
+      - name: Build ultrafast cinematic bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('factory_robot_3d/blender/render_config.py')
+          text=p.read_text(encoding='utf-8')
+          old='samples=64,'
+          if old not in text:
+              raise SystemExit('expected production sample setting not found')
+          p.write_text(text.replace(old,'samples=4,',1),encoding='utf-8')
+          print('ULTRAFAST_RENDER_SAMPLES=4')
+          PY
+          rm -rf kernel_factory_robot_ultrafast
+          mkdir -p kernel_factory_robot_ultrafast
+          python -m factory_robot_3d.pipeline.build_precomputed_kaggle_bundle \
+            --template factory_robot_3d/kaggle_render_entrypoint.py \
+            --package-root factory_robot_3d \
+            --simulation-dir precomputed_sim \
+            --output kernel_factory_robot_ultrafast/kaggle_entrypoint.py
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          data=json.loads(Path('factory_robot_3d/kernel-metadata.template.json').read_text(encoding='utf-8'))
+          data['id']=f"{os.environ['KAGGLE_OWNER']}/{os.environ['KERNEL_SLUG']}"
+          data['title']='Factory Robot Cinematic Ultrafast Delivery'
+          Path('kernel_factory_robot_ultrafast/kernel-metadata.json').write_text(
+              json.dumps(data,indent=2)+'\n',encoding='utf-8'
+          )
+          print(json.dumps(data,indent=2))
+          PY
+
+      - name: Push ultrafast T4 kernel
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          OUT="$(kaggle kernels push -p kernel_factory_robot_ultrafast --accelerator "$ACCELERATOR" --timeout 3600 2>&1)"
+          RC=$?
+          set -e
+          echo "$OUT"
+
+          if echo "$OUT" | grep -Fiq 'Maximum batch GPU session count'; then
+            echo 'quota_error: Maximum batch GPU session count reached; refusing to retry'
+            exit 86
+          fi
+
+          if [[ "$RC" -ne 0 ]]; then
+            echo "ULTRAFAST_PUSH_FAILED rc=$RC"
+            exit "$RC"
+          fi
+
+          if ! echo "$OUT" | grep -Eqi 'successfully pushed|Kernel version'; then
+            echo 'ULTRAFAST_PUSH_UNCONFIRMED: success exit code without confirmed push'
+            exit 1
+          fi
+
+          echo 'ULTRAFAST_PUSH_CONFIRMED'
+
+      - name: Wait for ultrafast render
+        shell: bash
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 1200); do
+            STATUS="$(kaggle kernels status "$REF" 2>&1 || true)"
+            echo "[$i] $STATUS"
+            if echo "$STATUS" | grep -Fiq '404 Client Error'; then
+              sleep 5
+              continue
+            fi
+            if echo "$STATUS" | grep -Eqi 'COMPLETE|FINISHED'; then
+              exit 0
+            fi
+            if echo "$STATUS" | grep -Eqi 'ERROR|FAILED|CANCEL_ACKNOWLEDGED|CANCELLED'; then
+              kaggle kernels logs "$REF" || true
+              exit 1
+            fi
+            sleep 15
+          done
+          exit 1
+
+      - name: Show ultrafast render logs
+        if: always()
+        run: kaggle kernels logs "$REF" 2>&1 | tail -n 300 || true
+
+      - name: Download ultrafast MP4 output
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf ultrafast_output
+          mkdir -p ultrafast_output
+          kaggle kernels output "$REF" -p ultrafast_output -o
+          find ultrafast_output -type f -printf '%p %s bytes\n' | sort
+          MP4="$(find ultrafast_output -type f -name 'factory_robot_cinematic.mp4' | head -n1)"
+          test -n "$MP4"
+          echo "MP4=$MP4" >> "$GITHUB_ENV"
+          ROOT="$(dirname "$MP4")"
+          echo "ROOT=$ROOT" >> "$GITHUB_ENV"
+
+      - name: Validate ultrafast MP4
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m factory_robot_3d.pipeline.validate_video "$MP4"
+
+      - name: Upload ultrafast final MP4 bundle
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: factory-robot-ultrafast-final-mp4
+          path: ${{ env.ROOT }}/
+          if-no-files-found: error
+          retention-days: 14
